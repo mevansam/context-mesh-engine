@@ -19,7 +19,7 @@ Canonical types live in the Go source (godoc). This page is the usage contract f
 const (
     DefaultAddr = "localhost:8080"
     MCPPath     = "/mcp"
-    APIv1Prefix = "/api/v1"
+    DefaultAPIPrefix = "/api"
 )
 
 func New(opts Options) (*Engine, error)
@@ -30,7 +30,7 @@ func (e *Engine) Handler() http.Handler
 func (e *Engine) ListenAndServe(ctx context.Context) error
 ```
 
-`APIv1Prefix` is the **default** REST prefix (`/api/v1`). Override it with `Options.APIPrefix` (or `cmd/engine -api-prefix`). `e.APIPrefix()` is the prefix after defaults (leading `/` added, trailing `/` stripped).
+`DefaultAPIPrefix` is the **default** REST prefix (`/api`). Override it with `Options.APIPrefix` (or `cmd/engine -api-prefix`). `e.APIPrefix()` is the prefix after defaults (leading `/` added, trailing `/` stripped).
 
 Register extra MCP tools and REST controllers **before** serving. `Handler()` builds the root mux once (`sync.Once`). `AddController` still works after `Handler()` because it mutates the live REST mux; prefer registering before listen.
 
@@ -48,7 +48,7 @@ Zero-value `engine.Options` after `New` (see `engine/engine.go`):
 | `SessionTimeout` | 0 | idle MCP sessions never closed (go-sdk default) |
 | `APITimeout` | 0 | 15s on the REST prefix only. Set a **negative** duration to disable. |
 | `ReadHeaderTimeout` | 0 | 10s on `http.Server` |
-| `APIPrefix` | empty | `/api/v1` (`APIv1Prefix`). Must not be `/` or `/mcp`. |
+| `APIPrefix` | empty | `/api` (`DefaultAPIPrefix`). Must not be `/` or `/mcp`. |
 | `ArazzoLoaders` | nil/empty | no plan tools or plan REST routes |
 | `ArazzoExecutor` | nil | catalog + OpenAPI still load; execute is 501 |
 | `PublicBaseURL` | empty | REST URLs in MCP descriptions are path-only (`{APIPrefix}/...`) |
@@ -75,20 +75,20 @@ if err != nil {
 
 ## Routes
 
-Paths below use the **default** REST prefix `/api/v1`. Replace that prefix with `Options.APIPrefix` when you set one. Controller patterns are always relative to the prefix (`GET /health` → `GET {APIPrefix}/health`).
+Paths below use the **default** REST prefix `/api`. Replace that prefix with `Options.APIPrefix` when you set one. Controller patterns are always relative to the prefix (`GET /health` → `GET {APIPrefix}/health`).
 
 | Method | Path | Result |
 | --- | --- | --- |
 | POST | `/mcp` | JSON-RPC into the MCP server (default response `text/event-stream`) |
 | GET | `/mcp` | Standalone SSE (requires `Mcp-Session-Id` and `Accept: text/event-stream`) |
 | DELETE | `/mcp` | End the MCP session |
-| GET | `/api/v1/health` | `{"status":"ok"}` (`api.HealthResponse`) |
-| POST | `/api/v1/plans/query` | Natural-language match + execute (same contract as MCP `query`; loaders required) |
-| POST | `/api/v1/plans/{planId}/{workflowId}` | Execute **latest** plan version (loaders required) |
-| POST | `/api/v1/plans/{planId}/{version}/{workflowId}` | Execute that version (`{version}` is `v` + `info.version`) |
-| GET | `/api/v1/openapi/{planId}` | OAS 3.1 for latest execute paths |
-| GET | `/api/v1/openapi/{planId}/{version}` | OAS 3.1 for that version |
-| * | `/api/v1/...` | Your controllers |
+| GET | `/api/health` | `{"status":"ok"}` (`api.HealthResponse`) |
+| POST | `/api/plans/query` | Natural-language match + execute (same contract as MCP `query`; loaders required) |
+| POST | `/api/plans/{planId}/{workflowId}` | Execute **latest** plan version (loaders required) |
+| POST | `/api/plans/{planId}/{version}/{workflowId}` | Execute that version (`{version}` is `v` + `info.version`) |
+| GET | `/api/openapi/{planId}` | OAS 3.1 for latest execute paths |
+| GET | `/api/openapi/{planId}/{version}` | OAS 3.1 for that version |
+| * | `/api/...` | Your controllers |
 
 Advertise MCP at **`/mcp`** (no trailing slash). `/mcp/` is mounted so extra path segments still reach the same handler. Do not `http.StripPrefix("/mcp", ...)` yourself.
 
@@ -118,7 +118,7 @@ func ReadJSON(r *http.Request, v any) error
 
 `ReadJSON`: rejects unknown JSON fields; caps the body at **1 MiB**. Plan execute POST does **not** use `ReadJSON` (unknown fields allowed; same 1 MiB cap).
 
-The mux passed to `Controller.Register` is already stripped of `Options.APIPrefix`. Pattern `GET /items` is `GET {APIPrefix}/items` (default `GET /api/v1/items`).
+The mux passed to `Controller.Register` is already stripped of `Options.APIPrefix`. Pattern `GET /items` is `GET {APIPrefix}/items` (default `GET /api/items`).
 
 ## Add MCP tools
 

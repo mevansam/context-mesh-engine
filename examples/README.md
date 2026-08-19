@@ -55,8 +55,8 @@ Checks:
 
 ```bash
 curl -s http://localhost:8091/health
-curl -s http://localhost:8080/api/v1/health
-curl -s http://localhost:8080/api/v1/openapi/petstore
+curl -s http://localhost:8080/api/health
+curl -s http://localhost:8080/api/openapi/petstore
 ```
 
 Demo login: `username=user1`, `password=abc123`.
@@ -64,12 +64,12 @@ Demo login: `username=user1`, `password=abc123`.
 ### REST: retrieve a pet
 
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/retrievePet \
+curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
   -H 'Content-Type: application/json' \
   -d '{"username":"user1","password":"abc123","status":"available"}'
 ```
 
-Versioned URL: `POST /api/v1/plans/petstore/v1.0.1/retrievePet`.
+Versioned URL: `POST /api/plans/petstore/v1.0.1/retrievePet`.
 
 Pick a `petId` from `outputs.petId` (first match) or `outputs.pets`. If find-by-status is down on the host, `GET https://petstore3.swagger.io/api/v3/pet/1` still works; use `petId: 1` for purchase.
 
@@ -78,7 +78,7 @@ Pick a `petId` from `outputs.petId` (first match) or `outputs.pets`. If find-by-
 Requires the async adapter. `orderCorrelationId` is any unique string (AsyncAPI `orderRequestId`).
 
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/purchasePet \
+curl -s -X POST http://localhost:8080/api/plans/petstore/purchasePet \
   -H 'Content-Type: application/json' \
   -d '{"username":"user1","password":"abc123","petId":1,"orderCorrelationId":"demo-order-1"}'
 ```
@@ -88,7 +88,7 @@ The engine: login → `POST http://localhost:8091/place-order` → poll `GET /co
 ### REST: check order status
 
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/checkOrderStatus \
+curl -s -X POST http://localhost:8080/api/plans/petstore/checkOrderStatus \
   -H 'Content-Type: application/json' \
   -d '{"username":"user1","password":"abc123","orderId":1}'
 ```
@@ -115,7 +115,7 @@ curl -s -X POST https://petstore.swagger.io/v2/store/order \
 Then:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/checkOrderStatus \
+curl -s -X POST http://localhost:8080/api/plans/petstore/checkOrderStatus \
   -H 'Content-Type: application/json' \
   -d '{"username":"user1","password":"abc123","orderId":900002}'
 ```
@@ -180,7 +180,7 @@ Go client: [docs/users/usage.md](../docs/users/usage.md#mcp-client) (`mcp.Stream
 
 - One catalog (`x-planId` + `info.version`) → MCP `run_*` and REST `POST /plans/{planId}/{workflowId}`.
 - You supply loaders + an `Executor`. This demo’s executor is HTTP: OpenAPI operations on Petstore, AsyncAPI operations on the local adapter.
-- Generated `GET /api/v1/openapi/petstore` describes the same execute routes (paths without the `/api/v1` prefix).
+- Generated `GET /api/openapi/petstore` describes the same execute routes (paths without the `/api` prefix).
 - `query` is registered but not implemented yet.
 
 Arazzo file: `examples/petstore/mcp-server/plans/petstore.arazzo.yaml`. AsyncAPI file: `examples/petstore/async-order-server/pet-asyncapi.yaml`.

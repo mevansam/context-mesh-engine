@@ -21,7 +21,7 @@ func TestPetstorePlanLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.APIPrefix() != engine.APIv1Prefix {
+	if e.APIPrefix() != engine.DefaultAPIPrefix {
 		t.Fatalf("prefix = %s", e.APIPrefix())
 	}
 }

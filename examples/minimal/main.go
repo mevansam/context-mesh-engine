@@ -2,7 +2,7 @@
 // Use of this source code is governed by the MIT license
 // that can be found in the LICENSE file.
 
-// Minimal engine: one MCP ping tool and GET /api/v1/health on one listener.
+// Minimal engine: one MCP ping tool and GET /api/health on one listener.
 package main
 
 import (

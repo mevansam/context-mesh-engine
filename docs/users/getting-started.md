@@ -11,8 +11,8 @@ One process, one TCP port:
 | URL | Role |
 | --- | --- |
 | `http://<addr>/mcp` | MCP Streamable HTTP. Clients POST JSON-RPC and optionally GET an SSE stream. Sessions use `Mcp-Session-Id`. |
-| `http://<addr>/api/v1/health` | Default liveness JSON: `{"status":"ok"}`. |
-| `http://<addr>/api/v1/...` | Your `api.Controller` routes (and, if you set loaders, Arazzo plan routes). |
+| `http://<addr>/api/health` | Default liveness JSON: `{"status":"ok"}`. |
+| `http://<addr>/api/...` | Your `api.Controller` routes (and, if you set loaders, Arazzo plan routes). |
 
 The engine does **not** register a `ping` MCP tool by itself. `cmd/engine` and `examples/minimal` add `ping` as a sample.
 
@@ -37,20 +37,20 @@ Flags (`cmd/engine/main.go`):
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `-addr` | `localhost:8080` | Listen address (`engine.DefaultAddr`) |
-| `-api-prefix` | `/api/v1` | REST path prefix (`engine.Options.APIPrefix`) |
+| `-api-prefix` | `/api` | REST path prefix (`engine.Options.APIPrefix`) |
 | `-specs` | empty | Directory of Arazzo YAML/JSON (recursive `FileLoader`) |
 | `-public-base-url` | `http://` + `-addr` when `-specs` is set | Origin written into MCP tool descriptions |
 
 Check REST:
 
 ```bash
-curl -s http://localhost:8080/api/v1/health
+curl -s http://localhost:8080/api/health
 # {"status":"ok"}
 ```
 
 The sample registers an MCP `ping` tool. Point a Streamable HTTP client at `http://localhost:8080/mcp` ([MCP client](usage.md#mcp-client)).
 
-`-specs` loads plans and registers `query` plus `run_*` tools, but **does not** set an `Executor`. Execute (`POST /api/v1/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. Use [examples/arazzo-fs](examples.md#arazzo-fs) for a stub executor, or [examples/petstore](examples.md#petstore) for live Petstore HTTP. Full Arazzo guide: [arazzo.md](arazzo.md).
+`-specs` loads plans and registers `query` plus `run_*` tools, but **does not** set an `Executor`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. Use [examples/arazzo-fs](examples.md#arazzo-fs) for a stub executor, or [examples/petstore](examples.md#petstore) for live Petstore HTTP. Full Arazzo guide: [arazzo.md](arazzo.md).
 
 ## Use it as a library
 

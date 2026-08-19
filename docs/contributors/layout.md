@@ -80,12 +80,12 @@ context-mesh-engine/
 
 | Test | Do not break |
 | --- | --- |
-| `TestHandler_HealthJSON` | `{APIPrefix}/health` (default `/api/v1/health`) is JSON |
-| `TestHandler_CustomAPIPrefix` | custom prefix serves health; default `/api/v1` is 404 |
+| `TestHandler_HealthJSON` | `{APIPrefix}/health` (default `/api/health`) is JSON |
+| `TestHandler_CustomAPIPrefix` | custom prefix serves health; default `/api` is 404 |
 | `TestNew_APIPrefixRejected` | `/`, `/mcp` fail `New` |
 | `TestHandler_MCPInitializeAndPing` | Streamable HTTP at `/mcp` |
 | `TestHandler_MCPGETRequiresSession` | GET `/mcp` without session is 400 (handler is mounted) |
-| `TestHandler_RESTNotMCP` | POST `/api/v1/health` is REST 405, not MCP |
+| `TestHandler_RESTNotMCP` | POST `/api/health` is REST 405, not MCP |
 | `TestArazzo_*` | plans, OpenAPI, 501, MCP `query`/`run_*`, `POST /plans/query` |
 | `internal/plans` tests | skip missing `x-planId`, duplicate versions, latest `1.1.0` |
 

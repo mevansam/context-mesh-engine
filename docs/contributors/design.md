@@ -7,7 +7,7 @@ This document is for **contributors**. SDK usage lives in [docs/users/usage.md](
 Share one `http.Server` between:
 
 1. MCP Streamable HTTP (SSE + POST) at `/mcp`
-2. JSON REST at `Options.APIPrefix` (default `/api/v1/`)
+2. JSON REST at `Options.APIPrefix` (default `/api`)
 
 using [go-sdk](https://github.com/modelcontextprotocol/go-sdk) as the MCP library.
 
@@ -35,7 +35,7 @@ flowchart TB
     catalog["plans.Catalog plus Runner"]
     httpServer --> mux
     mux -->|"/mcp and /mcp/"| mcpH
-    mux -->|"APIPrefix (default /api/v1/)"| restH
+    mux -->|"APIPrefix (default /api)"| restH
     mcpH --> mcpSrv
     mcpSrv --> catalog
     restH --> catalog
@@ -80,7 +80,7 @@ Tests in `engine/engine_test.go` encode the first four.
 
 `internal/httpserver.NewMux` implements these rules. Change it together with `engine/engine_test.go`.
 
-The REST prefix (`Options.APIPrefix`, default `/api/v1`) is mounted as `StripPrefix(prefix, apiHandler)`, so controllers see `/health` not `{prefix}/health`. Generated OpenAPI `paths` likewise omit the prefix. `New` rejects prefix `/` and `/mcp`.
+The REST prefix (`Options.APIPrefix`, default `/api`) is mounted as `StripPrefix(prefix, apiHandler)`, so controllers see `/health` not `{prefix}/health`. Generated OpenAPI `paths` likewise omit the prefix. `New` rejects prefix `/` and `/mcp`.
 
 ## Package split
 
@@ -129,5 +129,5 @@ Follow [arazzo.md](arazzo.md). Do not call `RunWorkflow` on a shared `arazzo.Eng
 - OAuth / `auth.RequireBearerToken` (wrap MCP only if added later)
 - Legacy SSE transport
 - A shipping HTTP `Executor` (apps provide one)
-- Semantic matching behind MCP `query` and `POST /api/v1/plans/query` (routes exist; they return not-implemented)
+- Semantic matching behind MCP `query` and `POST /api/plans/query` (routes exist; they return not-implemented)
 - Changes under the `go-sdk` or `libopenapi` checkouts unless you are contributing to those repos

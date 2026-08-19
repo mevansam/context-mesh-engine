@@ -64,7 +64,7 @@ Targeted tests:
 ## Minimum checks before a PR
 
 1. `go test ./...` passes.
-2. `GET {APIPrefix}/health` (default `/api/v1/health`) still returns JSON `{"status":"ok"}`.
+2. `GET {APIPrefix}/health` (default `/api/health`) still returns JSON `{"status":"ok"}`.
 3. An MCP client can still `Connect` to `/mcp` (`TestHandler_MCPInitializeAndPing`).
 4. You did not wrap the **root** handler in buffering middleware or set `WriteTimeout`.
 5. User-facing behavior changes are reflected in `docs/users/`; internals in `docs/contributors/`.

@@ -2,7 +2,7 @@
 // Use of this source code is governed by the MIT license
 // that can be found in the LICENSE file.
 
-// Arazzo filesystem loader: MCP run_* tools and REST /api/v1/plans + /openapi.
+// Arazzo filesystem loader: MCP run_* tools and REST /api/plans + /openapi.
 package main
 
 import (

@@ -3,7 +3,7 @@
 // that can be found in the LICENSE file.
 
 // Package api provides REST helpers and the controller registration
-// interface used under Options.APIPrefix (default /api/v1).
+// interface used under Options.APIPrefix (default /api).
 package api
 
 import "net/http"

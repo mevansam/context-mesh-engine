@@ -43,7 +43,7 @@ func TestHandler_HealthJSON(t *testing.T) {
 	ts := httptest.NewServer(newTestEngine(t).Handler())
 	t.Cleanup(ts.Close)
 
-	resp, err := http.Get(ts.URL + "/api/v1/health")
+	resp, err := http.Get(ts.URL + "/api/health")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestHandler_RESTNotMCP(t *testing.T) {
 	ts := httptest.NewServer(newTestEngine(t).Handler())
 	t.Cleanup(ts.Close)
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/health", nil)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/health", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestHandler_CustomAPIPrefix(t *testing.T) {
 		t.Fatalf("custom prefix status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	old, err := http.Get(ts.URL + "/api/v1/health")
+	old, err := http.Get(ts.URL + "/api/health")
 	if err != nil {
 		t.Fatal(err)
 	}

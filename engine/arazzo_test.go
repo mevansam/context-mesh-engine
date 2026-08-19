@@ -64,7 +64,7 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 	ts := httptest.NewServer(e.Handler())
 	t.Cleanup(ts.Close)
 
-	resp, err := http.Get(ts.URL + "/api/v1/openapi/petstore")
+	resp, err := http.Get(ts.URL + "/api/openapi/petstore")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 		t.Fatalf("paths = %v", paths)
 	}
 
-	resp, err = http.Get(ts.URL + "/api/v1/openapi/petstore/v1.0.0")
+	resp, err = http.Get(ts.URL + "/api/openapi/petstore/v1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 		t.Fatalf("versioned status = %d", resp.StatusCode)
 	}
 
-	resp, err = http.Post(ts.URL+"/api/v1/plans/petstore/pingHealth", "application/json", strings.NewReader(`{}`))
+	resp, err = http.Post(ts.URL+"/api/plans/petstore/pingHealth", "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,11 +124,11 @@ func TestArazzo_RESTExecuteLatestAndVersioned(t *testing.T) {
 		return out
 	}
 
-	latest := post("/api/v1/plans/petstore/pingHealth", `{"name":"a"}`)
+	latest := post("/api/plans/petstore/pingHealth", `{"name":"a"}`)
 	if latest["success"] != true {
 		t.Fatalf("latest = %v", latest)
 	}
-	ver := post("/api/v1/plans/petstore/v1.0.0/pingHealth", `{"name":"b"}`)
+	ver := post("/api/plans/petstore/v1.0.0/pingHealth", `{"name":"b"}`)
 	if ver["success"] != true {
 		t.Fatalf("versioned = %v", ver)
 	}
@@ -160,10 +160,10 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 	got := map[string]bool{}
 	for _, tl := range tools.Tools {
 		got[tl.Name] = true
-		if tl.Name == "query" && !strings.Contains(tl.Description, "POST http://example.test/api/v1/plans/query") {
+		if tl.Name == "query" && !strings.Contains(tl.Description, "POST http://example.test/api/plans/query") {
 			t.Fatalf("query description missing REST URL:\n%s", tl.Description)
 		}
-		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/api/v1/plans/") {
+		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/api/plans/") {
 			t.Fatalf("tool %s description missing REST URL:\n%s", tl.Name, tl.Description)
 		}
 	}
@@ -185,7 +185,7 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 		t.Fatalf("MCP query error = %q", got)
 	}
 
-	qresp, err := http.Post(ts.URL+"/api/v1/plans/query", "application/json", strings.NewReader(`{"query":"hello","data":{}}`))
+	qresp, err := http.Post(ts.URL+"/api/plans/query", "application/json", strings.NewReader(`{"query":"hello","data":{}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 		t.Fatalf("structured = %#v", res.StructuredContent)
 	}
 
-	resp, err := http.Post(ts.URL+"/api/v1/plans/petstore/v1.1.0/echoName", "application/json", bytes.NewReader([]byte(`{"name":"rest"}`)))
+	resp, err := http.Post(ts.URL+"/api/plans/petstore/v1.1.0/echoName", "application/json", bytes.NewReader([]byte(`{"name":"rest"}`)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 		t.Fatalf("custom openapi status = %d", resp.StatusCode)
 	}
 
-	old, err := http.Get(ts.URL + "/api/v1/openapi/petstore")
+	old, err := http.Get(ts.URL + "/api/openapi/petstore")
 	if err != nil {
 		t.Fatal(err)
 	}

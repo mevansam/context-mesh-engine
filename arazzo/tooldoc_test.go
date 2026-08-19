@@ -61,10 +61,10 @@ func TestRenderToolDoc_Defaults(t *testing.T) {
 	if title != "Pet Store Workflows (petstore v1.1.0)" {
 		t.Fatalf("title = %q", title)
 	}
-	if want := "http://localhost:8080/api/v1/plans/petstore/v1.1.0/{workflowId}"; !strings.Contains(desc, want) {
+	if want := "http://localhost:8080/api/plans/petstore/v1.1.0/{workflowId}"; !strings.Contains(desc, want) {
 		t.Fatalf("description missing %q:\n%s", want, desc)
 	}
-	if want := "GET http://localhost:8080/api/v1/openapi/petstore"; !strings.Contains(desc, want) {
+	if want := "GET http://localhost:8080/api/openapi/petstore"; !strings.Contains(desc, want) {
 		t.Fatalf("description missing %q:\n%s", want, desc)
 	}
 	if strings.Contains(desc, "{{") {

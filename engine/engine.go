@@ -33,8 +33,8 @@ const (
 	// MCPPath is the Streamable HTTP endpoint advertised to MCP clients.
 	MCPPath = "/mcp"
 
-	// APIv1Prefix is the default REST API prefix used when [Options.APIPrefix] is empty.
-	APIv1Prefix = "/api/v1"
+	// DefaultAPIPrefix is the default REST API prefix used when [Options.APIPrefix] is empty.
+	DefaultAPIPrefix = "/api"
 )
 
 const (
@@ -69,7 +69,7 @@ type Options struct {
 	ReadHeaderTimeout time.Duration
 
 	// APIPrefix is the REST path prefix (health, plans, OpenAPI).
-	// If empty, [APIv1Prefix] ("/api/v1") is used. A leading slash is added
+	// If empty, [DefaultAPIPrefix] ("/api") is used. A leading slash is added
 	// if missing; a trailing slash is stripped. Must not be "/" or [MCPPath].
 	APIPrefix string
 
@@ -176,7 +176,7 @@ func applyDefaults(opts Options) Options {
 func normalizeAPIPrefix(p string) string {
 	p = strings.TrimSpace(p)
 	if p == "" {
-		return APIv1Prefix
+		return DefaultAPIPrefix
 	}
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p

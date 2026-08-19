@@ -118,7 +118,7 @@ func MergeTemplates(t ToolDocTemplates) ToolDocTemplates {
 }
 
 // NewToolDocContext builds template data from spec fields plus PublicBaseURL
-// and the REST API prefix (for example /api/v1). Empty apiPrefix defaults to /api/v1.
+// and the REST API prefix (for example /api). Empty apiPrefix defaults to /api.
 func NewToolDocContext(planID, version, title, summary, description string, workflows []WorkflowDoc, publicBaseURL, apiPrefix string) ToolDocContext {
 	ids := make([]string, 0, len(workflows))
 	wfs := make([]WorkflowDoc, len(workflows))
@@ -152,7 +152,7 @@ func NewToolDocContext(planID, version, title, summary, description string, work
 	return ctx
 }
 
-const defaultAPIPrefix = "/api/v1"
+const defaultAPIPrefix = "/api"
 
 func normalizeAPIPrefix(p string) string {
 	p = strings.TrimSpace(p)

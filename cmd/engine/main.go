@@ -19,7 +19,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", engine.DefaultAddr, "HTTP listen address")
-	apiPrefix := flag.String("api-prefix", engine.APIv1Prefix, "REST path prefix (health, plans, OpenAPI)")
+	apiPrefix := flag.String("api-prefix", engine.DefaultAPIPrefix, "REST path prefix (health, plans, OpenAPI)")
 	specs := flag.String("specs", "", "directory of Arazzo YAML/JSON plans (recursive)")
 	publicBase := flag.String("public-base-url", "", "origin for MCP tool REST URLs (default http://<addr>)")
 	flag.Parse()

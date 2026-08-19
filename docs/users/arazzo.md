@@ -6,7 +6,7 @@ Public package: `github.com/mevansam/context-mesh-engine/arazzo`.
 
 This is not enabled until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan or OpenAPI REST routes.
 
-REST paths below use the default prefix `/api/v1`. Set `Options.APIPrefix` (or `cmd/engine -api-prefix`) to change it. Generated OpenAPI `paths` omit that prefix either way.
+REST paths below use the default prefix `/api`. Set `Options.APIPrefix` (or `cmd/engine -api-prefix`) to change it. Generated OpenAPI `paths` omit that prefix either way.
 
 ## What `engine.New` registers
 
@@ -16,11 +16,11 @@ When `ArazzoLoaders` is set, `New` loads every document from every loader, then:
 | --- | --- |
 | MCP `query` | `query` — semantically match a natural-language request to a plan and execute it (same contract as REST query) |
 | MCP `run_*` | one per catalog entry; default name `run_{{.SafePlanID}}_v{{.SafeVersion}}` |
-| REST `query` | `POST /api/v1/plans/query` |
-| REST execute (latest) | `POST /api/v1/plans/{planId}/{workflowId}` |
-| REST execute (versioned) | `POST /api/v1/plans/{planId}/{version}/{workflowId}` |
-| OpenAPI (latest) | `GET /api/v1/openapi/{planId}` |
-| OpenAPI (versioned) | `GET /api/v1/openapi/{planId}/{version}` |
+| REST `query` | `POST /api/plans/query` |
+| REST execute (latest) | `POST /api/plans/{planId}/{workflowId}` |
+| REST execute (versioned) | `POST /api/plans/{planId}/{version}/{workflowId}` |
+| OpenAPI (latest) | `GET /api/openapi/{planId}` |
+| OpenAPI (versioned) | `GET /api/openapi/{planId}/{version}` |
 
 `{version}` in URLs is **`v` + Arazzo `info.version`**. Example: `info.version: 1.0.0` → path token `v1.0.0`.
 
@@ -126,9 +126,9 @@ func (myExecutor) Execute(_ context.Context, req *arazzo.ExecutionRequest) (*ara
 
 Nil executor:
 
-- `GET /api/v1/openapi/...` still works
-- `POST /api/v1/plans/...` execute → **501** `{"error":"executor not configured"}`
-- `POST /api/v1/plans/query` → **501** `query is not implemented` (matching is not wired; independent of executor)
+- `GET /api/openapi/...` still works
+- `POST /api/plans/...` execute → **501** `{"error":"executor not configured"}`
+- `POST /api/plans/query` → **501** `query is not implemented` (matching is not wired; independent of executor)
 - MCP `run_*` → tool error (`IsError: true`), not a JSON-RPC protocol error
 
 This module does not ship an HTTP client executor. `examples/arazzo-fs` uses a stub that always returns 200. `examples/petstore/mcp-server` implements a real HTTP client against [petstore3.swagger.io](https://petstore3.swagger.io/) and the local async order adapter.
@@ -140,7 +140,7 @@ Same job on both surfaces: the caller sends a **simple, direct** natural-languag
 | Surface | How |
 | --- | --- |
 | MCP | tool `query` |
-| REST | `POST /api/v1/plans/query` |
+| REST | `POST /api/plans/query` |
 
 Body / arguments:
 
@@ -150,7 +150,7 @@ Body / arguments:
 
 `data` is the input outline (optional object). Override MCP display strings with `ToolDoc.QueryName`, `QueryTitle`, `QueryDescription` (literals, not templates).
 
-This version returns MCP tool error / HTTP **501** `{"error":"query is not implemented"}` until matching is wired. Direct `run_*` and `POST /api/v1/plans/{planId}/...` are implemented.
+This version returns MCP tool error / HTTP **501** `{"error":"query is not implemented"}` until matching is wired. Direct `run_*` and `POST /api/plans/{planId}/...` are implemented.
 
 ## MCP: `run_*` arguments
 
@@ -188,11 +188,11 @@ Successful `run_*` returns structured content matching the REST result object be
 POST body is the workflow **inputs object** (no `workflowId` wrapper). `workflowId` is the path. Empty body is allowed (`{}` or no body).
 
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/pingHealth \
+curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
   -H 'Content-Type: application/json' \
   -d '{"name":"demo"}'
 
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/v1.0.0/pingHealth \
+curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
   -H 'Content-Type: application/json' \
   -d '{"name":"demo"}'
 ```
@@ -233,12 +233,12 @@ Body: `{"error":"<message>"}`.
 
 ## OpenAPI
 
-`GET /api/v1/openapi/{planId}` and `GET /api/v1/openapi/{planId}/{version}` return OAS **3.1.0** JSON (`Content-Type: application/json`).
+`GET /api/openapi/{planId}` and `GET /api/openapi/{planId}/{version}` return OAS **3.1.0** JSON (`Content-Type: application/json`).
 
 Paths **inside** that document omit `Options.APIPrefix` (the REST mux is `StripPrefix`’d). With the default prefix:
 
-- HTTP: `GET /api/v1/openapi/petstore`
-- Document path: `/plans/petstore/pingHealth` → real URL `POST /api/v1/plans/petstore/pingHealth`
+- HTTP: `GET /api/openapi/petstore`
+- Document path: `/plans/petstore/pingHealth` → real URL `POST /api/plans/petstore/pingHealth`
 
 Latest document: `/plans/{planId}/{workflowId}`. Versioned document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs`.
 
@@ -269,7 +269,7 @@ Default name recipe: `run_{{.SafePlanID}}_v{{.SafeVersion}}`. After render, the 
 | `SafeVersion` | version with non `[A-Za-z0-9_.-]` replaced. Dots kept. |
 | `VersionSegment` | `"v" + Version` |
 | `PublicBaseURL` | trimmed origin or empty |
-| `APIRoot` | `PublicBaseURL` + `APIPrefix`, or `APIPrefix` alone (default `/api/v1`) |
+| `APIRoot` | `PublicBaseURL` + `APIPrefix`, or `APIPrefix` alone (default `/api`) |
 | `RESTQueryURL` | `{APIRoot}/plans/query` |
 | `RESTExecuteLatestURL` | `{APIRoot}/plans/{PlanID}/{workflowId}` |
 | `RESTExecuteVersionedURL` | `{APIRoot}/plans/{PlanID}/{VersionSegment}/{workflowId}` |
@@ -292,7 +292,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Point `FileLoader` at the plans dir only; OpenAPI sources stay beside it (`../sources/...`).
 - Implement `Executor`; nil is 501 on execute, OpenAPI still works.
 - MCP args for `run_*` wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
-- MCP `query` and `POST /api/v1/plans/query` share `{query, data}` and the execute result object.
+- MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute result object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
 - Generated OpenAPI `paths` keys omit `Options.APIPrefix`. They describe execute routes, not `/plans/query`.
 - `PublicBaseURL` must be set if you want absolute URLs in MCP descriptions.

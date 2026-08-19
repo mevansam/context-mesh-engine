@@ -50,7 +50,7 @@ SDK users should not need Path B to ship an app.
 | Route | Protocol | Implementation |
 | --- | --- | --- |
 | `/mcp`, `/mcp/` | MCP Streamable HTTP (POST, GET SSE, DELETE) | `mcp.NewStreamableHTTPHandler` |
-| `/api/v1/` (default `Options.APIPrefix`) | JSON REST | stdlib `ServeMux` + `api.Controller` |
+| `/api` (default `Options.APIPrefix`) | JSON REST | stdlib `ServeMux` + `api.Controller` |
 | `{APIPrefix}/plans/...`, `{APIPrefix}/openapi/...` | JSON REST | registered only when `Options.ArazzoLoaders` is non-empty |
 
 Root mux: Go 1.22+ `net/http.ServeMux`. Do not put Gin/chi on the **root** listener.

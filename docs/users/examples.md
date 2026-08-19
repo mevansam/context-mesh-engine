@@ -16,7 +16,7 @@ Do not run two examples (or `cmd/engine`) on `localhost:8080` at the same time.
 After any of these are listening:
 
 ```bash
-curl -s http://localhost:8080/api/v1/health
+curl -s http://localhost:8080/api/health
 # {"status":"ok"}
 ```
 
@@ -67,10 +67,10 @@ go run ./examples/arazzo-fs
 Loads `testdata/arazzo/plans` (`x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Stub `Executor` always returns HTTP 200.
 
 ```bash
-curl -s http://localhost:8080/api/v1/openapi/petstore
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/pingHealth \
+curl -s http://localhost:8080/api/openapi/petstore
+curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/v1.0.0/pingHealth \
+curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'
 ```
 
@@ -96,7 +96,7 @@ Arazzo plan (`x-planId: petstore`, version `1.0.1`) based on the [1.1 spec examp
 Curl, order-status, and MCP agent walkthrough: [examples/README.md](../../examples/README.md#petstore-demo).
 
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/plans/petstore/retrievePet \
+curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
   -H 'Content-Type: application/json' \
   -d '{"username":"user1","password":"abc123","status":"available"}'
 ```

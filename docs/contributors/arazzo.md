@@ -94,7 +94,7 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 2. Resolve sources before Validate.
 3. New libopenapi Engine per run.
 4. Nil executor: catalog + OpenAPI work; execute is 501 / MCP tool error.
-5. Plan REST is under `Options.APIPrefix` only (default `/api/v1`). Do not `StripPrefix` `/mcp`.
+5. Plan REST is under `Options.APIPrefix` only (default `/api`). Do not `StripPrefix` `/mcp`.
 6. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
 7. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
 

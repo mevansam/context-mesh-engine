@@ -3,7 +3,7 @@
 Go SDK for an **engine** that turns governed [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow plans into two equivalent surfaces:
 
 - **MCP tools** for agents (`/mcp`)
-- **REST + OpenAPI** for ordinary HTTP clients (`/api/v1` by default; `Options.APIPrefix`)
+- **REST + OpenAPI** for ordinary HTTP clients (`/api` by default; `Options.APIPrefix`)
 
 Both surfaces execute the **same** plan: a versioned, validated orchestration across the domain APIs of a [data mesh](https://martinfowler.com/articles/data-mesh-principles.html)—not an ad-hoc chain of tool calls invented at inference time.
 
@@ -22,7 +22,7 @@ Arazzo plans move that design **out of the model**. Authors publish a versioned 
 | Path through the mesh is inferred per request | Path is the published workflow |
 | Order, mapping, and “done” can change between runs | Same steps, criteria, and retries on every run |
 | Failures are whatever the model tries next | The runner applies the plan’s success and failure rules |
-| Agents and REST clients each re-implement composition | One catalog and one runner: MCP `run_*` and `POST /api/v1/plans/...` |
+| Agents and REST clients each re-implement composition | One catalog and one runner: MCP `run_*` and `POST /api/plans/...` |
 | Review means reading prompts and traces after the fact | Review means accepting a plan version before it can run |
 
 The unit of work is a **pre-built, validated, governed plan**, not unbounded tool-use against every domain operation.
@@ -35,11 +35,11 @@ One process, one TCP port:
 | --- | --- | --- |
 | MCP `query` | `/mcp` | Natural-language entry over the plan registry. The caller sends a **simple, direct** question plus a clear outline of the inputs they have. The engine semantically matches that against loaded plans, selects one, and executes it. |
 | MCP `run_*` | `/mcp` | Direct execute of a known plan version. Arguments: `workflowId` + `inputs`. |
-| REST `query` | `POST /api/v1/plans/query` | Same as MCP `query`: natural-language match + execute. JSON body is `{ "query": "...", "data": { } }`. Success payload is the same result object as execute. |
-| REST execute | `POST /api/v1/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs. |
-| REST OpenAPI | `GET /api/v1/openapi/{planId}` | Generated OAS 3.1 for those execute paths (latest or a specific version). |
+| REST `query` | `POST /api/plans/query` | Same as MCP `query`: natural-language match + execute. JSON body is `{ "query": "...", "data": { } }`. Success payload is the same result object as execute. |
+| REST execute | `POST /api/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs. |
+| REST OpenAPI | `GET /api/openapi/{planId}` | Generated OAS 3.1 for those execute paths (latest or a specific version). |
 
-`query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_*` and `POST /api/v1/plans/{planId}/...` are for when the plan and version are already known.
+`query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_*` and `POST /api/plans/{planId}/...` are for when the plan and version are already known.
 
 You supply **loaders** (filesystem or your own) and an **Executor** that performs the actual domain HTTP calls. The engine loads plans, exposes tools and OpenAPI, and runs steps through libopenapi’s Arazzo engine.
 
@@ -50,7 +50,7 @@ go run ./cmd/engine -addr localhost:8080
 ```
 
 ```bash
-curl -s http://localhost:8080/api/v1/health
+curl -s http://localhost:8080/api/health
 # {"status":"ok"}
 ```
 

@@ -5,7 +5,7 @@
 package api
 
 // HealthResponse is the JSON body for the default health endpoint
-// (GET under Options.APIPrefix, typically /api/v1/health).
+// (GET under Options.APIPrefix, typically /api/health).
 type HealthResponse struct {
 	Status string `json:"status"`
 }
