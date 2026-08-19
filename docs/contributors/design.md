@@ -114,7 +114,7 @@ MCP already validates `Content-Type` / `Accept` and applies localhost DNS-rebind
 
 Implement `api.Controller.Register(*http.ServeMux)`. Routes are relative to `Options.APIPrefix`. Register via `Engine.AddController`. Prefer before serve.
 
-Built-in plan routes are registered inside `New` when loaders are set (`internal/api/v1/plans.go`). Do not duplicate those patterns.
+Built-in plan routes are registered inside `New` when loaders are set (`internal/api/v1/plans.go`). `GET /tools` is always registered (`internal/api/v1/tools.go`). Do not duplicate those patterns.
 
 ## Adding MCP features
 

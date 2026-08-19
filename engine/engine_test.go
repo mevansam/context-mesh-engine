@@ -65,6 +65,62 @@ func TestHandler_HealthJSON(t *testing.T) {
 	}
 }
 
+func TestHandler_ToolsListJSON(t *testing.T) {
+	ts := httptest.NewServer(newTestEngine(t).Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var body mcp.ListToolsResult
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Tools == nil {
+		t.Fatal("tools is null, want []")
+	}
+	names := map[string]bool{}
+	for _, tl := range body.Tools {
+		names[tl.Name] = true
+	}
+	if !names["ping"] {
+		t.Fatalf("tools = %v, want ping", names)
+	}
+}
+
+func TestHandler_ToolsListEmpty(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	var body mcp.ListToolsResult
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Tools) != 0 {
+		t.Fatalf("tools = %v, want empty", body.Tools)
+	}
+}
+
 func TestHandler_MCPInitializeAndPing(t *testing.T) {
 	ts := httptest.NewServer(newTestEngine(t).Handler())
 	t.Cleanup(ts.Close)

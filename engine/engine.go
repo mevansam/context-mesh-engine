@@ -103,10 +103,11 @@ type Engine struct {
 }
 
 // New constructs an Engine with a shared MCP server and the default
-// health controller registered under [Options.APIPrefix]. When
-// [Options.ArazzoLoaders] is set, plans are loaded and MCP run_* tools
-// plus REST plan routes are registered. Load or template errors fail
-// construction.
+// health and tools controllers registered under [Options.APIPrefix].
+// GET {APIPrefix}/tools returns the same JSON as MCP tools/list.
+// When [Options.ArazzoLoaders] is set, plans are loaded and MCP run_*
+// tools plus REST plan routes are registered. Load or template errors
+// fail construction.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
 	if err := validateAPIPrefix(opts.APIPrefix); err != nil {
@@ -121,6 +122,7 @@ func New(opts Options) (*Engine, error) {
 
 	router := apiv1.New()
 	router.Register(&apiv1.HealthController{})
+	router.Register(apiv1.NewToolsController(gw.Server()))
 
 	if len(opts.ArazzoLoaders) > 0 {
 		docCtx := arazzo.NewToolDocContext(

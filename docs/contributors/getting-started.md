@@ -65,17 +65,18 @@ Targeted tests:
 
 1. `go test ./...` passes.
 2. `GET {APIPrefix}/health` (default `/api/health`) still returns JSON `{"status":"ok"}`.
-3. An MCP client can still `Connect` to `/mcp` (`TestHandler_MCPInitializeAndPing`).
-4. You did not wrap the **root** handler in buffering middleware or set `WriteTimeout`.
-5. User-facing behavior changes are reflected in `docs/users/`; internals in `docs/contributors/`.
-6. New **public** types have a godoc comment and an update to [docs/users/usage.md](../users/usage.md) (Arazzo types: [docs/users/arazzo.md](../users/arazzo.md)).
+3. `GET {APIPrefix}/tools` still returns the MCP `tools/list` result.
+4. An MCP client can still `Connect` to `/mcp` (`TestHandler_MCPInitializeAndPing`).
+5. You did not wrap the **root** handler in buffering middleware or set `WriteTimeout`.
+6. User-facing behavior changes are reflected in `docs/users/`; internals in `docs/contributors/`.
+7. New **public** types have a godoc comment and an update to [docs/users/usage.md](../users/usage.md) (Arazzo types: [docs/users/arazzo.md](../users/arazzo.md)).
 
 ## Documentation rules
 
 - User-facing behavior → `docs/users/`
 - Internals, mux rules, package map → `docs/contributors/`
 - Keep root `README.md` short; link to `docs/README.md`
-- Package `README.md` files (`arazzo/`, `examples/`, `internal/plans/`) point at `docs/`; do not duplicate design there
+- Package `README.md` files (`arazzo/`, `examples/`, `internal/plans/`, `internal/api/v1/`) point at `docs/`; do not duplicate design there
 - Write for two readers: a human embedding the SDK, and a coding agent that must not import `internal/` or wrap `/mcp` in Gin
 
 ## Next

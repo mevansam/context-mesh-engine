@@ -38,6 +38,7 @@ One process, one TCP port:
 | REST `query` | `POST /api/plans/query` | Same as MCP `query`: natural-language match + execute. JSON body is `{ "query": "...", "data": { } }`. Success payload is the same result object as execute. |
 | REST execute | `POST /api/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs. |
 | REST OpenAPI | `GET /api/openapi/{planId}` | Generated OAS 3.1 for those execute paths (latest or a specific version). |
+| REST tools | `GET /api/tools` | Same JSON as MCP `tools/list` (`ttlMs`, `cacheScope`, `tools`). |
 
 `query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_*` and `POST /api/plans/{planId}/...` are for when the plan and version are already known.
 
@@ -52,6 +53,7 @@ go run ./cmd/engine -addr localhost:8080
 ```bash
 curl -s http://localhost:8080/api/health
 # {"status":"ok"}
+curl -s http://localhost:8080/api/tools
 ```
 
 Plans + a stub executor: `go run ./examples/arazzo-fs`. Live Petstore demo: [examples/README.md](examples/README.md#petstore-demo). MCP: `http://localhost:8080/mcp`.

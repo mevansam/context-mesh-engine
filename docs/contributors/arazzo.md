@@ -15,6 +15,7 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 | `internal/plans/openapi.go` | OAS 3.1; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | Stub `query` + one `run_*` tool per catalog entry |
 | `internal/api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; 400/404/501 |
+| `internal/api/v1/tools.go` | `GET /tools` (MCP `tools/list` result) |
 | `engine/engine.go` | `New` wires loaders → catalog → MCP + REST |
 | `testdata/arazzo/` | Fixtures |
 

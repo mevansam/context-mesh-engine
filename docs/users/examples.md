@@ -18,6 +18,7 @@ After any of these are listening:
 ```bash
 curl -s http://localhost:8080/api/health
 # {"status":"ok"}
+curl -s http://localhost:8080/api/tools
 ```
 
 MCP clients connect to `http://localhost:8080/mcp`. See [MCP client](usage.md#mcp-client). Stop with Ctrl+C.

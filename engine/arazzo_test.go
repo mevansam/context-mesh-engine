@@ -171,6 +171,27 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 		t.Fatalf("tools = %v", got)
 	}
 
+	rest, err := http.Get(ts.URL + "/api/tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rest.Body.Close()
+	if rest.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/tools status = %d", rest.StatusCode)
+	}
+	var restBody mcp.ListToolsResult
+	if err := json.NewDecoder(rest.Body).Decode(&restBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(restBody.Tools) != len(tools.Tools) {
+		t.Fatalf("REST tools = %d, MCP tools/list = %d", len(restBody.Tools), len(tools.Tools))
+	}
+	for i, tl := range tools.Tools {
+		if restBody.Tools[i].Name != tl.Name {
+			t.Fatalf("tools[%d]: REST %q MCP %q", i, restBody.Tools[i].Name, tl.Name)
+		}
+	}
+
 	q, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "query",
 		Arguments: map[string]any{"query": "hello"},

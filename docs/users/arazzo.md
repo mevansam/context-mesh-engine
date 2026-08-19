@@ -4,7 +4,7 @@ Load [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow documents, 
 
 Public package: `github.com/mevansam/context-mesh-engine/arazzo`.
 
-This is not enabled until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan or OpenAPI REST routes.
+This is not enabled until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan or OpenAPI REST routes. `GET {APIPrefix}/tools` is always registered; with loaders it includes `query` and each `run_*`.
 
 REST paths below use the default prefix `/api`. Set `Options.APIPrefix` (or `cmd/engine -api-prefix`) to change it. Generated OpenAPI `paths` omit that prefix either way.
 
@@ -16,6 +16,7 @@ When `ArazzoLoaders` is set, `New` loads every document from every loader, then:
 | --- | --- |
 | MCP `query` | `query` — semantically match a natural-language request to a plan and execute it (same contract as REST query) |
 | MCP `run_*` | one per catalog entry; default name `run_{{.SafePlanID}}_v{{.SafeVersion}}` |
+| REST `tools` | `GET /api/tools` — same JSON as MCP `tools/list` |
 | REST `query` | `POST /api/plans/query` |
 | REST execute (latest) | `POST /api/plans/{planId}/{workflowId}` |
 | REST execute (versioned) | `POST /api/plans/{planId}/{version}/{workflowId}` |
@@ -126,6 +127,7 @@ func (myExecutor) Execute(_ context.Context, req *arazzo.ExecutionRequest) (*ara
 
 Nil executor:
 
+- `GET /api/tools` still works (lists `query` and `run_*`)
 - `GET /api/openapi/...` still works
 - `POST /api/plans/...` execute → **501** `{"error":"executor not configured"}`
 - `POST /api/plans/query` → **501** `query is not implemented` (matching is not wired; independent of executor)

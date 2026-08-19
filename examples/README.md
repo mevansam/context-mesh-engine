@@ -56,6 +56,7 @@ Checks:
 ```bash
 curl -s http://localhost:8091/health
 curl -s http://localhost:8080/api/health
+curl -s http://localhost:8080/api/tools
 curl -s http://localhost:8080/api/openapi/petstore
 ```
 
@@ -181,6 +182,7 @@ Go client: [docs/users/usage.md](../docs/users/usage.md#mcp-client) (`mcp.Stream
 - One catalog (`x-planId` + `info.version`) → MCP `run_*` and REST `POST /plans/{planId}/{workflowId}`.
 - You supply loaders + an `Executor`. This demo’s executor is HTTP: OpenAPI operations on Petstore, AsyncAPI operations on the local adapter.
 - Generated `GET /api/openapi/petstore` describes the same execute routes (paths without the `/api` prefix).
+- `GET /api/tools` is the REST form of MCP `tools/list`.
 - `query` is registered but not implemented yet.
 
 Arazzo file: `examples/petstore/mcp-server/plans/petstore.arazzo.yaml`. AsyncAPI file: `examples/petstore/async-order-server/pet-asyncapi.yaml`.

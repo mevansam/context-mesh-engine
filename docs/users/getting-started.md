@@ -12,6 +12,7 @@ One process, one TCP port:
 | --- | --- |
 | `http://<addr>/mcp` | MCP Streamable HTTP. Clients POST JSON-RPC and optionally GET an SSE stream. Sessions use `Mcp-Session-Id`. |
 | `http://<addr>/api/health` | Default liveness JSON: `{"status":"ok"}`. |
+| `http://<addr>/api/tools` | MCP `tools/list` result (same `tools` array as Streamable HTTP). |
 | `http://<addr>/api/...` | Your `api.Controller` routes (and, if you set loaders, Arazzo plan routes). |
 
 The engine does **not** register a `ping` MCP tool by itself. `cmd/engine` and `examples/minimal` add `ping` as a sample.
@@ -46,6 +47,7 @@ Check REST:
 ```bash
 curl -s http://localhost:8080/api/health
 # {"status":"ok"}
+curl -s http://localhost:8080/api/tools
 ```
 
 The sample registers an MCP `ping` tool. Point a Streamable HTTP client at `http://localhost:8080/mcp` ([MCP client](usage.md#mcp-client)).

@@ -8,6 +8,7 @@ go run ./examples/arazzo-fs
 
 Loads sample Pet Store Arazzo plans. Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Serves:
 
+- `GET /api/tools` (MCP `tools/list` result)
 - `POST /api/plans/query` (501 until semantic matching is wired)
 - `POST /api/plans/petstore/{workflowId}` (latest = 1.1.0)
 - `POST /api/plans/petstore/v1.0.0/{workflowId}`

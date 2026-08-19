@@ -83,6 +83,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 | GET | `/mcp` | Standalone SSE (requires `Mcp-Session-Id` and `Accept: text/event-stream`) |
 | DELETE | `/mcp` | End the MCP session |
 | GET | `/api/health` | `{"status":"ok"}` (`api.HealthResponse`) |
+| GET | `/api/tools` | MCP `tools/list` result (`ttlMs`, `cacheScope`, `tools`). Optional `?cursor=` |
 | POST | `/api/plans/query` | Natural-language match + execute (same contract as MCP `query`; loaders required) |
 | POST | `/api/plans/{planId}/{workflowId}` | Execute **latest** plan version (loaders required) |
 | POST | `/api/plans/{planId}/{version}/{workflowId}` | Execute that version (`{version}` is `v` + `info.version`) |
@@ -92,7 +93,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 
 Advertise MCP at **`/mcp`** (no trailing slash). `/mcp/` is mounted so extra path segments still reach the same handler. Do not `http.StripPrefix("/mcp", ...)` yourself.
 
-Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md).
+Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md). `GET {APIPrefix}/tools` is always registered and lists every tool on the shared MCP server (including `query` / `run_*` when loaders are set, and any tools you add with `mcp.AddTool`).
 
 REST errors from this SDK use `{"error":"<message>"}` (`api.ErrorBody`) except `http.TimeoutHandler` on the REST prefix, which writes plain text `request timeout\n`.
 
