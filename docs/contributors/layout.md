@@ -73,7 +73,7 @@ context-mesh-engine/
 | `api/v1/tools.go` | `GET /tools` (MCP `tools/list` result) |
 | `api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; error mapping |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
-| `plans/runner.go` | New libopenapi Engine per `Run`; `ResultJSON` |
+| `plans/runner.go` | New libopenapi Engine per `Run`; workflow outputs |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
 | `plans/openapi.go` | OAS 3.1 JSON (paths **without** `APIPrefix`) |
 | `plans/mcp.go` | Stub `query` + `run_*` tools |

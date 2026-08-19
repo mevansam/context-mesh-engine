@@ -10,7 +10,7 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 | `arazzo/fileloader.go` | Recursive `.yaml/.yml/.json`; `BaseURL` **must** end with `/` |
 | `arazzo/tooldoc.go` | Recipes vs `ToolDocContext`; `SanitizeToolName` |
 | `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest |
-| `internal/plans/runner.go` | `NewEngine` per `Run`; `ResultJSON` |
+| `internal/plans/runner.go` | `NewEngine` per `Run`; returns workflow outputs |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const |
 | `internal/plans/openapi.go` | OAS 3.1; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | Stub `query` + one `run_*` tool per catalog entry |
@@ -51,13 +51,13 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 2. Workflow id must exist on that entry — else `ErrNotFound`
 3. Nil executor → `ErrNoExecutor` (`executor not configured`)
 4. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
-5. Map `WorkflowResult` → `ResultJSON` (durations as milliseconds)
+5. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.
 
 Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurrency-safe). Cache `*high.Arazzo` and `[]*ResolvedSource` on `Entry` only.
 
-HTTP (`plans.go`): `POST /plans/query` calls `Runner.Query` (stub → `ErrQueryNotImplemented` → 501). Execute: `ErrNoExecutor` → 501; `ErrNotFound` → 404; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. Successful result with `success: false` is still 200.
+HTTP (`plans.go`): `POST /plans/query` calls `Runner.Query` (stub → `ErrQueryNotImplemented` → 501). Execute: `ErrNoExecutor` → 501; `ErrNotFound` → 404; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. HTTP **200** body is the outputs object.
 
-MCP (`mcp.go`): `query` calls the same `Runner.Query`. Runner `error` on `query` or `run_*` becomes a tool error (`mcp.AddTool` wraps it). Nil error + `ResultJSON` → structured content.
+MCP (`mcp.go`): `query` calls the same `Runner.Query`. Runner `error` on `query` or `run_*` becomes a tool error (`mcp.AddTool` wraps it). Nil error + outputs map → structured content.
 
 POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not** `api.ReadJSON` (which rejects unknown fields).
 
@@ -79,7 +79,7 @@ Query name/title/description and `run_*` name/title/description are templates (`
 - `latest == true` → paths `/plans/{planId}/{workflowId}`
 - `latest == false` → `/plans/{planId}/{versionSegment}/{workflowId}`
 
-No `APIPrefix` on paths (matches `StripPrefix` on the REST mux). `info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version.
+No `APIPrefix` on paths (matches `StripPrefix` on the REST mux). `info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema. **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types).
 
 ## Templates
 

@@ -43,21 +43,10 @@ func OpenAPIJSON(e *Entry, latest bool) ([]byte, error) {
 				},
 				"responses": map[string]any{
 					"200": map[string]any{
-						"description": "workflow result",
+						"description": "workflow outputs",
 						"content": map[string]any{
 							"application/json": map[string]any{
-								"schema": map[string]any{
-									"type": "object",
-									"properties": map[string]any{
-										"workflowId": map[string]any{"type": "string"},
-										"success":    map[string]any{"type": "boolean"},
-										"inputs":     map[string]any{"type": "object"},
-										"outputs":    map[string]any{"type": "object"},
-										"steps":      map[string]any{"type": "array"},
-										"error":      map[string]any{"type": "string"},
-										"durationMs": map[string]any{"type": "integer"},
-									},
-								},
+								"schema": outputsToJSONSchema(wf.Outputs),
 							},
 						},
 					},

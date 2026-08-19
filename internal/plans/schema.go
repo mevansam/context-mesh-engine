@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	high "github.com/pb33f/libopenapi/datamodel/high/arazzo"
+	"github.com/pb33f/libopenapi/orderedmap"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -47,6 +48,21 @@ func nodeToJSON(n *yaml.Node) (any, error) {
 		return nil, err
 	}
 	return v, nil
+}
+
+// outputsToJSONSchema builds a JSON Schema object from Arazzo workflow
+// output names. Values in the spec are runtime expressions, not types.
+func outputsToJSONSchema(outputs *orderedmap.Map[string, string]) map[string]any {
+	schema := map[string]any{"type": "object"}
+	if orderedmap.Len(outputs) == 0 {
+		return schema
+	}
+	props := map[string]any{}
+	for pair := outputs.First(); pair != nil; pair = pair.Next() {
+		props[pair.Key()] = map[string]any{}
+	}
+	schema["properties"] = props
+	return schema
 }
 
 // InputSchema builds the MCP tool input schema for a plan.

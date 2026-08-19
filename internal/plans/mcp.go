@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -68,10 +69,11 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls ara
 
 		planID, version := e.PlanID, e.Version
 		mcp.AddTool(server, &mcp.Tool{
-			Name:        name,
-			Title:       toolTitle,
-			Description: toolDesc,
-			InputSchema: schema,
+			Name:         name,
+			Title:        toolTitle,
+			Description:  toolDesc,
+			InputSchema:  schema,
+			OutputSchema: &jsonschema.Schema{Type: "object"},
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, in runArgs) (*mcp.CallToolResult, any, error) {
 			res, err := runner.Run(ctx, planID, version, in.WorkflowID, in.Inputs)
 			if err != nil {

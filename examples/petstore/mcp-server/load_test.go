@@ -5,8 +5,11 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
@@ -23,6 +26,36 @@ func TestPetstorePlanLoads(t *testing.T) {
 	}
 	if e.APIPrefix() != engine.DefaultAPIPrefix {
 		t.Fatalf("prefix = %s", e.APIPrefix())
+	}
+
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+	resp, err := http.Get(ts.URL + "/api/openapi/petstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("openapi status = %d", resp.StatusCode)
+	}
+	var doc map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	post, _ := paths["/plans/petstore/retrievePet"].(map[string]any)
+	op, _ := post["post"].(map[string]any)
+	responses, _ := op["responses"].(map[string]any)
+	ok200, _ := responses["200"].(map[string]any)
+	content, _ := ok200["content"].(map[string]any)
+	appJSON, _ := content["application/json"].(map[string]any)
+	schema, _ := appJSON["schema"].(map[string]any)
+	props, _ := schema["properties"].(map[string]any)
+	if _, ok := props["petId"]; !ok {
+		t.Fatalf("retrievePet 200 schema missing petId: %#v", schema)
+	}
+	if _, ok := props["inputs"]; ok {
+		t.Fatalf("200 schema should be outputs, not trace: %#v", schema)
 	}
 }
 

@@ -95,8 +95,8 @@ func TestRunner_RunAndNoExecutor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Success {
-		t.Fatalf("success=false error=%s", res.Error)
+	if res == nil {
+		t.Fatal("expected outputs map")
 	}
 	if exec.n != 1 {
 		t.Fatalf("executor calls = %d", exec.n)
@@ -147,6 +147,9 @@ func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `/plans/petstore/pingHealth`) {
 		t.Fatalf("latest paths: %s", b)
+	}
+	if strings.Contains(string(b), `"durationMs"`) || strings.Contains(string(b), `"workflowId"`) {
+		t.Fatalf("200 schema should be workflow outputs, not the execution trace: %s", b)
 	}
 	if strings.Contains(string(b), `/plans/petstore/v1.1.0/`) {
 		t.Fatalf("latest should not include version segment: %s", b)

@@ -72,7 +72,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
 
 Versioned URL: `POST /api/plans/petstore/v1.0.1/retrievePet`.
 
-Pick a `petId` from `outputs.petId` (first match) or `outputs.pets`. If find-by-status is down on the host, `GET https://petstore3.swagger.io/api/v3/pet/1` still works; use `petId: 1` for purchase.
+Pick a `petId` from the response (first match). If find-by-status is down on the host, `GET https://petstore3.swagger.io/api/v3/pet/1` still works; use `petId: 1` for purchase.
 
 ### REST: purchase that pet (async order)
 
@@ -84,7 +84,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/purchasePet \
   -d '{"username":"user1","password":"abc123","petId":1,"orderCorrelationId":"demo-order-1"}'
 ```
 
-The engine: login → `POST http://localhost:8091/place-order` → poll `GET /confirm-order`. The adapter: `POST https://petstore3.swagger.io/api/v3/store/order` (then v2 on 5xx). Save `outputs.orderId`.
+The engine: login → `POST http://localhost:8091/place-order` → poll `GET /confirm-order`. The adapter: `POST https://petstore3.swagger.io/api/v3/store/order` (then v2 on 5xx). Save `orderId`.
 
 ### REST: check order status
 
@@ -94,7 +94,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/checkOrderStatus \
   -d '{"username":"user1","password":"abc123","orderId":1}'
 ```
 
-Replace `orderId` with the id from `purchasePet`. `outputs.status` is `placed`, `approved`, or `delivered`.
+Replace `orderId` with the id from `purchasePet`. `status` is `placed`, `approved`, or `delivered`.
 
 ### Change order status on the hosted Petstore
 

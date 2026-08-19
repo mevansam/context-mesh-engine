@@ -125,12 +125,12 @@ func TestArazzo_RESTExecuteLatestAndVersioned(t *testing.T) {
 	}
 
 	latest := post("/api/plans/petstore/pingHealth", `{"name":"a"}`)
-	if latest["success"] != true {
-		t.Fatalf("latest = %v", latest)
+	if _, ok := latest["success"]; ok {
+		t.Fatalf("REST body should be outputs only, got %v", latest)
 	}
 	ver := post("/api/plans/petstore/v1.0.0/pingHealth", `{"name":"b"}`)
-	if ver["success"] != true {
-		t.Fatalf("versioned = %v", ver)
+	if _, ok := ver["success"]; ok {
+		t.Fatalf("REST body should be outputs only, got %v", ver)
 	}
 	if exec.n != 2 {
 		t.Fatalf("executor calls = %d, want 2", exec.n)
@@ -239,8 +239,8 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 		t.Fatalf("run error: %s", toolErrorText(res))
 	}
 	sc, _ := res.StructuredContent.(map[string]any)
-	if sc["success"] != true {
-		t.Fatalf("structured = %#v", res.StructuredContent)
+	if _, ok := sc["success"]; ok {
+		t.Fatalf("structured content should be outputs only, got %#v", res.StructuredContent)
 	}
 
 	resp, err := http.Post(ts.URL+"/api/plans/petstore/v1.1.0/echoName", "application/json", bytes.NewReader([]byte(`{"name":"rest"}`)))

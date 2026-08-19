@@ -183,7 +183,7 @@ This version returns MCP tool error / HTTP **501** `{"error":"query is not imple
 
 Each branch uses `workflowId` **const** so overlapping workflow input schemas still validate uniquely.
 
-Successful `run_*` returns structured content matching the REST result object below (go-sdk `StructuredContent`). Runner errors become MCP tool errors.
+Successful `run_*` returns structured content that **is** the workflow outputs object (go-sdk `StructuredContent`). Same JSON as REST 200. Runner errors become MCP tool errors.
 
 ## REST execute
 
@@ -201,33 +201,19 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
 
 ### Result JSON (MCP structured content and REST 200)
 
+The body is the workflow **outputs** map from the Arazzo document (not the engine trace). A workflow with no `outputs` returns `{}`.
+
 ```json
 {
-  "workflowId": "pingHealth",
-  "success": true,
-  "inputs": { },
-  "outputs": { },
-  "steps": [
-    {
-      "stepId": "getHealth",
-      "success": true,
-      "statusCode": 200,
-      "outputs": { },
-      "error": "",
-      "durationMs": 1,
-      "retries": 0
-    }
-  ],
-  "error": "",
-  "durationMs": 1
+  "petId": 1
 }
 ```
 
-`success: false` is still HTTP **200** if the runner returned a result. HTTP errors:
+Generated OpenAPI `200` schemas use those output names as object properties. HTTP errors:
 
 | Status | When |
 | --- | --- |
-| 400 | Invalid JSON body, or runner error that is not not-found / no-executor |
+| 400 | Invalid JSON body, workflow failed, or runner error that is not not-found / no-executor |
 | 404 | Unknown `planId`, version, or `workflowId` |
 | 501 | `ArazzoExecutor` is nil |
 
@@ -242,7 +228,7 @@ Paths **inside** that document omit `Options.APIPrefix` (the REST mux is `StripP
 - HTTP: `GET /api/openapi/petstore`
 - Document path: `/plans/petstore/pingHealth` → real URL `POST /api/plans/petstore/pingHealth`
 
-Latest document: `/plans/{planId}/{workflowId}`. Versioned document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs`.
+Latest document: `/plans/{planId}/{workflowId}`. Versioned document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs`. **200** schema is an object with a property per Arazzo `outputs` name.
 
 404 if the plan or version is missing. OpenAPI does **not** require an executor.
 
@@ -294,9 +280,9 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Point `FileLoader` at the plans dir only; OpenAPI sources stay beside it (`../sources/...`).
 - Implement `Executor`; nil is 501 on execute, OpenAPI still works.
 - MCP args for `run_*` wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
-- MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute result object.
+- MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
-- Generated OpenAPI `paths` keys omit `Options.APIPrefix`. They describe execute routes, not `/plans/query`.
+- Generated OpenAPI `paths` keys omit `Options.APIPrefix`. They describe execute routes, not `/plans/query`. **200** is the workflow outputs object.
 - `PublicBaseURL` must be set if you want absolute URLs in MCP descriptions.
 - Treat `query` / `POST /plans/query` as not implemented until matching is wired.
 
