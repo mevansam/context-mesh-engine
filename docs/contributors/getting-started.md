@@ -58,6 +58,8 @@ Targeted tests:
 | `go test ./engine -run TestArazzo_` | plan MCP tools, REST execute, OpenAPI, 501, shared runner |
 | `go test ./internal/plans` | catalog skip/duplicate/latest, runner, schema, OAS JSON |
 | `go test ./arazzo` | FileLoader, template render |
+| `go test ./examples/petstore/mcp-server` | petstore Arazzo plan loads |
+| `go test ./examples/petstore/async-order-server` | async adapter place/confirm |
 
 ## Minimum checks before a PR
 

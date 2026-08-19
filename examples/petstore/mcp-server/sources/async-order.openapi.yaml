@@ -1,0 +1,50 @@
+# HTTP binding of OAI examples/1.1.0/pet-asyncapi.yaml for the Arazzo engine.
+# Channels place-order / confirm-order are served by async-order-server.
+openapi: 3.0.3
+info:
+  title: Simple Pet Purchase API (HTTP adapter)
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8091
+paths:
+  /place-order:
+    post:
+      operationId: placeOrder
+      parameters:
+        - name: orderCorrelationId
+          in: header
+          schema:
+            type: string
+        - name: orderRequestId
+          in: header
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [petId]
+              properties:
+                petId:
+                  type: integer
+      responses:
+        "200":
+          description: accepted
+  /confirm-order:
+    get:
+      operationId: confirmOrder
+      parameters:
+        - name: orderCorrelationId
+          in: header
+          schema:
+            type: string
+        - name: orderRequestId
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: confirmation
+        "404":
+          description: not ready

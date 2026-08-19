@@ -14,6 +14,7 @@ context-mesh-engine/
     minimal/                     ListenAndServe
     embed-handler/               Your http.Server + Handler()
     arazzo-fs/                   FileLoader + stub Executor
+    petstore/                    Petstore e2e: mcp-server + async-order-server
   engine/                        Public facade: New, Handler, ListenAndServe
   api/                           Public facade: Controller, JSON helpers, HealthResponse
   arazzo/                        Public Loader, FileLoader, Executor aliases, ToolDoc

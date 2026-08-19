@@ -9,6 +9,7 @@ Do not run two examples (or `cmd/engine`) on `localhost:8080` at the same time.
 | [minimal](#minimal) | `go run ./examples/minimal` | Engine-owned listener via `ListenAndServe` |
 | [embed-handler](#embed-handler) | `go run ./examples/embed-handler` | Your `http.Server` using `Handler()` |
 | [arazzo-fs](#arazzo-fs) | `go run ./examples/arazzo-fs` | `FileLoader` + stub `Executor`, MCP `run_*` and REST plans |
+| [petstore](#petstore) | `go run ./examples/petstore/mcp-server` | Arazzo + HTTP executor over [petstore3](https://petstore3.swagger.io/) and the async order adapter |
 
 `cmd/engine` is a fourth runnable (`go run ./cmd/engine -addr localhost:8080`). It is the sample **product** binary (flags + SIGINT shutdown), not an SDK usage example. Flags: [getting started](getting-started.md#run-the-sample-binary).
 
@@ -76,3 +77,27 @@ curl -s -X POST http://localhost:8080/api/v1/plans/petstore/v1.0.0/pingHealth \
 Workflows in the fixtures: `pingHealth` (both versions), `echoName` (1.1.0 only). OpenAPI sources live in `testdata/arazzo/sources/openapi.yaml` (not passed to `FileLoader`).
 
 Options and schemas: [arazzo.md](arazzo.md).
+
+---
+
+## petstore
+
+**Source:** [`examples/petstore/`](../../examples/petstore/)
+
+Two processes, from the repository root:
+
+```bash
+go run ./examples/petstore/async-order-server
+go run ./examples/petstore/mcp-server
+```
+
+Arazzo plan (`x-planId: petstore`, version `1.0.1`) based on the [1.1 spec example](https://spec.openapis.org/arazzo/latest.html), split into `retrievePet`, `purchasePet`, and `checkOrderStatus`. Hosted API is [petstore3.swagger.io](https://petstore3.swagger.io/). `purchasePet` sends/receives through the local AsyncAPI HTTP adapter, which calls `POST /store/order`.
+
+Curl, order-status, and MCP agent walkthrough: [examples/README.md](../../examples/README.md#petstore-demo).
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/plans/petstore/retrievePet \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"user1","password":"abc123","status":"available"}'
+```
+

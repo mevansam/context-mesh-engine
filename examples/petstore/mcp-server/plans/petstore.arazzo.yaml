@@ -1,0 +1,193 @@
+# Arazzo document based on the 1.1 Specification Object Example
+# https://spec.openapis.org/arazzo/latest.html
+#
+# Engine adaptations (libopenapi Arazzo 1.0.x):
+# - arazzo: 1.0.1 (validator accepts 1.0.x, not 1.1.0)
+# - info.x-planId (required by context-mesh-engine)
+# - three workflows instead of one mixed retrieve+purchase workflow
+# - operationId is the OpenAPI id (loginUser), not $sourceDescriptions...loginUser
+# - AsyncAPI send/receive are bound as OpenAPI HTTP on asyncOrderApiDescription
+#   (see sources/async-order.openapi.yaml). Official AsyncAPI 3 doc:
+#   async-order-server/pet-asyncapi.yaml
+# - confirm outputs use $response.body (Arazzo 1.0); 1.1 uses $message.payload
+arazzo: 1.0.1
+info:
+  title: A pet purchasing workflow
+  summary: Search, select, purchase, and check pet store orders
+  description: |
+    Workflows over the hosted Petstore (https://petstore3.swagger.io/) plus an
+    AsyncAPI-shaped order adapter that places orders on POST /store/order.
+  version: 1.0.1
+  x-planId: petstore
+sourceDescriptions:
+  - name: petStoreDescription
+    url: ../sources/petstore.openapi.yaml
+    type: openapi
+  - name: asyncOrderApiDescription
+    url: ../sources/async-order.openapi.yaml
+    type: openapi
+workflows:
+  - workflowId: retrievePet
+    summary: Login and find a pet by status
+    description: Logs the user in, then lists pets with the given status.
+    inputs:
+      type: object
+      required: [username, password, status]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        status:
+          type: string
+          enum: [available, pending, sold]
+    steps:
+      - stepId: loginStep
+        description: User login
+        operationId: loginUser
+        parameters:
+          - name: username
+            in: query
+            value: $inputs.username
+          - name: password
+            in: query
+            value: $inputs.password
+        successCriteria:
+          - condition: $statusCode == 200
+        outputs:
+          sessionToken: $response.body
+      - stepId: getPetStep
+        description: Find pets by status
+        operationPath: "{$sourceDescriptions.petStoreDescription.url}#/paths/~1pet~1findByStatus/get"
+        parameters:
+          - name: status
+            in: query
+            value: $inputs.status
+          - name: Authorization
+            in: header
+            value: $steps.loginStep.outputs.sessionToken
+        successCriteria:
+          - condition: $statusCode == 200
+        onSuccess:
+          - name: noPetsAvailable
+            type: end
+            criteria:
+              - condition: $response.body#/0 == null
+        outputs:
+          petId: $response.body#/0/id
+    outputs:
+      petId: $steps.getPetStep.outputs.petId
+
+  - workflowId: purchasePet
+    summary: Login and purchase a given pet
+    description: |
+      Logs the user in, then places an async order for petId. The adapter
+      implements AsyncAPI place-order / confirm-order and calls Petstore
+      POST /store/order.
+    inputs:
+      type: object
+      required: [username, password, petId, orderCorrelationId]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        petId:
+          type: integer
+        orderCorrelationId:
+          type: string
+    steps:
+      - stepId: loginStep
+        description: User login
+        operationId: loginUser
+        parameters:
+          - name: username
+            in: query
+            value: $inputs.username
+          - name: password
+            in: query
+            value: $inputs.password
+        successCriteria:
+          - condition: $statusCode == 200
+        outputs:
+          sessionToken: $response.body
+      - stepId: purchasePetStep
+        description: Send place-order (AsyncAPI placeOrder)
+        operationPath: $sourceDescriptions.asyncOrderApiDescription.placeOrder
+        parameters:
+          - name: orderCorrelationId
+            in: header
+            value: $inputs.orderCorrelationId
+          - name: Authorization
+            in: header
+            value: $steps.loginStep.outputs.sessionToken
+        requestBody:
+          contentType: application/json
+          payload:
+            petId: $inputs.petId
+        successCriteria:
+          - condition: $statusCode == 200
+      - stepId: confirmPetPurchaseStep
+        description: Receive confirm-order (AsyncAPI confirmOrder)
+        operationPath: $sourceDescriptions.asyncOrderApiDescription.confirmOrder
+        parameters:
+          - name: orderCorrelationId
+            in: header
+            value: $inputs.orderCorrelationId
+        successCriteria:
+          - condition: $statusCode == 200
+        outputs:
+          orderId: $response.body#/payload/orderId
+    outputs:
+      orderId: $steps.confirmPetPurchaseStep.outputs.orderId
+
+  - workflowId: checkOrderStatus
+    summary: Login and check an order
+    description: Logs the user in, then GET /store/order/{orderId} on the hosted Petstore.
+    inputs:
+      type: object
+      required: [username, password, orderId]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        orderId:
+          type: integer
+    steps:
+      - stepId: loginStep
+        description: User login
+        operationId: loginUser
+        parameters:
+          - name: username
+            in: query
+            value: $inputs.username
+          - name: password
+            in: query
+            value: $inputs.password
+        successCriteria:
+          - condition: $statusCode == 200
+        outputs:
+          sessionToken: $response.body
+      - stepId: getOrderStep
+        description: Fetch order by id
+        operationId: getOrderById
+        parameters:
+          - name: orderId
+            in: path
+            value: $inputs.orderId
+          - name: Authorization
+            in: header
+            value: $steps.loginStep.outputs.sessionToken
+        successCriteria:
+          - condition: $statusCode == 200
+        outputs:
+          orderId: $response.body#/id
+          petId: $response.body#/petId
+          status: $response.body#/status
+          complete: $response.body#/complete
+    outputs:
+      orderId: $steps.getOrderStep.outputs.orderId
+      petId: $steps.getOrderStep.outputs.petId
+      status: $steps.getOrderStep.outputs.status
+      complete: $steps.getOrderStep.outputs.complete

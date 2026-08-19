@@ -96,7 +96,7 @@ e, err := engine.New(engine.Options{
 
 `PublicBaseURL` is the origin written into MCP tool descriptions (REST POST and OpenAPI GET URLs). It is not `Addr`. Empty → path-only URLs (`{APIPrefix}/plans/...`).
 
-Runnable sample: [examples/arazzo-fs](examples.md#arazzo-fs).
+Runnable sample with a stub executor: [examples/arazzo-fs](examples.md#arazzo-fs). Live Petstore (MCP + async orders): [examples/petstore](examples.md#petstore).
 
 ## Executor
 
@@ -131,7 +131,7 @@ Nil executor:
 - `POST /api/v1/plans/query` → **501** `query is not implemented` (matching is not wired; independent of executor)
 - MCP `run_*` → tool error (`IsError: true`), not a JSON-RPC protocol error
 
-This module does not ship an HTTP client executor. `examples/arazzo-fs` uses a stub that always returns 200.
+This module does not ship an HTTP client executor. `examples/arazzo-fs` uses a stub that always returns 200. `examples/petstore/mcp-server` implements a real HTTP client against [petstore3.swagger.io](https://petstore3.swagger.io/) and the local async order adapter.
 
 ## MCP and REST: `query`
 
@@ -284,7 +284,7 @@ Templates use `missingkey=zero`. Invalid template syntax fails `engine.New`.
 go run ./cmd/engine -addr localhost:8080 -specs testdata/arazzo/plans
 ```
 
-Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary does not set one. Use [examples/arazzo-fs](examples.md#arazzo-fs).
+Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary does not set one. Use [examples/arazzo-fs](examples.md#arazzo-fs) for a stub, or [examples/petstore](examples.md#petstore) for live HTTP against petstore3 plus the async order adapter.
 
 ## Coding-agent checklist (Arazzo)
 

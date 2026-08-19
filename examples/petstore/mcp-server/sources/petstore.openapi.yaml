@@ -1,0 +1,72 @@
+# Operations used by the petstore Arazzo plan. Runtime default is
+# https://petstore3.swagger.io/api/v3; the executor may fall back to
+# https://petstore.swagger.io/v2 when the v3 host returns 5xx.
+openapi: 3.0.3
+info:
+  title: Swagger Petstore
+  version: "1.0.27"
+servers:
+  - url: https://petstore3.swagger.io/api/v3
+paths:
+  /user/login:
+    get:
+      operationId: loginUser
+      parameters:
+        - name: username
+          in: query
+          schema:
+            type: string
+        - name: password
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: logged in
+  /pet/findByStatus:
+    get:
+      operationId: findPetsByStatus
+      parameters:
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: pets
+  /pet/{petId}:
+    get:
+      operationId: getPetById
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: pet
+  /store/order:
+    post:
+      operationId: placeOrder
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: order
+  /store/order/{orderId}:
+    get:
+      operationId: getOrderById
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: order
