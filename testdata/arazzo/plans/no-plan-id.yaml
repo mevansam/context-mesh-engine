@@ -1,0 +1,15 @@
+arazzo: 1.0.1
+info:
+  title: Missing plan id
+  version: 0.0.1
+sourceDescriptions:
+  - name: petstoreApi
+    url: ../sources/openapi.yaml
+    type: openapi
+workflows:
+  - workflowId: pingHealth
+    steps:
+      - stepId: getHealth
+        operationId: getHealth
+        successCriteria:
+          - condition: $statusCode == 200
