@@ -88,7 +88,7 @@ context-mesh-engine/
 
 ## What not to add here
 
-- A copy of `github.com/modelcontextprotocol/go-sdk` or `github.com/pb33f/libopenapi`
+- Vendored copies of go-sdk or libopenapi (they are module dependencies)
 - Gin/chi as the **root** mux
 - Legacy `mcp.NewSSEHandler` (2024-11-05) unless a later phase explicitly needs old clients
 - New public types in `engine`/`api`/`arazzo` that belong in `internal/`

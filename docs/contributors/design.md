@@ -9,7 +9,7 @@ Share one `http.Server` between:
 1. MCP Streamable HTTP (SSE + POST) at `/mcp`
 2. JSON REST at `/api/v1/`
 
-without forking [go-sdk](https://github.com/modelcontextprotocol/go-sdk).
+using [go-sdk](https://github.com/modelcontextprotocol/go-sdk) as the MCP library.
 
 ## Why we do not extend the go-sdk listener
 

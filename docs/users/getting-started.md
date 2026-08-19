@@ -1,6 +1,6 @@
 # Getting started (SDK users)
 
-This path is for **application authors**. You import `github.com/mevansam/context-mesh-engine/...`. You do not need to fork go-sdk or this repo.
+This path is for **application authors**. You import `github.com/mevansam/context-mesh-engine/...`.
 
 If you intend to change mux wiring, timeouts, or package layout in **this** repository, switch to the [contributor path](../contributors/getting-started.md).
 

@@ -1,16 +1,45 @@
 # context-mesh-engine
 
-Go SDK that hosts an [MCP](https://modelcontextprotocol.io) Streamable HTTP server and a JSON REST API on **one HTTP listener**.
+Go SDK for an **engine** that turns governed [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow plans into two equivalent surfaces:
 
-- MCP clients: `http://<addr>/mcp` (POST JSON-RPC, GET SSE, DELETE session).
-- REST clients: `http://<addr>/api/v1/...` (JSON). Default `GET /api/v1/health`.
-- Optional [Arazzo](https://spec.openapis.org/arazzo/latest.html) plans: MCP `run_*` tools and `POST /api/v1/plans/...`.
+- **MCP tools** for agents (`/mcp`)
+- **REST + OpenAPI** for ordinary HTTP clients (`/api/v1`)
 
-This module **embeds** the official [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk). It does not fork that SDK.
+Both surfaces execute the **same** plan: a versioned, validated orchestration across the domain APIs of a [data mesh](https://martinfowler.com/articles/data-mesh-principles.html)—not an ad-hoc chain of tool calls invented at inference time.
+
+It depends on the [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) for Streamable HTTP and on [libopenapi](https://github.com/pb33f/libopenapi) for Arazzo parse, validate, source resolution, and workflow execution.
+
+## Why plans instead of letting the model call each API
+
+A user query over a data mesh often cannot be answered from one backend. It needs a sequence of calls across independently owned domain APIs (orders, inventory, identity, billing, and so on), each with its own OpenAPI contract.
+
+If you expose those operations as individual MCP tools (or leave the model to pick REST calls), the LLM must **invent** the orchestration: which APIs to hit, in what order, how to map fields, and when the answer is complete. That reasoning is statistical. Two runs of the same question can take different paths, skip a required step, or join data incorrectly. The model is doing workflow design at inference time.
+
+Arazzo plans move that design **out of the model**. Authors publish a versioned document (`x-planId` + `info.version`) that names the steps, operations, inputs, and success criteria. The engine runs that document the same way every time and returns a structured trace. The LLM still interprets the user’s question and chooses a plan plus inputs; it does not decide how domain APIs are chained.
+
+| Without a plan | With an engine-executed plan |
+| --- | --- |
+| Path through the mesh is inferred per request | Path is the published workflow |
+| Order, mapping, and “done” can change between runs | Same steps, criteria, and retries on every run |
+| Failures are whatever the model tries next | The runner applies the plan’s success and failure rules |
+| Agents and REST clients each re-implement composition | One catalog and one runner: MCP `run_*` and `POST /api/v1/plans/...` |
+| Review means reading prompts and traces after the fact | Review means accepting a plan version before it can run |
+
+The unit of work is a **pre-built, validated, governed plan**, not unbounded tool-use against every domain operation.
+
+## What you run
+
+One process, one TCP port:
+
+| Surface | Where | Role |
+| --- | --- | --- |
+| MCP Streamable HTTP | `/mcp` | One tool per plan version (plus a stub `query`). Arguments: `workflowId` + `inputs`. |
+| REST execute | `POST /api/v1/plans/{planId}/...` | Same workflows; JSON body is the workflow inputs. |
+| REST OpenAPI | `GET /api/v1/openapi/{planId}` | Generated OAS 3.1 for those execute paths (latest or a specific version). |
+
+You supply **loaders** (filesystem or your own) and an **Executor** that performs the actual domain HTTP calls. The engine loads plans, exposes tools and OpenAPI, and runs steps through libopenapi’s Arazzo engine.
 
 ## Quick start
-
-From a clone of this repository (sibling `go-sdk` and `libopenapi` checkouts; see [contributor getting started](docs/contributors/getting-started.md) if `go run` fails):
 
 ```bash
 go run ./cmd/engine -addr localhost:8080
@@ -21,16 +50,16 @@ curl -s http://localhost:8080/api/v1/health
 # {"status":"ok"}
 ```
 
-MCP endpoint: `http://localhost:8080/mcp`.
+Plans + a stub executor: `go run ./examples/arazzo-fs` (from the repository root). MCP: `http://localhost:8080/mcp`.
 
 ## Documentation
 
-Start at **[docs/README.md](docs/README.md)**. Use only the path that matches what you are doing:
+**[docs/README.md](docs/README.md)** — pick one path:
 
 | Path | Audience |
 | --- | --- |
-| [Use the SDK](docs/users/getting-started.md) | Application authors embedding `engine.Engine` |
-| [Contribute to the SDK](docs/contributors/getting-started.md) | People changing this repository |
+| [Use the SDK](docs/users/getting-started.md) | Embed `engine.Engine`; MCP, REST, Arazzo options |
+| [Contribute](docs/contributors/getting-started.md) | Change this repository |
 
 ## License
 

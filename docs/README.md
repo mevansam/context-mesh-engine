@@ -23,7 +23,7 @@ docs/
 
 **Goal:** embed `engine.Engine` (or run `cmd/engine`) so MCP and REST share one TCP port.
 
-Do not import `internal/`. Do not fork [go-sdk](https://github.com/modelcontextprotocol/go-sdk).
+Do not import `internal/`.
 
 1. [Getting started](users/getting-started.md) — requirements, sample binary, first library snippet.
 2. [SDK usage](users/usage.md) — public types, `Options` defaults, adding tools/controllers, `ListenAndServe` vs `Handler()`, MCP client headers.
