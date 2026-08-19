@@ -178,6 +178,28 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 	if !q.IsError {
 		t.Fatal("query should be unimplemented")
 	}
+	if got := toolErrorText(q); got != "query is not implemented" {
+		t.Fatalf("MCP query error = %q", got)
+	}
+
+	qresp, err := http.Post(ts.URL+"/api/v1/plans/query", "application/json", strings.NewReader(`{"query":"hello","data":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer qresp.Body.Close()
+	if qresp.StatusCode != http.StatusNotImplemented {
+		b, _ := io.ReadAll(qresp.Body)
+		t.Fatalf("REST query status = %d, want 501 body = %s", qresp.StatusCode, b)
+	}
+	var qerr struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(qresp.Body).Decode(&qerr); err != nil {
+		t.Fatal(err)
+	}
+	if qerr.Error != "query is not implemented" {
+		t.Fatalf("REST query error = %q", qerr.Error)
+	}
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "run_petstore_v1.1.0",

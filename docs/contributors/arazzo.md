@@ -13,8 +13,8 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 | `internal/plans/runner.go` | `NewEngine` per `Run`; `ResultJSON` |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const |
 | `internal/plans/openapi.go` | OAS 3.1; paths without `/api/v1` |
-| `internal/plans/mcp.go` | Stub `query` + one tool per catalog entry |
-| `internal/api/v1/plans.go` | HTTP mapping, 400/404/501 |
+| `internal/plans/mcp.go` | Stub `query` + one `run_*` tool per catalog entry |
+| `internal/api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; 400/404/501 |
 | `engine/engine.go` | `New` wires loaders → catalog → MCP + REST |
 | `testdata/arazzo/` | Fixtures |
 
@@ -54,9 +54,9 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 
 Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurrency-safe). Cache `*high.Arazzo` and `[]*ResolvedSource` on `Entry` only.
 
-HTTP (`plans.go`): `ErrNoExecutor` → 501; `ErrNotFound` → 404; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. Successful result with `success: false` is still 200.
+HTTP (`plans.go`): `POST /plans/query` calls `Runner.Query` (stub → `ErrQueryNotImplemented` → 501). Execute: `ErrNoExecutor` → 501; `ErrNotFound` → 404; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. Successful result with `success: false` is still 200.
 
-MCP (`mcp.go`): runner `error` becomes a tool error (`mcp.AddTool` wraps it). Nil error + `ResultJSON` → structured content.
+MCP (`mcp.go`): `query` calls the same `Runner.Query`. Runner `error` on `query` or `run_*` becomes a tool error (`mcp.AddTool` wraps it). Nil error + `ResultJSON` → structured content.
 
 POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not** `api.ReadJSON` (which rejects unknown fields).
 
@@ -64,7 +64,7 @@ POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not
 
 `RegisterMCP`:
 
-1. Merge templates; add stub `query` (`queryArgs`: `query`, optional `data`)
+1. Merge templates; add stub `query` (`queryArgs`: `query`, optional `data`) — same contract as `POST /plans/query`
 2. For each catalog entry: `RenderToolDoc`, reject duplicate **names**, `InputSchema`, `mcp.AddTool` with captured `planID`/`version`
 
 `InputSchema` is top-level `type: object` + `oneOf` of `{workflowId: const, inputs: workflow schema}`. Do not put overlapping workflow input schemas in a single `properties.inputs.oneOf` — JSON Schema `oneOf` fails when more than one branch matches.
@@ -104,7 +104,7 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | --- | --- |
 | `arazzo/tooldoc_test.go` | FileLoader skip `ignore.txt`; BaseURL trailing `/`; default tool name/URLs; invalid template |
 | `internal/plans/catalog_test.go` | skip `no-plan-id`; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys |
-| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; MCP `query` error; `run_*` + REST share executor |
+| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; MCP `query` + `POST /plans/query`; `run_*` + REST share executor |
 
 Fixtures: `testdata/arazzo/plans/petstore-v1.0.0.yaml`, `petstore-v1.1.0.yaml` (`echoName` only on 1.1.0), `no-plan-id.yaml`, `ignore.txt`; `testdata/arazzo/sources/openapi.yaml` (`operationId: getHealth`).
 

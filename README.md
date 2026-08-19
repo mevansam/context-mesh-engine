@@ -33,9 +33,13 @@ One process, one TCP port:
 
 | Surface | Where | Role |
 | --- | --- | --- |
-| MCP Streamable HTTP | `/mcp` | One tool per plan version (plus a stub `query`). Arguments: `workflowId` + `inputs`. |
-| REST execute | `POST /api/v1/plans/{planId}/...` | Same workflows; JSON body is the workflow inputs. |
+| MCP `query` | `/mcp` | Natural-language entry over the plan registry. The caller sends a **simple, direct** question plus a clear outline of the inputs they have. The engine semantically matches that against loaded plans, selects one, and executes it. |
+| MCP `run_*` | `/mcp` | Direct execute of a known plan version. Arguments: `workflowId` + `inputs`. |
+| REST `query` | `POST /api/v1/plans/query` | Same as MCP `query`: natural-language match + execute. JSON body is `{ "query": "...", "data": { } }`. Success payload is the same result object as execute. |
+| REST execute | `POST /api/v1/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs. |
 | REST OpenAPI | `GET /api/v1/openapi/{planId}` | Generated OAS 3.1 for those execute paths (latest or a specific version). |
+
+`query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_*` and `POST /api/v1/plans/{planId}/...` are for when the plan and version are already known.
 
 You supply **loaders** (filesystem or your own) and an **Executor** that performs the actual domain HTTP calls. The engine loads plans, exposes tools and OpenAPI, and runs steps through libopenapi’s Arazzo engine.
 

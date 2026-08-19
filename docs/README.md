@@ -27,7 +27,7 @@ Do not import `internal/`.
 
 1. [Getting started](users/getting-started.md) — requirements, sample binary, first library snippet.
 2. [SDK usage](users/usage.md) — public types, `Options` defaults, adding tools/controllers, `ListenAndServe` vs `Handler()`, MCP client headers.
-3. [Arazzo plans](users/arazzo.md) — load specs, `Executor`, MCP `run_*` / stub `query`, REST execute and OpenAPI.
+3. [Arazzo plans](users/arazzo.md) — load specs, `Executor`, MCP `query`/`run_*`, REST query/execute and OpenAPI.
 4. [Examples](users/examples.md) — `go run ./examples/...` and what each program demonstrates.
 
 ---

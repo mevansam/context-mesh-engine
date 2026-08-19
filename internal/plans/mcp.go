@@ -31,11 +31,12 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls ara
 		Name:        tmpls.QueryName,
 		Title:       tmpls.QueryTitle,
 		Description: tmpls.QueryDescription,
-	}, func(_ context.Context, _ *mcp.CallToolRequest, _ queryArgs) (*mcp.CallToolResult, any, error) {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "query is not implemented"}},
-		}, nil, nil
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in queryArgs) (*mcp.CallToolResult, any, error) {
+		res, err := runner.Query(ctx, in.Query, in.Data)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, res, nil
 	})
 
 	for _, e := range catalog.Entries() {

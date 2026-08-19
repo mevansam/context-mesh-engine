@@ -12,8 +12,9 @@ When `ArazzoLoaders` is set, `New` loads every document from every loader, then:
 
 | Surface | Name / path |
 | --- | --- |
-| MCP stub | `query` (tool error: `"query is not implemented"`) |
-| MCP tool | one per catalog entry; default name `run_{{.SafePlanID}}_v{{.SafeVersion}}` |
+| MCP `query` | `query` — semantically match a natural-language request to a plan and execute it (same contract as REST query) |
+| MCP `run_*` | one per catalog entry; default name `run_{{.SafePlanID}}_v{{.SafeVersion}}` |
+| REST `query` | `POST /api/v1/plans/query` |
 | REST execute (latest) | `POST /api/v1/plans/{planId}/{workflowId}` |
 | REST execute (versioned) | `POST /api/v1/plans/{planId}/{version}/{workflowId}` |
 | OpenAPI (latest) | `GET /api/v1/openapi/{planId}` |
@@ -124,20 +125,30 @@ func (myExecutor) Execute(_ context.Context, req *arazzo.ExecutionRequest) (*ara
 Nil executor:
 
 - `GET /api/v1/openapi/...` still works
-- `POST /api/v1/plans/...` → **501** `{"error":"executor not configured"}`
+- `POST /api/v1/plans/...` execute → **501** `{"error":"executor not configured"}`
+- `POST /api/v1/plans/query` → **501** `query is not implemented` (matching is not wired; independent of executor)
 - MCP `run_*` → tool error (`IsError: true`), not a JSON-RPC protocol error
 
 This module does not ship an HTTP client executor. `examples/arazzo-fs` uses a stub that always returns 200.
 
-## MCP: `query`
+## MCP and REST: `query`
 
-Default name `query`. Arguments (inferred schema):
+Same job on both surfaces: the caller sends a **simple, direct** natural-language question plus a clear outline of the inputs they have. The engine semantically matches that against the plan registry, selects a plan, and executes it. The success payload is the same result object as direct execute.
+
+| Surface | How |
+| --- | --- |
+| MCP | tool `query` |
+| REST | `POST /api/v1/plans/query` |
+
+Body / arguments:
 
 ```json
 { "query": "natural language", "data": { } }
 ```
 
-Handler always returns a tool error: `query is not implemented`. Override display strings with `ToolDoc.QueryName`, `QueryTitle`, `QueryDescription` (these three are **literals**, not templates).
+`data` is the input outline (optional object). Override MCP display strings with `ToolDoc.QueryName`, `QueryTitle`, `QueryDescription` (literals, not templates).
+
+This version returns MCP tool error / HTTP **501** `{"error":"query is not implemented"}` until matching is wired. Direct `run_*` and `POST /api/v1/plans/{planId}/...` are implemented.
 
 ## MCP: `run_*` arguments
 
@@ -277,11 +288,12 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Set `ArazzoLoaders`; otherwise plan routes and `run_*` tools do not exist.
 - Point `FileLoader` at the plans dir only; OpenAPI sources stay beside it (`../sources/...`).
 - Implement `Executor`; nil is 501 on execute, OpenAPI still works.
-- MCP args wrap `{workflowId, inputs}`; REST POST body **is** `inputs`.
+- MCP args for `run_*` wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
+- MCP `query` and `POST /api/v1/plans/query` share `{query, data}` and the execute result object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
-- Generated OpenAPI `paths` keys omit the `/api/v1` prefix.
+- Generated OpenAPI `paths` keys omit the `/api/v1` prefix. They describe execute routes, not `/plans/query`.
 - `PublicBaseURL` must be set if you want absolute URLs in MCP descriptions.
-- Do not treat `query` as implemented.
+- Treat `query` / `POST /plans/query` as not implemented until matching is wired.
 
 ## Next
 

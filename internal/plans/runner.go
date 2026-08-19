@@ -17,6 +17,9 @@ var (
 	ErrNotFound = errors.New("plan not found")
 	// ErrNoExecutor is returned when Run is called without an Executor.
 	ErrNoExecutor = errors.New("executor not configured")
+	// ErrQueryNotImplemented is returned by MCP query and POST /plans/query
+	// until semantic plan matching is wired.
+	ErrQueryNotImplemented = errors.New("query is not implemented")
 )
 
 // ResultJSON is the shared MCP/REST execution payload.
@@ -82,6 +85,12 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		return nil, err
 	}
 	return mapResult(res), nil
+}
+
+// Query is the shared MCP/REST stub for natural-language plan matching.
+// Both ingresses must call this rather than duplicating the 501.
+func (r *Runner) Query(_ context.Context, _ string, _ map[string]any) (*ResultJSON, error) {
+	return nil, ErrQueryNotImplemented
 }
 
 func mapResult(res *libarazzo.WorkflowResult) *ResultJSON {

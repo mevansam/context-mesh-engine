@@ -68,7 +68,7 @@ context-mesh-engine/
 | `api/json.go` | JSON encode/decode; `ReadJSON` unknown fields rejected; 1 MiB |
 | `api/v1/router.go` | v1 `ServeMux` and `Register` |
 | `api/v1/health.go` | Default `GET /health` |
-| `api/v1/plans.go` | `POST /plans/...`, `GET /openapi/...`; error mapping |
+| `api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; error mapping |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
 | `plans/runner.go` | New libopenapi Engine per `Run`; `ResultJSON` |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
@@ -83,7 +83,7 @@ context-mesh-engine/
 | `TestHandler_MCPInitializeAndPing` | Streamable HTTP at `/mcp` |
 | `TestHandler_MCPGETRequiresSession` | GET `/mcp` without session is 400 (handler is mounted) |
 | `TestHandler_RESTNotMCP` | POST `/api/v1/health` is REST 405, not MCP |
-| `TestArazzo_*` | plans, OpenAPI, 501, MCP `query`/`run_*` |
+| `TestArazzo_*` | plans, OpenAPI, 501, MCP `query`/`run_*`, `POST /plans/query` |
 | `internal/plans` tests | skip missing `x-planId`, duplicate versions, latest `1.1.0` |
 
 ## What not to add here

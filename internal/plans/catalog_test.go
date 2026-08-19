@@ -108,6 +108,15 @@ func TestRunner_RunAndNoExecutor(t *testing.T) {
 	}
 }
 
+func TestRunner_QueryStub(t *testing.T) {
+	c := loadPetstore(t)
+	r := NewRunner(c, &stubExec{})
+	_, err := r.Query(context.Background(), "check health", map[string]any{"name": "x"})
+	if err != ErrQueryNotImplemented {
+		t.Fatalf("err = %v, want ErrQueryNotImplemented", err)
+	}
+}
+
 func TestInputSchema_OneOf(t *testing.T) {
 	c := loadPetstore(t)
 	e, ok := c.Get("petstore", "1.1.0")

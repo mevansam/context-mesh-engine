@@ -77,6 +77,7 @@ if err != nil {
 | GET | `/mcp` | Standalone SSE (requires `Mcp-Session-Id` and `Accept: text/event-stream`) |
 | DELETE | `/mcp` | End the MCP session |
 | GET | `/api/v1/health` | `{"status":"ok"}` (`api.HealthResponse`) |
+| POST | `/api/v1/plans/query` | Natural-language match + execute (same contract as MCP `query`; loaders required) |
 | POST | `/api/v1/plans/{planId}/{workflowId}` | Execute **latest** plan version (loaders required) |
 | POST | `/api/v1/plans/{planId}/{version}/{workflowId}` | Execute that version (`{version}` is `v` + `info.version`) |
 | GET | `/api/v1/openapi/{planId}` | OAS 3.1 for latest execute paths |

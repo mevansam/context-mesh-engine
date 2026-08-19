@@ -27,10 +27,31 @@ func NewPlansController(catalog *plans.Catalog, runner *plans.Runner) *PlansCont
 
 // Register implements api.Controller.
 func (c *PlansController) Register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /plans/query", c.postQuery)
 	mux.HandleFunc("POST /plans/{planId}/{workflowId}", c.postLatest)
 	mux.HandleFunc("POST /plans/{planId}/{version}/{workflowId}", c.postVersioned)
 	mux.HandleFunc("GET /openapi/{planId}", c.openapiLatest)
 	mux.HandleFunc("GET /openapi/{planId}/{version}", c.openapiVersioned)
+}
+
+func (c *PlansController) postQuery(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Query string         `json:"query"`
+		Data  map[string]any `json:"data"`
+	}
+	if r.Body != nil {
+		dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			iapi.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+	}
+	res, err := c.runner.Query(r.Context(), body.Query, body.Data)
+	if err != nil {
+		writeRunError(w, err)
+		return
+	}
+	iapi.WriteJSON(w, http.StatusOK, res)
 }
 
 func (c *PlansController) postLatest(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +137,7 @@ func (c *PlansController) writeOpenAPI(w http.ResponseWriter, e *plans.Entry, la
 
 func writeRunError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, plans.ErrNoExecutor):
+	case errors.Is(err, plans.ErrNoExecutor), errors.Is(err, plans.ErrQueryNotImplemented):
 		iapi.WriteError(w, http.StatusNotImplemented, err.Error())
 	case errors.Is(err, plans.ErrNotFound):
 		iapi.WriteError(w, http.StatusNotFound, err.Error())

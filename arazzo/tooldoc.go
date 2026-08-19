@@ -61,7 +61,7 @@ func DefaultToolDocTemplates() ToolDocTemplates {
 		Description:      defaultDescriptionTemplate,
 		QueryName:        "query",
 		QueryTitle:       "Query plans",
-		QueryDescription: "Natural-language query over loaded Arazzo plans with optional data inputs. Not implemented in this version.",
+		QueryDescription: "Match a simple natural-language request plus inputs against loaded Arazzo plans, then execute the selected plan. Same contract as POST /api/v1/plans/query. Not implemented in this version.",
 	}
 }
 
