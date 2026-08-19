@@ -3,7 +3,7 @@
 Go SDK for an **engine** that turns governed [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow plans into two equivalent surfaces:
 
 - **MCP tools** for agents (`/mcp`)
-- **REST + OpenAPI** for ordinary HTTP clients (`/api/v1`)
+- **REST + OpenAPI** for ordinary HTTP clients (`/api/v1` by default; `Options.APIPrefix`)
 
 Both surfaces execute the **same** plan: a versioned, validated orchestration across the domain APIs of a [data mesh](https://martinfowler.com/articles/data-mesh-principles.html)—not an ad-hoc chain of tool calls invented at inference time.
 

@@ -37,6 +37,7 @@ Flags (`cmd/engine/main.go`):
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `-addr` | `localhost:8080` | Listen address (`engine.DefaultAddr`) |
+| `-api-prefix` | `/api/v1` | REST path prefix (`engine.Options.APIPrefix`) |
 | `-specs` | empty | Directory of Arazzo YAML/JSON (recursive `FileLoader`) |
 | `-public-base-url` | `http://` + `-addr` when `-specs` is set | Origin written into MCP tool descriptions |
 

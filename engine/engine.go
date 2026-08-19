@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,7 +33,7 @@ const (
 	// MCPPath is the Streamable HTTP endpoint advertised to MCP clients.
 	MCPPath = "/mcp"
 
-	// APIv1Prefix is the REST API prefix.
+	// APIv1Prefix is the default REST API prefix used when [Options.APIPrefix] is empty.
 	APIv1Prefix = "/api/v1"
 )
 
@@ -59,13 +60,18 @@ type Options struct {
 	// are never closed (the go-sdk default).
 	SessionTimeout time.Duration
 
-	// APITimeout is the per-request timeout for /api/v1 only.
+	// APITimeout is the per-request timeout for REST under [Options.APIPrefix] only.
 	// If zero, 15s is used. A negative value disables the timeout.
 	APITimeout time.Duration
 
 	// ReadHeaderTimeout is set on the HTTP server.
 	// If zero, 10s is used. WriteTimeout is left unset so GET SSE can hang.
 	ReadHeaderTimeout time.Duration
+
+	// APIPrefix is the REST path prefix (health, plans, OpenAPI).
+	// If empty, [APIv1Prefix] ("/api/v1") is used. A leading slash is added
+	// if missing; a trailing slash is stripped. Must not be "/" or [MCPPath].
+	APIPrefix string
 
 	// ArazzoLoaders supply Arazzo documents. If empty, no plan tools or
 	// plan REST routes are registered.
@@ -97,11 +103,15 @@ type Engine struct {
 }
 
 // New constructs an Engine with a shared MCP server and the default
-// health controller registered on /api/v1. When [Options.ArazzoLoaders]
-// is set, plans are loaded and MCP run_* tools plus REST plan routes
-// are registered. Load or template errors fail construction.
+// health controller registered under [Options.APIPrefix]. When
+// [Options.ArazzoLoaders] is set, plans are loaded and MCP run_* tools
+// plus REST plan routes are registered. Load or template errors fail
+// construction.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
+	if err := validateAPIPrefix(opts.APIPrefix); err != nil {
+		return nil, err
+	}
 
 	gw := mcpgw.New(mcpgw.Options{
 		Implementation: opts.Implementation,
@@ -113,17 +123,21 @@ func New(opts Options) (*Engine, error) {
 	router.Register(&apiv1.HealthController{})
 
 	if len(opts.ArazzoLoaders) > 0 {
-		if _, _, _, err := arazzo.RenderToolDoc(opts.ToolDoc, arazzo.NewToolDocContext(
-			"plan", "1.0.0", "t", "", "", nil, opts.PublicBaseURL,
-		)); err != nil {
+		docCtx := arazzo.NewToolDocContext(
+			"plan", "1.0.0", "t", "", "", nil, opts.PublicBaseURL, opts.APIPrefix,
+		)
+		if _, _, _, err := arazzo.RenderToolDoc(opts.ToolDoc, docCtx); err != nil {
 			return nil, fmt.Errorf("tool doc templates: %w", err)
+		}
+		if _, _, _, err := arazzo.RenderQueryDoc(opts.ToolDoc, docCtx); err != nil {
+			return nil, fmt.Errorf("query tool doc templates: %w", err)
 		}
 		catalog, err := plans.Load(context.Background(), opts.ArazzoLoaders, opts.Logger)
 		if err != nil {
 			return nil, err
 		}
 		runner := plans.NewRunner(catalog, opts.ArazzoExecutor)
-		if err := plans.RegisterMCP(gw.Server(), catalog, runner, opts.ToolDoc, opts.PublicBaseURL); err != nil {
+		if err := plans.RegisterMCP(gw.Server(), catalog, runner, opts.ToolDoc, opts.PublicBaseURL, opts.APIPrefix); err != nil {
 			return nil, err
 		}
 		router.Register(apiv1.NewPlansController(catalog, runner))
@@ -155,7 +169,29 @@ func applyDefaults(opts Options) Options {
 	if opts.APITimeout == 0 {
 		opts.APITimeout = defaultAPITimeout
 	}
+	opts.APIPrefix = normalizeAPIPrefix(opts.APIPrefix)
 	return opts
+}
+
+func normalizeAPIPrefix(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return APIv1Prefix
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return strings.TrimRight(p, "/")
+}
+
+func validateAPIPrefix(p string) error {
+	if p == "" || p == "/" {
+		return fmt.Errorf("APIPrefix %q is not a valid REST path prefix", p)
+	}
+	if p == MCPPath {
+		return fmt.Errorf("APIPrefix must not be %s", MCPPath)
+	}
+	return nil
 }
 
 // MCP returns the shared MCP server. Register tools, prompts, and
@@ -164,21 +200,27 @@ func (e *Engine) MCP() *mcp.Server {
 	return e.mcp.Server()
 }
 
-// AddController registers a REST controller on the /api/v1 mux.
+// AddController registers a REST controller on the API mux (paths are
+// relative to [Options.APIPrefix]).
 func (e *Engine) AddController(c api.Controller) {
 	e.router.Register(c)
 }
 
-// Handler returns the root HTTP handler with /mcp and /api/v1 mounted
-// as siblings. Safe to call more than once; the mux is built once.
+// APIPrefix is the REST path prefix after defaults are applied.
+func (e *Engine) APIPrefix() string {
+	return e.opts.APIPrefix
+}
+
+// Handler returns the root HTTP handler with /mcp and the REST prefix
+// mounted as siblings. Safe to call more than once; the mux is built once.
 func (e *Engine) Handler() http.Handler {
 	e.once.Do(func() {
 		e.handler = httpserver.NewMux(httpserver.MuxOptions{
-			MCPPath:     MCPPath,
-			APIv1Prefix: APIv1Prefix,
-			MCPHandler:  e.mcp.Handler(),
-			APIHandler:  e.router.Handler(),
-			APITimeout:  e.opts.APITimeout,
+			MCPPath:    MCPPath,
+			APIPrefix:  e.opts.APIPrefix,
+			MCPHandler: e.mcp.Handler(),
+			APIHandler: e.router.Handler(),
+			APITimeout: e.opts.APITimeout,
 		})
 	})
 	return e.handler

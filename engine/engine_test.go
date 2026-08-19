@@ -134,3 +134,46 @@ func TestHandler_RESTNotMCP(t *testing.T) {
 		t.Fatalf("status = %d, want %d (REST mux, not MCP)", resp.StatusCode, http.StatusMethodNotAllowed)
 	}
 }
+
+func TestHandler_CustomAPIPrefix(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		APIPrefix: "service/v2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.APIPrefix(); got != "/service/v2" {
+		t.Fatalf("APIPrefix() = %q, want /service/v2", got)
+	}
+
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/service/v2/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("custom prefix status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	old, err := http.Get(ts.URL + "/api/v1/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer old.Body.Close()
+	if old.StatusCode != http.StatusNotFound {
+		t.Fatalf("default prefix status = %d, want %d", old.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestNew_APIPrefixRejected(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, p := range []string{"/", "/mcp", "mcp"} {
+		if _, err := engine.New(engine.Options{Logger: log, APIPrefix: p}); err == nil {
+			t.Fatalf("APIPrefix %q: expected error", p)
+		}
+	}
+}

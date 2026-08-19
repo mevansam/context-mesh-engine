@@ -23,14 +23,19 @@ type queryArgs struct {
 }
 
 // RegisterMCP adds query (stub) and one run_* tool per catalog entry.
-func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls arazzo.ToolDocTemplates, publicBaseURL string) error {
+func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls arazzo.ToolDocTemplates, publicBaseURL, apiPrefix string) error {
 	tmpls = arazzo.MergeTemplates(tmpls)
 	seen := map[string]string{}
 
+	qctx := arazzo.NewToolDocContext("plan", "1.0.0", "", "", "", nil, publicBaseURL, apiPrefix)
+	qName, qTitle, qDesc, err := arazzo.RenderQueryDoc(tmpls, qctx)
+	if err != nil {
+		return fmt.Errorf("query tool doc: %w", err)
+	}
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        tmpls.QueryName,
-		Title:       tmpls.QueryTitle,
-		Description: tmpls.QueryDescription,
+		Name:        qName,
+		Title:       qTitle,
+		Description: qDesc,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in queryArgs) (*mcp.CallToolResult, any, error) {
 		res, err := runner.Query(ctx, in.Query, in.Data)
 		if err != nil {
@@ -46,7 +51,7 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls ara
 			summary = e.Doc.Info.Summary
 			desc = e.Doc.Info.Description
 		}
-		ctx := arazzo.NewToolDocContext(e.PlanID, e.Version, title, summary, desc, e.Workflows, publicBaseURL)
+		ctx := arazzo.NewToolDocContext(e.PlanID, e.Version, title, summary, desc, e.Workflows, publicBaseURL, apiPrefix)
 		name, toolTitle, toolDesc, err := arazzo.RenderToolDoc(tmpls, ctx)
 		if err != nil {
 			return fmt.Errorf("%s@%s: tool doc: %w", e.PlanID, e.Version, err)

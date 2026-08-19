@@ -160,6 +160,9 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 	got := map[string]bool{}
 	for _, tl := range tools.Tools {
 		got[tl.Name] = true
+		if tl.Name == "query" && !strings.Contains(tl.Description, "POST http://example.test/api/v1/plans/query") {
+			t.Fatalf("query description missing REST URL:\n%s", tl.Description)
+		}
 		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/api/v1/plans/") {
 			t.Fatalf("tool %s description missing REST URL:\n%s", tl.Name, tl.Description)
 		}
@@ -230,6 +233,63 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 	}
 	if exec.n != 2 {
 		t.Fatalf("shared runner executor calls = %d, want 2 (mcp+rest)", exec.n)
+	}
+}
+
+func TestArazzo_CustomAPIPrefix(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:  []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		ArazzoExecutor: &countingExec{},
+		PublicBaseURL:  "http://example.test",
+		APIPrefix:      "/service/v2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/service/v2/openapi/petstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("custom openapi status = %d", resp.StatusCode)
+	}
+
+	old, err := http.Get(ts.URL + "/api/v1/openapi/petstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer old.Body.Close()
+	if old.StatusCode != http.StatusNotFound {
+		t.Fatalf("default openapi status = %d, want 404", old.StatusCode)
+	}
+
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint: ts.URL + engine.MCPPath,
+	}, nil)
+	if err != nil {
+		t.Fatalf("MCP connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name == "query" && !strings.Contains(tl.Description, "POST http://example.test/service/v2/plans/query") {
+			t.Fatalf("query description missing custom REST URL:\n%s", tl.Description)
+		}
+		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/service/v2/plans/") {
+			t.Fatalf("tool %s description missing custom REST URL:\n%s", tl.Name, tl.Description)
+		}
 	}
 }
 

@@ -4,7 +4,9 @@ Load [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow documents, 
 
 Public package: `github.com/mevansam/context-mesh-engine/arazzo`.
 
-This is not enabled until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no `/api/v1/plans` or `/api/v1/openapi` routes.
+This is not enabled until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan or OpenAPI REST routes.
+
+REST paths below use the default prefix `/api/v1`. Set `Options.APIPrefix` (or `cmd/engine -api-prefix`) to change it. Generated OpenAPI `paths` omit that prefix either way.
 
 ## What `engine.New` registers
 
@@ -92,7 +94,7 @@ e, err := engine.New(engine.Options{
 })
 ```
 
-`PublicBaseURL` is the origin written into MCP tool descriptions (REST POST and OpenAPI GET URLs). It is not `Addr`. Empty → path-only URLs (`/api/v1/plans/...`).
+`PublicBaseURL` is the origin written into MCP tool descriptions (REST POST and OpenAPI GET URLs). It is not `Addr`. Empty → path-only URLs (`{APIPrefix}/plans/...`).
 
 Runnable sample: [examples/arazzo-fs](examples.md#arazzo-fs).
 
@@ -233,7 +235,7 @@ Body: `{"error":"<message>"}`.
 
 `GET /api/v1/openapi/{planId}` and `GET /api/v1/openapi/{planId}/{version}` return OAS **3.1.0** JSON (`Content-Type: application/json`).
 
-Paths **inside** that document are relative to `/api/v1` (the REST mux is `StripPrefix`’d). Example:
+Paths **inside** that document omit `Options.APIPrefix` (the REST mux is `StripPrefix`’d). With the default prefix:
 
 - HTTP: `GET /api/v1/openapi/petstore`
 - Document path: `/plans/petstore/pingHealth` → real URL `POST /api/v1/plans/petstore/pingHealth`
@@ -248,7 +250,7 @@ Latest document: `/plans/{planId}/{workflowId}`. Versioned document: `/plans/{pl
 
 Write `{{.Title}}` for Arazzo `info.title`. Do **not** write `{{.ToolDoc.Title}}`.
 
-`QueryName` / `QueryTitle` / `QueryDescription` are copied as-is (not parsed as templates). Empty fields fall back to `DefaultToolDocTemplates()`.
+`QueryName` / `QueryTitle` / `QueryDescription` are also templates (same context). Empty fields fall back to `DefaultToolDocTemplates()`. The default query description includes `{{.RESTQueryURL}}`.
 
 Default name recipe: `run_{{.SafePlanID}}_v{{.SafeVersion}}`. After render, the name is sanitized to MCP runes `[A-Za-z0-9_.-]` (spaces and other runes → `_`) and truncated to 128 characters.
 
@@ -267,7 +269,8 @@ Default name recipe: `run_{{.SafePlanID}}_v{{.SafeVersion}}`. After render, the 
 | `SafeVersion` | version with non `[A-Za-z0-9_.-]` replaced. Dots kept. |
 | `VersionSegment` | `"v" + Version` |
 | `PublicBaseURL` | trimmed origin or empty |
-| `APIRoot` | `PublicBaseURL + "/api/v1"` or `/api/v1` |
+| `APIRoot` | `PublicBaseURL` + `APIPrefix`, or `APIPrefix` alone (default `/api/v1`) |
+| `RESTQueryURL` | `{APIRoot}/plans/query` |
 | `RESTExecuteLatestURL` | `{APIRoot}/plans/{PlanID}/{workflowId}` |
 | `RESTExecuteVersionedURL` | `{APIRoot}/plans/{PlanID}/{VersionSegment}/{workflowId}` |
 | `OpenAPILatestURL` | `{APIRoot}/openapi/{PlanID}` |
@@ -291,7 +294,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - MCP args for `run_*` wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
 - MCP `query` and `POST /api/v1/plans/query` share `{query, data}` and the execute result object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
-- Generated OpenAPI `paths` keys omit the `/api/v1` prefix. They describe execute routes, not `/plans/query`.
+- Generated OpenAPI `paths` keys omit `Options.APIPrefix`. They describe execute routes, not `/plans/query`.
 - `PublicBaseURL` must be set if you want absolute URLs in MCP descriptions.
 - Treat `query` / `POST /plans/query` as not implemented until matching is wired.
 

@@ -25,11 +25,14 @@ const (
 func New(opts Options) (*Engine, error)
 func (e *Engine) MCP() *mcp.Server
 func (e *Engine) AddController(c api.Controller)
+func (e *Engine) APIPrefix() string
 func (e *Engine) Handler() http.Handler
 func (e *Engine) ListenAndServe(ctx context.Context) error
 ```
 
-Register extra MCP tools and REST controllers **before** serving. `Handler()` builds the root mux once (`sync.Once`). `AddController` still works after `Handler()` because it mutates the live `/api/v1` mux; prefer registering before listen.
+`APIv1Prefix` is the **default** REST prefix (`/api/v1`). Override it with `Options.APIPrefix` (or `cmd/engine -api-prefix`). `e.APIPrefix()` is the prefix after defaults (leading `/` added, trailing `/` stripped).
+
+Register extra MCP tools and REST controllers **before** serving. `Handler()` builds the root mux once (`sync.Once`). `AddController` still works after `Handler()` because it mutates the live REST mux; prefer registering before listen.
 
 Do **not** call `mcp.Server.Run`. Streamable HTTP creates sessions per HTTP connection. `Run` is for stdio / single-session transports.
 
@@ -43,11 +46,12 @@ Zero-value `engine.Options` after `New` (see `engine/engine.go`):
 | `Implementation` | nil | `Name: "context-mesh-engine"`, `Version: "0.1.0"` |
 | `Logger` | nil | `slog.Default()` |
 | `SessionTimeout` | 0 | idle MCP sessions never closed (go-sdk default) |
-| `APITimeout` | 0 | 15s on `/api/v1` only. Set a **negative** duration to disable. |
+| `APITimeout` | 0 | 15s on the REST prefix only. Set a **negative** duration to disable. |
 | `ReadHeaderTimeout` | 0 | 10s on `http.Server` |
+| `APIPrefix` | empty | `/api/v1` (`APIv1Prefix`). Must not be `/` or `/mcp`. |
 | `ArazzoLoaders` | nil/empty | no plan tools or plan REST routes |
 | `ArazzoExecutor` | nil | catalog + OpenAPI still load; execute is 501 |
-| `PublicBaseURL` | empty | REST URLs in MCP descriptions are path-only (`/api/v1/...`) |
+| `PublicBaseURL` | empty | REST URLs in MCP descriptions are path-only (`{APIPrefix}/...`) |
 | `ToolDoc` | zero struct | `arazzo.DefaultToolDocTemplates()` |
 
 `WriteTimeout` is **never** set on the engine-owned `http.Server`. A short write timeout kills GET SSE.
@@ -67,9 +71,11 @@ if err != nil {
 }
 ```
 
-`New` returns an error when `ArazzoLoaders` is non-empty and templates fail to parse, specs fail to load, `(planId, version)` is duplicated, or rendered MCP tool names collide.
+`New` returns an error when `APIPrefix` is `/` or `/mcp` (after normalize), or when `ArazzoLoaders` is non-empty and templates fail to parse, specs fail to load, `(planId, version)` is duplicated, or rendered MCP tool names collide.
 
 ## Routes
+
+Paths below use the **default** REST prefix `/api/v1`. Replace that prefix with `Options.APIPrefix` when you set one. Controller patterns are always relative to the prefix (`GET /health` → `GET {APIPrefix}/health`).
 
 | Method | Path | Result |
 | --- | --- | --- |
@@ -88,7 +94,7 @@ Advertise MCP at **`/mcp`** (no trailing slash). `/mcp/` is mounted so extra pat
 
 Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md).
 
-REST errors from this SDK use `{"error":"<message>"}` (`api.ErrorBody`) except `http.TimeoutHandler` on `/api/v1`, which writes plain text `request timeout\n`.
+REST errors from this SDK use `{"error":"<message>"}` (`api.ErrorBody`) except `http.TimeoutHandler` on the REST prefix, which writes plain text `request timeout\n`.
 
 ## Public API (api)
 
@@ -112,7 +118,7 @@ func ReadJSON(r *http.Request, v any) error
 
 `ReadJSON`: rejects unknown JSON fields; caps the body at **1 MiB**. Plan execute POST does **not** use `ReadJSON` (unknown fields allowed; same 1 MiB cap).
 
-The mux passed to `Controller.Register` is already stripped of `/api/v1`. Pattern `GET /items` is `GET /api/v1/items`.
+The mux passed to `Controller.Register` is already stripped of `Options.APIPrefix`. Pattern `GET /items` is `GET {APIPrefix}/items` (default `GET /api/v1/items`).
 
 ## Add MCP tools
 
@@ -180,7 +186,7 @@ log.Fatal(srv.ListenAndServe())
 
 See [`examples/embed-handler`](../../examples/embed-handler/main.go). How to run: [examples.md](examples.md#embed-handler).
 
-Do **not** wrap `e.Handler()` in Gin, a buffering logger, gzip that buffers, or `http.TimeoutHandler`. Those hide `http.Flusher` and break GET SSE. REST timeouts are already applied under `/api/v1` inside the engine.
+Do **not** wrap `e.Handler()` in Gin, a buffering logger, gzip that buffers, or `http.TimeoutHandler`. Those hide `http.Flusher` and break GET SSE. REST timeouts are already applied under `Options.APIPrefix` inside the engine.
 
 ## MCP client
 

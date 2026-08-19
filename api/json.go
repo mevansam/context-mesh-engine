@@ -10,7 +10,7 @@ import (
 	iapi "github.com/mevansam/context-mesh-engine/internal/api"
 )
 
-// ErrorBody is the standard JSON error payload for /api/v1.
+// ErrorBody is the standard JSON error payload for REST under Options.APIPrefix.
 type ErrorBody = iapi.ErrorBody
 
 // WriteJSON writes v as application/json with the given status code.

@@ -6,7 +6,7 @@ package apiv1
 
 import "net/http"
 
-// Router is the /api/v1 ServeMux (paths are relative after StripPrefix).
+// Router is the REST ServeMux (paths are relative after StripPrefix).
 type Router struct {
 	mux *http.ServeMux
 }

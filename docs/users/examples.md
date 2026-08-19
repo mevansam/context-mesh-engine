@@ -49,7 +49,7 @@ Mount the same MCP + REST mux on an `http.Server` you construct. Call `e.Handler
 
 Use this when you already own listen/TLS/shutdown.
 
-Do not wrap `e.Handler()` in Gin, a buffering logger, or `http.TimeoutHandler`. REST timeouts are already applied under `/api/v1`.
+Do not wrap `e.Handler()` in Gin, a buffering logger, or `http.TimeoutHandler`. REST timeouts are already applied under `Options.APIPrefix`.
 
 ---
 

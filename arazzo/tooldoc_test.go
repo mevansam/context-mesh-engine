@@ -49,7 +49,7 @@ func TestRenderToolDoc_Defaults(t *testing.T) {
 	ctx := arazzo.NewToolDocContext(
 		"petstore", "1.1.0", "Pet Store Workflows", "summary", "desc",
 		[]arazzo.WorkflowDoc{{ID: "pingHealth", Summary: "Check API health"}},
-		"http://localhost:8080",
+		"http://localhost:8080", "",
 	)
 	name, title, desc, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{}, ctx)
 	if err != nil {
@@ -73,9 +73,26 @@ func TestRenderToolDoc_Defaults(t *testing.T) {
 }
 
 func TestRenderToolDoc_InvalidTemplate(t *testing.T) {
-	_, _, _, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{Name: "{{.Nope"}, arazzo.NewToolDocContext("p", "1", "t", "", "", nil, ""))
+	_, _, _, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{Name: "{{.Nope"}, arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", ""))
 	if err == nil {
 		t.Fatal("expected parse error")
+	}
+}
+
+func TestRenderQueryDoc_CustomPrefix(t *testing.T) {
+	ctx := arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "http://example.test", "/service/v2")
+	name, title, desc, err := arazzo.RenderQueryDoc(arazzo.ToolDocTemplates{}, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "query" {
+		t.Fatalf("name = %q", name)
+	}
+	if title != "Query plans" {
+		t.Fatalf("title = %q", title)
+	}
+	if want := "POST http://example.test/service/v2/plans/query"; !strings.Contains(desc, want) {
+		t.Fatalf("description missing %q:\n%s", want, desc)
 	}
 }
 

@@ -19,7 +19,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// ErrorBody is the standard JSON error payload for /api/v1.
+// ErrorBody is the standard JSON error payload for REST responses.
 type ErrorBody struct {
 	Error string `json:"error"`
 }

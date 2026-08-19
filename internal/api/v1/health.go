@@ -11,7 +11,7 @@ import (
 	iapi "github.com/mevansam/context-mesh-engine/internal/api"
 )
 
-// HealthController serves GET /health on the /api/v1 mux.
+// HealthController serves GET /health on the REST mux.
 type HealthController struct{}
 
 // Register implements api.Controller.

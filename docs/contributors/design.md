@@ -7,7 +7,7 @@ This document is for **contributors**. SDK usage lives in [docs/users/usage.md](
 Share one `http.Server` between:
 
 1. MCP Streamable HTTP (SSE + POST) at `/mcp`
-2. JSON REST at `/api/v1/`
+2. JSON REST at `Options.APIPrefix` (default `/api/v1/`)
 
 using [go-sdk](https://github.com/modelcontextprotocol/go-sdk) as the MCP library.
 
@@ -35,7 +35,7 @@ flowchart TB
     catalog["plans.Catalog plus Runner"]
     httpServer --> mux
     mux -->|"/mcp and /mcp/"| mcpH
-    mux -->|"/api/v1/"| restH
+    mux -->|"APIPrefix (default /api/v1/)"| restH
     mcpH --> mcpSrv
     mcpSrv --> catalog
     restH --> catalog
@@ -73,14 +73,14 @@ Tests in `engine/engine_test.go` encode the first four.
 
 1. **Sibling mount.** MCP and REST are two children of the root mux. REST middleware must not wrap `/mcp`.
 2. **No `StripPrefix` on `/mcp`.** Advertise `http://host:port/mcp`. Extra path under `/mcp/` still hits the same handler; go-sdk ignores the path.
-3. **REST timeout only.** `http.TimeoutHandler` wraps the `/api/v1` mux (`APITimeout`, default 15s; negative disables). It wraps `ResponseWriter` and would break SSE if applied globally. Timeout body is plain text `request timeout\n`, not JSON.
+3. **REST timeout only.** `http.TimeoutHandler` wraps the REST mux (`APITimeout`, default 15s; negative disables). It wraps `ResponseWriter` and would break SSE if applied globally. Timeout body is plain text `request timeout\n`, not JSON.
 4. **No short `WriteTimeout`** on `http.Server`. GET SSE is a long write. `ReadHeaderTimeout` default 10s.
-5. **No Gin (or other buffering wrappers) on the root handler.** They often hide `http.Flusher` / hijack. Chi, if ever added, belongs **under `/api/v1` only**.
+5. **No Gin (or other buffering wrappers) on the root handler.** They often hide `http.Flusher` / hijack. Chi, if ever added, belongs **under the REST prefix only**.
 6. **Root mux is stdlib `ServeMux`.** Method-aware patterns on the REST child mux.
 
 `internal/httpserver.NewMux` implements these rules. Change it together with `engine/engine_test.go`.
 
-`/api/v1` is mounted as `StripPrefix("/api/v1", apiHandler)`, so controllers see `/health` not `/api/v1/health`. Generated OpenAPI `paths` are likewise **without** `/api/v1`.
+The REST prefix (`Options.APIPrefix`, default `/api/v1`) is mounted as `StripPrefix(prefix, apiHandler)`, so controllers see `/health` not `{prefix}/health`. Generated OpenAPI `paths` likewise omit the prefix. `New` rejects prefix `/` and `/mcp`.
 
 ## Package split
 
@@ -108,11 +108,11 @@ Safe on the **root** handler: logging that does not wrap `ResponseWriter` or buf
 
 Unsafe on the root handler: `TimeoutHandler`, gzip, CORS wrappers that buffer, Gin, auth that should apply to only one subtree.
 
-MCP already validates `Content-Type` / `Accept` and applies localhost DNS-rebinding protection. REST `Content-Type` enforcement is not applied globally; add it on `/api/v1` only if needed.
+MCP already validates `Content-Type` / `Accept` and applies localhost DNS-rebinding protection. REST `Content-Type` enforcement is not applied globally; add it on the REST prefix only if needed.
 
 ## Adding a REST controller
 
-Implement `api.Controller.Register(*http.ServeMux)`. Routes are relative to `/api/v1`. Register via `Engine.AddController`. Prefer before serve.
+Implement `api.Controller.Register(*http.ServeMux)`. Routes are relative to `Options.APIPrefix`. Register via `Engine.AddController`. Prefer before serve.
 
 Built-in plan routes are registered inside `New` when loaders are set (`internal/api/v1/plans.go`). Do not duplicate those patterns.
 

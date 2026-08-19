@@ -15,11 +15,11 @@ import (
 
 // MuxOptions configures sibling mounting of MCP and REST handlers.
 type MuxOptions struct {
-	MCPPath     string
-	APIv1Prefix string
-	MCPHandler  http.Handler
-	APIHandler  http.Handler
-	APITimeout  time.Duration
+	MCPPath    string
+	APIPrefix  string
+	MCPHandler http.Handler
+	APIHandler http.Handler
+	APITimeout time.Duration
 }
 
 // NewMux mounts MCP and REST as siblings. It does not StripPrefix on MCP.
@@ -34,7 +34,7 @@ func NewMux(opts MuxOptions) http.Handler {
 	if opts.APITimeout > 0 {
 		api = http.TimeoutHandler(api, opts.APITimeout, "request timeout\n")
 	}
-	mux.Handle(opts.APIv1Prefix+"/", http.StripPrefix(opts.APIv1Prefix, api))
+	mux.Handle(opts.APIPrefix+"/", http.StripPrefix(opts.APIPrefix, api))
 
 	return mux
 }

@@ -8,7 +8,7 @@ context-mesh-engine/
   LICENSE                        MIT (novassist.ai)
   go.mod / go.sum                replace -> ../go-sdk and ../libopenapi
   docs/                          users/ vs contributors/ (start at docs/README.md)
-  cmd/engine/                    Sample process: -addr, -specs, -public-base-url, SIGINT, ping
+  cmd/engine/                    Sample process: -addr, -api-prefix, -specs, -public-base-url, SIGINT, ping
   examples/
     README.md                    Points at docs/users/examples.md
     minimal/                     ListenAndServe
@@ -24,7 +24,7 @@ context-mesh-engine/
     httpserver/server.go         http.Server, root mux, Shutdown
     mcpgw/server.go              mcp.NewServer + StreamableHTTPHandler
     api/json.go                  WriteJSON / ReadJSON implementation
-    api/v1/router.go             /api/v1 ServeMux
+    api/v1/router.go             REST ServeMux (mounted at Options.APIPrefix)
     api/v1/health.go             GET /health
     api/v1/plans.go              POST /plans, GET /openapi
     plans/                       Catalog, runner, MCP tools, OAS generator
@@ -49,8 +49,8 @@ context-mesh-engine/
 
 | File | Responsibility |
 | --- | --- |
-| `engine/engine.go` | `Options`, `New` (`error`), `MCP`, `AddController`, `Handler`, `ListenAndServe` |
-| `engine/engine_test.go` | Mux contract: health JSON, MCP handshake, SSE GET 400, REST ≠ MCP |
+| `engine/engine.go` | `Options` (incl. `APIPrefix`), `New` (`error`), `MCP`, `AddController`, `APIPrefix`, `Handler`, `ListenAndServe` |
+| `engine/engine_test.go` | Mux contract: health JSON, custom prefix, MCP handshake, SSE GET 400, REST ≠ MCP |
 | `engine/arazzo_test.go` | Plan MCP tools, REST execute, OpenAPI, shared runner, 501 |
 | `api/controller.go` | `Controller` |
 | `api/json.go` | Re-exports of `WriteJSON`, `WriteError`, `ReadJSON`, `ErrorBody` |
@@ -63,7 +63,7 @@ context-mesh-engine/
 
 | File | Responsibility |
 | --- | --- |
-| `httpserver/server.go` | Sibling mount of `/mcp` and `/api/v1/`; `ListenAndServe` + 10s `Shutdown` |
+| `httpserver/server.go` | Sibling mount of `/mcp` and `Options.APIPrefix`; `ListenAndServe` + 10s `Shutdown` |
 | `mcpgw/server.go` | Shared `mcp.Server`; `Stateless`/`JSONResponse` left false |
 | `api/json.go` | JSON encode/decode; `ReadJSON` unknown fields rejected; 1 MiB |
 | `api/v1/router.go` | v1 `ServeMux` and `Register` |
@@ -72,14 +72,16 @@ context-mesh-engine/
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
 | `plans/runner.go` | New libopenapi Engine per `Run`; `ResultJSON` |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
-| `plans/openapi.go` | OAS 3.1 JSON (paths **without** `/api/v1`) |
+| `plans/openapi.go` | OAS 3.1 JSON (paths **without** `APIPrefix`) |
 | `plans/mcp.go` | Stub `query` + `run_*` tools |
 
 ## Tests as the contract
 
 | Test | Do not break |
 | --- | --- |
-| `TestHandler_HealthJSON` | `/api/v1/health` is JSON |
+| `TestHandler_HealthJSON` | `{APIPrefix}/health` (default `/api/v1/health`) is JSON |
+| `TestHandler_CustomAPIPrefix` | custom prefix serves health; default `/api/v1` is 404 |
+| `TestNew_APIPrefixRejected` | `/`, `/mcp` fail `New` |
 | `TestHandler_MCPInitializeAndPing` | Streamable HTTP at `/mcp` |
 | `TestHandler_MCPGETRequiresSession` | GET `/mcp` without session is 400 (handler is mounted) |
 | `TestHandler_RESTNotMCP` | POST `/api/v1/health` is REST 405, not MCP |

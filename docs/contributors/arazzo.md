@@ -12,7 +12,7 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 | `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest |
 | `internal/plans/runner.go` | `NewEngine` per `Run`; `ResultJSON` |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const |
-| `internal/plans/openapi.go` | OAS 3.1; paths without `/api/v1` |
+| `internal/plans/openapi.go` | OAS 3.1; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | Stub `query` + one `run_*` tool per catalog entry |
 | `internal/api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; 400/404/501 |
 | `engine/engine.go` | `New` wires loaders → catalog → MCP + REST |
@@ -69,7 +69,7 @@ POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not
 
 `InputSchema` is top-level `type: object` + `oneOf` of `{workflowId: const, inputs: workflow schema}`. Do not put overlapping workflow input schemas in a single `properties.inputs.oneOf` — JSON Schema `oneOf` fails when more than one branch matches.
 
-Query name/title/description are literals. Name/title/description for `run_*` are templates.
+Query name/title/description and `run_*` name/title/description are templates (`RenderQueryDoc` / `RenderToolDoc`). REST URLs use `Options.APIPrefix`.
 
 ## OpenAPI generator
 
@@ -78,13 +78,13 @@ Query name/title/description are literals. Name/title/description for `run_*` ar
 - `latest == true` → paths `/plans/{planId}/{workflowId}`
 - `latest == false` → `/plans/{planId}/{versionSegment}/{workflowId}`
 
-No `/api/v1` prefix (matches `StripPrefix` on the REST mux). `info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version.
+No `APIPrefix` on paths (matches `StripPrefix` on the REST mux). `info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version.
 
 ## Templates
 
 `ToolDoc.Name` / `Title` / `Description` are `text/template` executed with `missingkey=zero`. `{{.Title}}` is Arazzo info.title, not the MCP title recipe.
 
-`engine.New` renders templates once with a dummy context **before** load so syntax errors fail fast even if the catalog is empty. Per-entry render still happens in `RegisterMCP`.
+`engine.New` renders run and query templates once with a dummy context **before** load so syntax errors fail fast even if the catalog is empty. Per-entry render still happens in `RegisterMCP`.
 
 After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Empty name is an error.
 
@@ -94,7 +94,7 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 2. Resolve sources before Validate.
 3. New libopenapi Engine per run.
 4. Nil executor: catalog + OpenAPI work; execute is 501 / MCP tool error.
-5. Plan REST is under `/api/v1` only. Do not `StripPrefix` `/mcp`.
+5. Plan REST is under `Options.APIPrefix` only (default `/api/v1`). Do not `StripPrefix` `/mcp`.
 6. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
 7. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
 

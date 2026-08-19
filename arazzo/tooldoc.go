@@ -47,6 +47,7 @@ type ToolDocContext struct {
 	VersionSegment          string
 	PublicBaseURL           string
 	APIRoot                 string
+	RESTQueryURL            string
 	RESTExecuteLatestURL    string
 	RESTExecuteVersionedURL string
 	OpenAPILatestURL        string
@@ -61,7 +62,7 @@ func DefaultToolDocTemplates() ToolDocTemplates {
 		Description:      defaultDescriptionTemplate,
 		QueryName:        "query",
 		QueryTitle:       "Query plans",
-		QueryDescription: "Match a simple natural-language request plus inputs against loaded Arazzo plans, then execute the selected plan. Same contract as POST /api/v1/plans/query. Not implemented in this version.",
+		QueryDescription: "Match a simple natural-language request plus inputs against loaded Arazzo plans, then execute the selected plan. Same contract as POST {{.RESTQueryURL}}. Not implemented in this version.",
 	}
 }
 
@@ -116,8 +117,9 @@ func MergeTemplates(t ToolDocTemplates) ToolDocTemplates {
 	return t
 }
 
-// NewToolDocContext builds template data from spec fields plus PublicBaseURL.
-func NewToolDocContext(planID, version, title, summary, description string, workflows []WorkflowDoc, publicBaseURL string) ToolDocContext {
+// NewToolDocContext builds template data from spec fields plus PublicBaseURL
+// and the REST API prefix (for example /api/v1). Empty apiPrefix defaults to /api/v1.
+func NewToolDocContext(planID, version, title, summary, description string, workflows []WorkflowDoc, publicBaseURL, apiPrefix string) ToolDocContext {
 	ids := make([]string, 0, len(workflows))
 	wfs := make([]WorkflowDoc, len(workflows))
 	for i, w := range workflows {
@@ -126,10 +128,7 @@ func NewToolDocContext(planID, version, title, summary, description string, work
 		ids = append(ids, w.ID)
 	}
 	base := strings.TrimRight(publicBaseURL, "/")
-	apiRoot := "/api/v1"
-	if base != "" {
-		apiRoot = base + "/api/v1"
-	}
+	apiRoot := joinPublicURL(base, normalizeAPIPrefix(apiPrefix))
 	seg := "v" + version
 	ctx := ToolDocContext{
 		PlanID:                  planID,
@@ -144,12 +143,33 @@ func NewToolDocContext(planID, version, title, summary, description string, work
 		VersionSegment:          seg,
 		PublicBaseURL:           base,
 		APIRoot:                 apiRoot,
+		RESTQueryURL:            apiRoot + "/plans/query",
 		RESTExecuteLatestURL:    apiRoot + "/plans/" + planID + "/{workflowId}",
 		RESTExecuteVersionedURL: apiRoot + "/plans/" + planID + "/" + seg + "/{workflowId}",
 		OpenAPILatestURL:        apiRoot + "/openapi/" + planID,
 		OpenAPIVersionedURL:     apiRoot + "/openapi/" + planID + "/" + seg,
 	}
 	return ctx
+}
+
+const defaultAPIPrefix = "/api/v1"
+
+func normalizeAPIPrefix(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" || p == "/" {
+		return defaultAPIPrefix
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return strings.TrimRight(p, "/")
+}
+
+func joinPublicURL(base, prefix string) string {
+	if base == "" {
+		return prefix
+	}
+	return base + prefix
 }
 
 // RenderToolDoc executes name, title, and description templates.
@@ -168,6 +188,28 @@ func RenderToolDoc(tmpls ToolDocTemplates, ctx ToolDocContext) (name, title, des
 		return "", "", "", err
 	}
 	description, err = execTemplate("description", tmpls.Description, ctx)
+	if err != nil {
+		return "", "", "", err
+	}
+	return name, strings.TrimSpace(title), strings.TrimSpace(description), nil
+}
+
+// RenderQueryDoc executes query name, title, and description templates.
+func RenderQueryDoc(tmpls ToolDocTemplates, ctx ToolDocContext) (name, title, description string, err error) {
+	tmpls = MergeTemplates(tmpls)
+	name, err = execTemplate("queryName", tmpls.QueryName, ctx)
+	if err != nil {
+		return "", "", "", err
+	}
+	name = SanitizeToolName(name)
+	if name == "" {
+		return "", "", "", errEmptyToolName
+	}
+	title, err = execTemplate("queryTitle", tmpls.QueryTitle, ctx)
+	if err != nil {
+		return "", "", "", err
+	}
+	description, err = execTemplate("queryDescription", tmpls.QueryDescription, ctx)
 	if err != nil {
 		return "", "", "", err
 	}
