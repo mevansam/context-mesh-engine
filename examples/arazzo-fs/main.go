@@ -7,7 +7,11 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/mevansam/context-mesh-engine/engine"
@@ -36,10 +40,20 @@ func (pingMatcher) Match(_ context.Context, req arazzo.QueryRequest) (*arazzo.Qu
 }
 
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "usage: %s <plans-dir>\n", filepath.Base(os.Args[0]))
+	}
+	flag.Parse()
+	if flag.NArg() != 1 {
+		flag.Usage()
+		os.Exit(2)
+	}
+	plansDir := flag.Arg(0)
+
 	e, err := engine.New(engine.Options{
 		Addr: "localhost:8080",
 		ArazzoLoaders: []arazzo.Loader{
-			arazzo.NewFileLoader("testdata/arazzo/plans"),
+			arazzo.NewFileLoader(plansDir),
 		},
 		ArazzoExecutor: okExec{},
 		QueryMatcher:   pingMatcher{},

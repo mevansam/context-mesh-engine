@@ -56,7 +56,7 @@ curl -s http://localhost:8080/api/health
 curl -s http://localhost:8080/api/tools
 ```
 
-Plans + a stub executor: `go run ./examples/arazzo-fs`. Live Petstore demo: [examples/README.md](examples/README.md#petstore-demo). MCP: `http://localhost:8080/mcp`.
+Plans + a stub executor: `go run ./examples/arazzo-fs testdata/arazzo/plans`. Live Petstore demo: [examples/README.md](examples/README.md#petstore-demo). MCP: `http://localhost:8080/mcp`.
 
 ## Documentation
 

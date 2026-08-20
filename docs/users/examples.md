@@ -8,7 +8,7 @@ Do not run two examples (or `cmd/engine`) on `localhost:8080` at the same time.
 | --- | --- | --- |
 | [minimal](#minimal) | `go run ./examples/minimal` | Engine-owned listener via `ListenAndServe` |
 | [embed-handler](#embed-handler) | `go run ./examples/embed-handler` | Your `http.Server` using `Handler()` |
-| [arazzo-fs](#arazzo-fs) | `go run ./examples/arazzo-fs` | `FileLoader` + stub `Executor`, MCP `run_*` and REST plans |
+| [arazzo-fs](#arazzo-fs) | `go run ./examples/arazzo-fs testdata/arazzo/plans` | `FileLoader` + stub `Executor`, MCP `run_*` and REST plans |
 | [petstore](#petstore) | `go run ./examples/petstore/mcp-server` | Arazzo + HTTP executor over [petstore3](https://petstore3.swagger.io/) and the async order adapter |
 
 `cmd/engine` is a fourth runnable (`go run ./cmd/engine -addr localhost:8080`). It is the sample **product** binary (flags + SIGINT shutdown), not an SDK usage example. Flags: [getting started](getting-started.md#run-the-sample-binary).
@@ -59,13 +59,13 @@ Do not wrap `e.Handler()` in Gin, a buffering logger, or `http.TimeoutHandler`. 
 
 **Source:** [`examples/arazzo-fs/main.go`](../../examples/arazzo-fs/main.go)
 
-Must run from the repository root so `testdata/arazzo/plans` resolves (cwd-relative path in `main.go`):
+Pass the plans directory as the first argument. Relative paths are cwd-relative (from the repository root, the sample fixtures are `testdata/arazzo/plans`):
 
 ```bash
-go run ./examples/arazzo-fs
+go run ./examples/arazzo-fs testdata/arazzo/plans
 ```
 
-Loads `testdata/arazzo/plans` (`x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Stub `Executor` always returns HTTP 200. Dummy `QueryMatcher` always selects `pingHealth` on the latest petstore plan.
+Loads that directory (`x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Stub `Executor` always returns HTTP 200. Dummy `QueryMatcher` always selects `pingHealth` on the latest petstore plan.
 
 ```bash
 curl -s http://localhost:8080/api/openapi/petstore

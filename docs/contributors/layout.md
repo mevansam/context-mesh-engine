@@ -13,7 +13,7 @@ context-mesh-engine/
     README.md                    Points at docs/users/examples.md
     minimal/                     ListenAndServe
     embed-handler/               Your http.Server + Handler()
-    arazzo-fs/                   FileLoader + stub Executor + dummy QueryMatcher
+    arazzo-fs/                   FileLoader (plans dir arg) + stub Executor + dummy QueryMatcher
     petstore/                    Petstore e2e: mcp-server + async-order-server
   engine/                        Public facade: New, Handler, ListenAndServe
   api/                           Public facade: Controller, JSON helpers, HealthResponse

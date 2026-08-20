@@ -7,7 +7,7 @@ From the repository root (sibling `go-sdk` / `libopenapi` `replace`s):
 ```bash
 go run ./examples/minimal
 go run ./examples/embed-handler
-go run ./examples/arazzo-fs
+go run ./examples/arazzo-fs testdata/arazzo/plans
 go run ./examples/petstore/async-order-server
 go run ./examples/petstore/mcp-server
 ```

@@ -1,12 +1,12 @@
 # arazzo-fs
 
-Run from the **repository root** so `testdata/arazzo/plans` resolves (path in `main.go` is cwd-relative):
+The plans directory is the first argument. From the **repository root**:
 
 ```bash
-go run ./examples/arazzo-fs
+go run ./examples/arazzo-fs testdata/arazzo/plans
 ```
 
-Loads sample Pet Store Arazzo plans. Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Serves:
+Loads that directory recursively (sample Pet Store plans: `x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Serves:
 
 - `GET /api/tools` (MCP `tools/list` result)
 - `POST /api/plans/query` (dummy matcher → latest petstore `pingHealth`)
