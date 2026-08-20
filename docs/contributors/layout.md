@@ -13,11 +13,11 @@ context-mesh-engine/
     README.md                    Points at docs/users/examples.md
     minimal/                     ListenAndServe
     embed-handler/               Your http.Server + Handler()
-    arazzo-fs/                   FileLoader + stub Executor
+    arazzo-fs/                   FileLoader + stub Executor + dummy QueryMatcher
     petstore/                    Petstore e2e: mcp-server + async-order-server
   engine/                        Public facade: New, Handler, ListenAndServe
   api/                           Public facade: Controller, JSON helpers, HealthResponse
-  arazzo/                        Public Loader, FileLoader, Executor aliases, ToolDoc
+  arazzo/                        Public Loader, FileLoader, Executor, QueryMatcher, ToolDoc
   testdata/arazzo/
     plans/                       Arazzo fixtures (FileLoader root)
     sources/openapi.yaml         OpenAPI referenced as ../sources/openapi.yaml
@@ -53,13 +53,14 @@ context-mesh-engine/
 | --- | --- |
 | `engine/engine.go` | `Options` (incl. `APIPrefix`), `New` (`error`), `MCP`, `AddController`, `APIPrefix`, `Handler`, `ListenAndServe` |
 | `engine/engine_test.go` | Mux contract: health JSON, custom prefix, MCP handshake, SSE GET 400, REST ≠ MCP |
-| `engine/arazzo_test.go` | Plan MCP tools, REST execute, OpenAPI, shared runner, 501 |
+| `engine/arazzo_test.go` | Plan MCP tools, REST execute, OpenAPI, query matcher, 501 |
 | `api/controller.go` | `Controller` |
 | `api/json.go` | Re-exports of `WriteJSON`, `WriteError`, `ReadJSON`, `ErrorBody` |
 | `api/health.go` | `HealthResponse` |
 | `arazzo/loader.go` | `Loader`, `Source`, `Executor` / request / response aliases |
 | `arazzo/fileloader.go` | Recursive filesystem loader; `BaseURL` trailing slash |
 | `arazzo/tooldoc.go` | Templates + `ToolDocContext` |
+| `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
 
 ## File map (`internal/`)
 
@@ -73,10 +74,10 @@ context-mesh-engine/
 | `api/v1/tools.go` | `GET /tools` (MCP `tools/list` result) |
 | `api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; error mapping |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
-| `plans/runner.go` | New libopenapi Engine per `Run`; workflow outputs |
+| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; workflow outputs |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
 | `plans/openapi.go` | OAS 3.1 JSON (paths **without** `APIPrefix`) |
-| `plans/mcp.go` | Stub `query` + `run_*` tools |
+| `plans/mcp.go` | `query` + `run_*` tools |
 
 ## Tests as the contract
 

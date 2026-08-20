@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/mevansam/context-mesh-engine/arazzo"
 	libarazzo "github.com/pb33f/libopenapi/arazzo"
 )
 
@@ -18,19 +20,22 @@ var (
 	// ErrNoExecutor is returned when Run is called without an Executor.
 	ErrNoExecutor = errors.New("executor not configured")
 	// ErrQueryNotImplemented is returned by MCP query and POST /plans/query
-	// until semantic plan matching is wired.
+	// when [arazzo.QueryMatcher] is not set.
 	ErrQueryNotImplemented = errors.New("query is not implemented")
+	// ErrEmptyQuery is returned when the query string is empty.
+	ErrEmptyQuery = errors.New("query is required")
 )
 
 // Runner executes workflows via a new libopenapi Engine per call.
 type Runner struct {
 	catalog  *Catalog
 	executor libarazzo.Executor
+	matcher  arazzo.QueryMatcher
 }
 
-// NewRunner wires a catalog to a (possibly nil) executor.
-func NewRunner(catalog *Catalog, executor libarazzo.Executor) *Runner {
-	return &Runner{catalog: catalog, executor: executor}
+// NewRunner wires a catalog to a (possibly nil) executor and query matcher.
+func NewRunner(catalog *Catalog, executor libarazzo.Executor, matcher arazzo.QueryMatcher) *Runner {
+	return &Runner{catalog: catalog, executor: executor, matcher: matcher}
 }
 
 // Catalog returns the loaded plans.
@@ -76,8 +81,55 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 	return out, nil
 }
 
-// Query is the shared MCP/REST stub for natural-language plan matching.
-// Both ingresses must call this rather than duplicating the 501.
-func (r *Runner) Query(_ context.Context, _ string, _ map[string]any) (map[string]any, error) {
-	return nil, ErrQueryNotImplemented
+// Query asks the matcher for a plan, verifies it is loaded, then [Runner.Run]s it.
+func (r *Runner) Query(ctx context.Context, query string, data map[string]any) (map[string]any, error) {
+	if r.matcher == nil {
+		return nil, ErrQueryNotImplemented
+	}
+	if strings.TrimSpace(query) == "" {
+		return nil, ErrEmptyQuery
+	}
+	match, err := r.matcher.Match(ctx, arazzo.QueryRequest{
+		Query:   query,
+		Data:    data,
+		Catalog: r.catalog.View(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if match == nil || match.PlanID == "" || match.WorkflowID == "" {
+		return nil, fmt.Errorf("%w: no matching plan", ErrNotFound)
+	}
+
+	var e *Entry
+	var ok bool
+	if strings.TrimSpace(match.Version) == "" {
+		e, ok = r.catalog.Latest(match.PlanID)
+	} else {
+		e, ok = r.catalog.Get(match.PlanID, match.Version)
+	}
+	if !ok {
+		ver := match.Version
+		if ver == "" {
+			ver = "latest"
+		}
+		return nil, fmt.Errorf("%w: %s@%s not loaded", ErrNotFound, match.PlanID, ver)
+	}
+
+	found := false
+	for _, id := range e.WorkflowIDs() {
+		if id == match.WorkflowID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("%w: workflow %s", ErrNotFound, match.WorkflowID)
+	}
+
+	inputs := match.Inputs
+	if inputs == nil {
+		inputs = data
+	}
+	return r.Run(ctx, e.PlanID, e.Version, match.WorkflowID, inputs)
 }

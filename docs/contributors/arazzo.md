@@ -7,13 +7,14 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 | Path | Role |
 | --- | --- |
 | `arazzo/loader.go` | `Loader`, `Source`, `Executor` aliases |
+| `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
 | `arazzo/fileloader.go` | Recursive `.yaml/.yml/.json`; `BaseURL` **must** end with `/` |
 | `arazzo/tooldoc.go` | Recipes vs `ToolDocContext`; `SanitizeToolName` |
-| `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest |
+| `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest, `View()` |
 | `internal/plans/runner.go` | `NewEngine` per `Run`; returns workflow outputs |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const |
 | `internal/plans/openapi.go` | OAS 3.1; paths without `APIPrefix` |
-| `internal/plans/mcp.go` | Stub `query` + one `run_*` tool per catalog entry |
+| `internal/plans/mcp.go` | `query` + one `run_*` tool per catalog entry |
 | `internal/api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; 400/404/501 |
 | `internal/api/v1/tools.go` | `GET /tools` (MCP `tools/list` result) |
 | `engine/engine.go` | `New` wires loaders → catalog → MCP + REST |
@@ -55,9 +56,22 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 
 Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurrency-safe). Cache `*high.Arazzo` and `[]*ResolvedSource` on `Entry` only.
 
-HTTP (`plans.go`): `POST /plans/query` calls `Runner.Query` (stub → `ErrQueryNotImplemented` → 501). Execute: `ErrNoExecutor` → 501; `ErrNotFound` → 404; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. HTTP **200** body is the outputs object.
+`Runner.Query`:
 
-MCP (`mcp.go`): `query` calls the same `Runner.Query`. Runner `error` on `query` or `run_*` becomes a tool error (`mcp.AddTool` wraps it). Nil error + outputs map → structured content.
+1. Matcher nil → `ErrQueryNotImplemented` (501)
+2. Empty/whitespace `query` → `ErrEmptyQuery` (400)
+3. `matcher.Match` with `QueryRequest{Query, Data, Catalog: catalog.View()}`
+4. Nil match or empty `PlanID`/`WorkflowID` → `ErrNotFound`
+5. Resolve version: empty → `Latest(PlanID)`; else `Get`. Miss → `ErrNotFound` (`… not loaded`)
+6. Workflow id must exist on that entry → else `ErrNotFound`
+7. Inputs: `match.Inputs` if non-nil, else `Data`
+8. `Run` (same outputs as direct execute)
+
+`Catalog.View()` is `arazzo.PlanCatalog`. It does not snapshot the catalog; `Get`/`Latest`/`Plans` copy metadata only when called. Matcher must not use a catalog miss as “no match”; the engine always verifies after `Match`.
+
+HTTP (`plans.go`): `POST /plans/query` calls `Runner.Query`. Execute: `ErrNoExecutor` → 501; `ErrNotFound` → 404; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. HTTP **200** body is the outputs object.
+
+MCP (`mcp.go`): `query` calls the same `Runner.Query`. Runner `error` on `query` or `run_*` becomes a tool error. Nil error + outputs map → structured content.
 
 POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not** `api.ReadJSON` (which rejects unknown fields).
 
@@ -65,7 +79,7 @@ POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not
 
 `RegisterMCP`:
 
-1. Merge templates; add stub `query` (`queryArgs`: `query`, optional `data`) — same contract as `POST /plans/query`
+1. Merge templates; add `query` (`queryArgs`: `query`, optional `data`) — same contract as `POST /plans/query`
 2. For each catalog entry: `RenderToolDoc`, reject duplicate **names**, `InputSchema`, `mcp.AddTool` with captured `planID`/`version`
 
 `InputSchema` is top-level `type: object` + `oneOf` of `{workflowId: const, inputs: workflow schema}`. Do not put overlapping workflow input schemas in a single `properties.inputs.oneOf` — JSON Schema `oneOf` fails when more than one branch matches.
@@ -95,9 +109,10 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 2. Resolve sources before Validate.
 3. New libopenapi Engine per run.
 4. Nil executor: catalog + OpenAPI work; execute is 501 / MCP tool error.
-5. Plan REST is under `Options.APIPrefix` only (default `/api`). Do not `StripPrefix` `/mcp`.
-6. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
-7. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
+5. Nil `QueryMatcher`: query is 501; after Match, missing loaded plan is 404.
+6. Plan REST is under `Options.APIPrefix` only (default `/api`). Do not `StripPrefix` `/mcp`.
+7. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
+8. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
 
 ## Tests to update when you change behavior
 

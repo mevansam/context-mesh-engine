@@ -65,7 +65,7 @@ Must run from the repository root so `testdata/arazzo/plans` resolves (cwd-relat
 go run ./examples/arazzo-fs
 ```
 
-Loads `testdata/arazzo/plans` (`x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Stub `Executor` always returns HTTP 200.
+Loads `testdata/arazzo/plans` (`x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Stub `Executor` always returns HTTP 200. Dummy `QueryMatcher` always selects `pingHealth` on the latest petstore plan.
 
 ```bash
 curl -s http://localhost:8080/api/openapi/petstore
@@ -73,6 +73,8 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'
 curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'
+curl -s -X POST http://localhost:8080/api/plans/query \
+  -H 'Content-Type: application/json' -d '{"query":"is the api up","data":{"name":"demo"}}'
 ```
 
 Workflows in the fixtures: `pingHealth` (both versions), `echoName` (1.1.0 only). OpenAPI sources live in `testdata/arazzo/sources/openapi.yaml` (not passed to `FileLoader`).

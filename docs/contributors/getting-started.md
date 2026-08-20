@@ -55,7 +55,7 @@ Targeted tests:
 | Command | Covers |
 | --- | --- |
 | `go test ./engine -run TestHandler_` | mux contract: health, MCP handshake, SSE GET 400, REST ≠ MCP |
-| `go test ./engine -run TestArazzo_` | plan MCP tools, REST execute, OpenAPI, 501, shared runner |
+| `go test ./engine -run TestArazzo_` | plan MCP tools, REST execute, OpenAPI, query matcher, 501, shared runner |
 | `go test ./internal/plans` | catalog skip/duplicate/latest, runner, schema, OAS JSON |
 | `go test ./arazzo` | FileLoader, template render |
 | `go test ./examples/petstore/mcp-server` | petstore Arazzo plan loads |

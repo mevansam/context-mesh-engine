@@ -81,6 +81,13 @@ type Options struct {
 	// If nil, catalog and OpenAPI still load; execute returns 501.
 	ArazzoExecutor arazzo.Executor
 
+	// QueryMatcher selects a plan and workflow for MCP query and
+	// POST {APIPrefix}/plans/query. Matching (for example vector search
+	// against a global registry) is implemented by the application.
+	// If nil, query returns 501. After Match, the engine checks that
+	// the plan is loaded in this process.
+	QueryMatcher arazzo.QueryMatcher
+
 	// PublicBaseURL is the origin used in MCP tool descriptions
 	// (for example http://localhost:8080). Addr is not substituted.
 	// If empty, REST URLs in descriptions are path-only.
@@ -138,7 +145,7 @@ func New(opts Options) (*Engine, error) {
 		if err != nil {
 			return nil, err
 		}
-		runner := plans.NewRunner(catalog, opts.ArazzoExecutor)
+		runner := plans.NewRunner(catalog, opts.ArazzoExecutor, opts.QueryMatcher)
 		if err := plans.RegisterMCP(gw.Server(), catalog, runner, opts.ToolDoc, opts.PublicBaseURL, opts.APIPrefix); err != nil {
 			return nil, err
 		}

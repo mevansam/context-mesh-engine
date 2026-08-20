@@ -62,7 +62,7 @@ func DefaultToolDocTemplates() ToolDocTemplates {
 		Description:      defaultDescriptionTemplate,
 		QueryName:        "query",
 		QueryTitle:       "Query plans",
-		QueryDescription: "Match a simple natural-language request plus inputs against loaded Arazzo plans, then execute the selected plan. Same contract as POST {{.RESTQueryURL}}. Not implemented in this version.",
+		QueryDescription: "Match a simple natural-language request plus inputs against Arazzo plans, then execute the selected plan. Same contract as POST {{.RESTQueryURL}}.",
 	}
 }
 

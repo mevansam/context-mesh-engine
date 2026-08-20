@@ -6,7 +6,7 @@ Public import paths (the SDK contract):
 | --- | --- |
 | `github.com/mevansam/context-mesh-engine/engine` | Construct the listener, mux, and shared `mcp.Server` |
 | `github.com/mevansam/context-mesh-engine/api` | `Controller`, JSON helpers, `HealthResponse` |
-| `github.com/mevansam/context-mesh-engine/arazzo` | Arazzo `Loader`, `FileLoader`, `Executor`, tool-doc templates |
+| `github.com/mevansam/context-mesh-engine/arazzo` | Arazzo `Loader`, `FileLoader`, `Executor`, `QueryMatcher`, tool-doc templates |
 | `github.com/modelcontextprotocol/go-sdk/mcp` | Tools, prompts, resources, Streamable HTTP client |
 
 `internal/` is not part of the SDK contract. Do not import it from an application.
@@ -51,6 +51,7 @@ Zero-value `engine.Options` after `New` (see `engine/engine.go`):
 | `APIPrefix` | empty | `/api` (`DefaultAPIPrefix`). Must not be `/` or `/mcp`. |
 | `ArazzoLoaders` | nil/empty | no plan tools or plan REST routes |
 | `ArazzoExecutor` | nil | catalog + OpenAPI still load; execute is 501 |
+| `QueryMatcher` | nil | MCP `query` and `POST /plans/query` are 501 |
 | `PublicBaseURL` | empty | REST URLs in MCP descriptions are path-only (`{APIPrefix}/...`) |
 | `ToolDoc` | zero struct | `arazzo.DefaultToolDocTemplates()` |
 
@@ -93,7 +94,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 
 Advertise MCP at **`/mcp`** (no trailing slash). `/mcp/` is mounted so extra path segments still reach the same handler. Do not `http.StripPrefix("/mcp", ...)` yourself.
 
-Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md). `GET {APIPrefix}/tools` is always registered and lists every tool on the shared MCP server (including `query` / `run_*` when loaders are set, and any tools you add with `mcp.AddTool`).
+Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md). `GET {APIPrefix}/tools` is always registered and lists every tool on the shared MCP server (including `query` / `run_*` when loaders are set, and any tools you add with `mcp.AddTool`). MCP `query` and `POST {APIPrefix}/plans/query` need `Options.QueryMatcher` or they return 501.
 
 REST errors from this SDK use `{"error":"<message>"}` (`api.ErrorBody`) except `http.TimeoutHandler` on the REST prefix, which writes plain text `request timeout\n`.
 

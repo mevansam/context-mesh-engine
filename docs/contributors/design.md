@@ -129,5 +129,5 @@ Follow [arazzo.md](arazzo.md). Do not call `RunWorkflow` on a shared `arazzo.Eng
 - OAuth / `auth.RequireBearerToken` (wrap MCP only if added later)
 - Legacy SSE transport
 - A shipping HTTP `Executor` (apps provide one)
-- Semantic matching behind MCP `query` and `POST /api/plans/query` (routes exist; they return not-implemented)
+- Semantic matching / vector search (apps implement `arazzo.QueryMatcher`; nil is 501)
 - Changes under the `go-sdk` or `libopenapi` checkouts unless you are contributing to those repos

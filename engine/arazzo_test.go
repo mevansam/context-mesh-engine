@@ -314,6 +314,86 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 	}
 }
 
+type pingMatcher struct {
+	planID, version, workflowID string
+}
+
+func (p pingMatcher) Match(_ context.Context, req arazzo.QueryRequest) (*arazzo.QueryMatch, error) {
+	return &arazzo.QueryMatch{
+		PlanID:     p.planID,
+		Version:    p.version,
+		WorkflowID: p.workflowID,
+		Inputs:     req.Data,
+	}, nil
+}
+
+func TestArazzo_QueryMatcher(t *testing.T) {
+	exec := &countingExec{}
+	e, err := engine.New(engine.Options{
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:  []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		ArazzoExecutor: exec,
+		QueryMatcher: pingMatcher{
+			planID:     "petstore",
+			workflowID: "pingHealth",
+		},
+		PublicBaseURL: "http://example.test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Post(ts.URL+"/api/plans/query", "application/json", strings.NewReader(`{"query":"health check","data":{"name":"q"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("query status = %d %s", resp.StatusCode, b)
+	}
+	if exec.n != 1 {
+		t.Fatalf("executor calls = %d", exec.n)
+	}
+
+	e2, err := engine.New(engine.Options{
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:  []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		ArazzoExecutor: exec,
+		QueryMatcher: pingMatcher{
+			planID:     "other-mesh",
+			version:    "3.0.0",
+			workflowID: "pingHealth",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts2 := httptest.NewServer(e2.Handler())
+	t.Cleanup(ts2.Close)
+	resp, err = http.Post(ts2.URL+"/api/plans/query", "application/json", strings.NewReader(`{"query":"from global registry"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("unloaded plan status = %d %s", resp.StatusCode, b)
+	}
+
+	resp, err = http.Post(ts.URL+"/api/plans/query", "application/json", strings.NewReader(`{"query":"   "}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("empty query status = %d %s", resp.StatusCode, b)
+	}
+}
+
 func toolErrorText(res *mcp.CallToolResult) string {
 	if res == nil || len(res.Content) == 0 {
 		return fmt.Sprintf("%#v", res)

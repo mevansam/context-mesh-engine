@@ -6,6 +6,7 @@ package plans
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -83,14 +84,14 @@ func (s *stubExec) Execute(_ context.Context, _ *arazzo.ExecutionRequest) (*araz
 
 func TestRunner_RunAndNoExecutor(t *testing.T) {
 	c := loadPetstore(t)
-	r := NewRunner(c, nil)
+	r := NewRunner(c, nil, nil)
 	_, err := r.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{})
 	if err != ErrNoExecutor {
 		t.Fatalf("err = %v, want ErrNoExecutor", err)
 	}
 
 	exec := &stubExec{}
-	r = NewRunner(c, exec)
+	r = NewRunner(c, exec, nil)
 	res, err := r.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{"name": "x"})
 	if err != nil {
 		t.Fatal(err)
@@ -110,10 +111,106 @@ func TestRunner_RunAndNoExecutor(t *testing.T) {
 
 func TestRunner_QueryStub(t *testing.T) {
 	c := loadPetstore(t)
-	r := NewRunner(c, &stubExec{})
+	r := NewRunner(c, &stubExec{}, nil)
 	_, err := r.Query(context.Background(), "check health", map[string]any{"name": "x"})
 	if err != ErrQueryNotImplemented {
 		t.Fatalf("err = %v, want ErrQueryNotImplemented", err)
+	}
+}
+
+type staticMatcher struct {
+	match *arazzo.QueryMatch
+	err   error
+}
+
+func (s staticMatcher) Match(_ context.Context, _ arazzo.QueryRequest) (*arazzo.QueryMatch, error) {
+	return s.match, s.err
+}
+
+func TestRunner_QueryMatcher(t *testing.T) {
+	c := loadPetstore(t)
+	exec := &stubExec{}
+
+	r := NewRunner(c, exec, staticMatcher{match: &arazzo.QueryMatch{
+		PlanID:     "petstore",
+		WorkflowID: "pingHealth",
+		Inputs:     map[string]any{"name": "from-match"},
+	}})
+	out, err := r.Query(context.Background(), "is the api up", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out == nil {
+		t.Fatal("expected outputs")
+	}
+	if exec.n != 1 {
+		t.Fatalf("executor calls = %d", exec.n)
+	}
+
+	r = NewRunner(c, exec, staticMatcher{match: &arazzo.QueryMatch{
+		PlanID:     "petstore",
+		Version:    "1.0.0",
+		WorkflowID: "pingHealth",
+	}})
+	if _, err := r.Query(context.Background(), "v1", map[string]any{"name": "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	r = NewRunner(c, exec, staticMatcher{match: &arazzo.QueryMatch{
+		PlanID:     "unloaded",
+		Version:    "9.9.9",
+		WorkflowID: "pingHealth",
+	}})
+	_, err = r.Query(context.Background(), "global hit", nil)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unloaded plan err = %v, want ErrNotFound", err)
+	}
+
+	r = NewRunner(c, exec, staticMatcher{match: &arazzo.QueryMatch{
+		PlanID:     "petstore",
+		WorkflowID: "noSuchWorkflow",
+	}})
+	_, err = r.Query(context.Background(), "bad workflow", nil)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("bad workflow err = %v, want ErrNotFound", err)
+	}
+
+	r = NewRunner(c, exec, staticMatcher{})
+	_, err = r.Query(context.Background(), "nothing", nil)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("nil match err = %v, want ErrNotFound", err)
+	}
+
+	r = NewRunner(c, exec, staticMatcher{match: &arazzo.QueryMatch{PlanID: "petstore", WorkflowID: "pingHealth"}})
+	_, err = r.Query(context.Background(), "   ", nil)
+	if !errors.Is(err, ErrEmptyQuery) {
+		t.Fatalf("empty query err = %v, want ErrEmptyQuery", err)
+	}
+
+	r = NewRunner(c, exec, staticMatcher{err: errors.New("index down")})
+	_, err = r.Query(context.Background(), "anything", nil)
+	if err == nil || err.Error() != "index down" {
+		t.Fatalf("matcher err = %v, want index down", err)
+	}
+}
+
+func TestCatalog_View(t *testing.T) {
+	c := loadPetstore(t)
+	view := c.View()
+	s, ok := view.Latest("petstore")
+	if !ok || s.PlanID != "petstore" || s.Version != "1.1.0" {
+		t.Fatalf("latest = %+v ok=%v", s, ok)
+	}
+	s, ok = view.Get("petstore", "1.0.0")
+	if !ok || s.Version != "1.0.0" {
+		t.Fatalf("get 1.0.0 = %+v ok=%v", s, ok)
+	}
+	n := 0
+	for range view.Plans() {
+		n++
+	}
+	if n != 2 {
+		t.Fatalf("Plans count = %d, want 2", n)
 	}
 }
 

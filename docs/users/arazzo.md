@@ -91,6 +91,7 @@ e, err := engine.New(engine.Options{
         arazzo.NewFileLoader("/path/to/plans"),
     },
     ArazzoExecutor: myExecutor{}, // nil: OpenAPI works; execute is 501
+    QueryMatcher:   myMatcher{},  // nil: query is 501
     PublicBaseURL:  "http://localhost:8080",
 })
 ```
@@ -130,14 +131,14 @@ Nil executor:
 - `GET /api/tools` still works (lists `query` and `run_*`)
 - `GET /api/openapi/...` still works
 - `POST /api/plans/...` execute → **501** `{"error":"executor not configured"}`
-- `POST /api/plans/query` → **501** `query is not implemented` (matching is not wired; independent of executor)
+- `POST /api/plans/query` → **501** `{"error":"query is not implemented"}` if `QueryMatcher` is nil; if a matcher is set, same as execute (**501** executor, or **404** if the match is not loaded)
 - MCP `run_*` → tool error (`IsError: true`), not a JSON-RPC protocol error
 
 This module does not ship an HTTP client executor. `examples/arazzo-fs` uses a stub that always returns 200. `examples/petstore/mcp-server` implements a real HTTP client against [petstore3.swagger.io](https://petstore3.swagger.io/) and the local async order adapter.
 
 ## MCP and REST: `query`
 
-Same job on both surfaces: the caller sends a **simple, direct** natural-language question plus a clear outline of the inputs they have. The engine semantically matches that against the plan registry, selects a plan, and executes it. The success payload is the same result object as direct execute.
+Same job on both surfaces: the caller sends a **simple, direct** natural-language question plus a clear outline of the inputs they have. Your app’s [`QueryMatcher`](#querymatcher) selects a plan from a **global** registry (vector search, and so on). The engine then checks that plan is **loaded in this process** and executes it. Success payload is the workflow **outputs** object (same as direct execute).
 
 | Surface | How |
 | --- | --- |
@@ -150,9 +151,55 @@ Body / arguments:
 { "query": "natural language", "data": { } }
 ```
 
-`data` is the input outline (optional object). Override MCP display strings with `ToolDoc.QueryName`, `QueryTitle`, `QueryDescription` (literals, not templates).
+`data` is the input outline (optional object). Used as workflow inputs when the matcher does not set `Inputs`. Override MCP display strings with `ToolDoc.QueryName`, `QueryTitle`, `QueryDescription`.
 
-This version returns MCP tool error / HTTP **501** `{"error":"query is not implemented"}` until matching is wired. Direct `run_*` and `POST /api/plans/{planId}/...` are implemented.
+| Matcher / catalog | REST | MCP |
+| --- | --- | --- |
+| `QueryMatcher` nil | 501 `query is not implemented` | tool error |
+| Empty `query` | 400 | tool error |
+| Matcher error | 400 | tool error |
+| No selection (`nil` match) | 404 | tool error |
+| Plan/version/workflow not loaded here | 404 | tool error |
+| Match + execute OK | 200 outputs | structured content = outputs |
+
+Direct `run_*` and `POST /api/plans/{planId}/...` do not use the matcher.
+
+## QueryMatcher
+
+Semantic matching is **not** part of this SDK. Implement `arazzo.QueryMatcher` in the application (typically a vector lookup against a global plan registry):
+
+```go
+type QueryMatcher interface {
+    Match(ctx context.Context, req QueryRequest) (*QueryMatch, error)
+}
+
+type QueryRequest struct {
+    Query   string
+    Data    map[string]any
+    Catalog PlanCatalog // loaded plans; interface value, not a copied slice
+}
+
+type QueryMatch struct {
+    PlanID     string         // required (x-planId)
+    Version    string         // empty → latest version loaded in this engine
+    WorkflowID string         // required
+    Inputs     map[string]any // nil → use QueryRequest.Data
+}
+
+type PlanCatalog interface {
+    Get(planID, version string) (PlanSummary, bool)
+    Latest(planID string) (PlanSummary, bool)
+    Plans() iter.Seq[PlanSummary]
+}
+```
+
+`Match` should return whatever the **global** registry selected. Do **not** treat `Catalog.Get == false` as “no match”; the engine verifies the loaded catalog after `Match` returns. A global hit that was never loaded into this process is HTTP **404** / MCP tool error (`… not loaded`).
+
+`Catalog` is for optional lookup or listing of what this process loaded (for example to pick `workflowId` after an id match). You may ignore it. `Plans()` is an iterator: nothing is copied until you range it.
+
+Empty `Version` means latest among versions **loaded here**, not latest in the global registry.
+
+Wire it with `engine.Options.QueryMatcher`. Example: [examples/arazzo-fs](examples.md#arazzo-fs) ships a dummy matcher that always selects `petstore` / `pingHealth`.
 
 ## MCP: `run_*` arguments
 
@@ -279,12 +326,12 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Set `ArazzoLoaders`; otherwise plan routes and `run_*` tools do not exist.
 - Point `FileLoader` at the plans dir only; OpenAPI sources stay beside it (`../sources/...`).
 - Implement `Executor`; nil is 501 on execute, OpenAPI still works.
+- Implement `QueryMatcher` for MCP `query` / `POST /plans/query`; nil is 501. Matcher uses your global registry; the engine rejects plans not loaded here.
 - MCP args for `run_*` wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
 - Generated OpenAPI `paths` keys omit `Options.APIPrefix`. They describe execute routes, not `/plans/query`. **200** is the workflow outputs object.
 - `PublicBaseURL` must be set if you want absolute URLs in MCP descriptions.
-- Treat `query` / `POST /plans/query` as not implemented until matching is wired.
 
 ## Next
 

@@ -2,8 +2,9 @@
 // Use of this source code is governed by the MIT license
 // that can be found in the LICENSE file.
 
-// Package arazzo is the public plugin surface for loading Arazzo specs
-// and documenting generated MCP tools.
+// Package arazzo is the public plugin surface for loading Arazzo specs,
+// executing workflow steps, matching queries to plans, and documenting
+// generated MCP tools.
 package arazzo
 
 import (

@@ -7,6 +7,7 @@ package plans
 import (
 	"context"
 	"fmt"
+	"iter"
 	"log/slog"
 	"net/url"
 	"path/filepath"
@@ -264,4 +265,65 @@ func (e *Entry) WorkflowIDs() []string {
 		ids = append(ids, w.ID)
 	}
 	return ids
+}
+
+func (e *Entry) summary() arazzo.PlanSummary {
+	title, summary, desc := "", "", ""
+	if e.Doc != nil && e.Doc.Info != nil {
+		title = e.Doc.Info.Title
+		summary = e.Doc.Info.Summary
+		desc = e.Doc.Info.Description
+	}
+	wfs := append([]arazzo.WorkflowDoc(nil), e.Workflows...)
+	return arazzo.PlanSummary{
+		PlanID:      e.PlanID,
+		Version:     e.Version,
+		Title:       title,
+		Summary:     summary,
+		Description: desc,
+		Workflows:   wfs,
+	}
+}
+
+// View is the [arazzo.PlanCatalog] for this catalog. It does not copy
+// entries until Get, Latest, or Plans is used.
+func (c *Catalog) View() arazzo.PlanCatalog {
+	return catalogView{c: c}
+}
+
+type catalogView struct{ c *Catalog }
+
+func (v catalogView) Get(planID, version string) (arazzo.PlanSummary, bool) {
+	if v.c == nil {
+		return arazzo.PlanSummary{}, false
+	}
+	e, ok := v.c.Get(planID, version)
+	if !ok {
+		return arazzo.PlanSummary{}, false
+	}
+	return e.summary(), true
+}
+
+func (v catalogView) Latest(planID string) (arazzo.PlanSummary, bool) {
+	if v.c == nil {
+		return arazzo.PlanSummary{}, false
+	}
+	e, ok := v.c.Latest(planID)
+	if !ok {
+		return arazzo.PlanSummary{}, false
+	}
+	return e.summary(), true
+}
+
+func (v catalogView) Plans() iter.Seq[arazzo.PlanSummary] {
+	return func(yield func(arazzo.PlanSummary) bool) {
+		if v.c == nil {
+			return
+		}
+		for _, e := range v.c.entries {
+			if !yield(e.summary()) {
+				return
+			}
+		}
+	}
 }

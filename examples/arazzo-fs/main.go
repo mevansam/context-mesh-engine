@@ -22,6 +22,19 @@ func (okExec) Execute(_ context.Context, _ *arazzo.ExecutionRequest) (*arazzo.Ex
 	}, nil
 }
 
+// pingMatcher is a stand-in for an external semantic index: it always
+// selects the sample petstore pingHealth workflow. The engine still
+// checks that plan is loaded here.
+type pingMatcher struct{}
+
+func (pingMatcher) Match(_ context.Context, req arazzo.QueryRequest) (*arazzo.QueryMatch, error) {
+	return &arazzo.QueryMatch{
+		PlanID:     "petstore",
+		WorkflowID: "pingHealth",
+		Inputs:     req.Data,
+	}, nil
+}
+
 func main() {
 	e, err := engine.New(engine.Options{
 		Addr: "localhost:8080",
@@ -29,6 +42,7 @@ func main() {
 			arazzo.NewFileLoader("testdata/arazzo/plans"),
 		},
 		ArazzoExecutor: okExec{},
+		QueryMatcher:   pingMatcher{},
 		PublicBaseURL:  "http://localhost:8080",
 	})
 	if err != nil {

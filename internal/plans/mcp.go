@@ -23,7 +23,7 @@ type queryArgs struct {
 	Data  map[string]any `json:"data,omitempty" jsonschema:"data inputs referenced by the query"`
 }
 
-// RegisterMCP adds query (stub) and one run_* tool per catalog entry.
+// RegisterMCP adds query and one run_* tool per catalog entry.
 func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls arazzo.ToolDocTemplates, publicBaseURL, apiPrefix string) error {
 	tmpls = arazzo.MergeTemplates(tmpls)
 	seen := map[string]string{}
