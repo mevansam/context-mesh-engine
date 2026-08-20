@@ -4,7 +4,7 @@ go 1.25.7
 
 require (
 	github.com/google/jsonschema-go v0.4.3
-	github.com/modelcontextprotocol/go-sdk v0.0.0
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/pb33f/libopenapi v0.38.7
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/mod v0.40.0
@@ -23,7 +23,3 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
-
-replace github.com/modelcontextprotocol/go-sdk => ../go-sdk
-
-replace github.com/pb33f/libopenapi => ../libopenapi
