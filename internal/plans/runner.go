@@ -12,6 +12,7 @@ import (
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	libarazzo "github.com/pb33f/libopenapi/arazzo"
+	"go.yaml.in/yaml/v4"
 )
 
 var (
@@ -74,11 +75,34 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		}
 		return nil, fmt.Errorf("workflow %s failed", workflowID)
 	}
-	out := res.Outputs
+	return nativeOutputs(res.Outputs), nil
+}
+
+// nativeOutputs converts libopenapi output values to JSON-friendly Go types.
+// JSON Pointers into objects/arrays yield *yaml.Node; agents must not see that AST.
+func nativeOutputs(out map[string]any) map[string]any {
 	if out == nil {
-		out = map[string]any{}
+		return map[string]any{}
 	}
-	return out, nil
+	for k, v := range out {
+		out[k] = nativeOutput(v)
+	}
+	return out
+}
+
+func nativeOutput(v any) any {
+	switch n := v.(type) {
+	case *yaml.Node:
+		var decoded any
+		if err := n.Decode(&decoded); err != nil {
+			return v
+		}
+		return decoded
+	case yaml.Node:
+		return nativeOutput(&n)
+	default:
+		return v
+	}
 }
 
 // Query asks the matcher for a plan, verifies it is loaded, then [Runner.Run]s it.

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
+	"go.yaml.in/yaml/v4"
 )
 
 func plansDir(t *testing.T) string {
@@ -257,5 +258,23 @@ func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `/plans/petstore/v1.1.0/echoName`) {
 		t.Fatalf("versioned paths: %s", b)
+	}
+}
+
+func TestNativeOutput_YAMLMapping(t *testing.T) {
+	n := &yaml.Node{}
+	if err := n.Encode(map[string]any{"id": 1, "name": "Dog", "status": "available"}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := nativeOutput(n).(map[string]any)
+	if !ok {
+		t.Fatalf("got %T", nativeOutput(n))
+	}
+	if got["name"] != "Dog" || got["status"] != "available" {
+		t.Fatalf("pet = %#v", got)
+	}
+	out := nativeOutputs(nil)
+	if len(out) != 0 {
+		t.Fatalf("nil outputs = %#v", out)
 	}
 }

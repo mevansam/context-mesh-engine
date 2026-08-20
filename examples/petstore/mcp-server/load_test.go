@@ -54,6 +54,9 @@ func TestPetstorePlanLoads(t *testing.T) {
 	if _, ok := props["petId"]; !ok {
 		t.Fatalf("retrievePet 200 schema missing petId: %#v", schema)
 	}
+	if _, ok := props["pet"]; !ok {
+		t.Fatalf("retrievePet 200 schema missing pet: %#v", schema)
+	}
 	if _, ok := props["inputs"]; ok {
 		t.Fatalf("200 schema should be outputs, not trace: %#v", schema)
 	}

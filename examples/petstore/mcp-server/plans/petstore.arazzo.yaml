@@ -15,8 +15,9 @@ info:
   title: A pet purchasing workflow
   summary: Search, select, purchase, and check pet store orders
   description: |
-    Workflows over the hosted Petstore (https://petstore3.swagger.io/) plus an
-    AsyncAPI-shaped order adapter that places orders on POST /store/order.
+    Login, find a pet by availability status, purchase it, and check the
+    resulting order. Use these workflows only; they are the supported
+    interface for this plan.
   version: 1.0.1
   x-planId: petstore
 sourceDescriptions:
@@ -28,8 +29,8 @@ sourceDescriptions:
     type: openapi
 workflows:
   - workflowId: retrievePet
-    summary: Login and find a pet by status
-    description: Logs the user in, then lists pets with the given status.
+    summary: Find a pet by status
+    description: Logs the user in and returns details of a pet with the given status.
     inputs:
       type: object
       required: [username, password, status]
@@ -75,15 +76,14 @@ workflows:
               - condition: $response.body#/0 == null
         outputs:
           petId: $response.body#/0/id
+          pet: $response.body#/0
     outputs:
       petId: $steps.getPetStep.outputs.petId
+      pet: $steps.getPetStep.outputs.pet
 
   - workflowId: purchasePet
-    summary: Login and purchase a given pet
-    description: |
-      Logs the user in, then places an async order for petId. The adapter
-      implements AsyncAPI place-order / confirm-order and calls Petstore
-      POST /store/order.
+    summary: Purchase a pet
+    description: Logs the user in and places an order for the given pet. Returns the order identifier when the purchase is confirmed.
     inputs:
       type: object
       required: [username, password, petId, orderCorrelationId]
@@ -112,7 +112,7 @@ workflows:
         outputs:
           sessionToken: $response.body
       - stepId: purchasePetStep
-        description: Send place-order (AsyncAPI placeOrder)
+        description: Place the order
         operationPath: $sourceDescriptions.asyncOrderApiDescription.placeOrder
         parameters:
           - name: orderCorrelationId
@@ -128,7 +128,7 @@ workflows:
         successCriteria:
           - condition: $statusCode == 200
       - stepId: confirmPetPurchaseStep
-        description: Receive confirm-order (AsyncAPI confirmOrder)
+        description: Confirm the order
         operationPath: $sourceDescriptions.asyncOrderApiDescription.confirmOrder
         parameters:
           - name: orderCorrelationId
@@ -142,8 +142,8 @@ workflows:
       orderId: $steps.confirmPetPurchaseStep.outputs.orderId
 
   - workflowId: checkOrderStatus
-    summary: Login and check an order
-    description: Logs the user in, then GET /store/order/{orderId} on the hosted Petstore.
+    summary: Check an order
+    description: Logs the user in and returns the status of an existing order.
     inputs:
       type: object
       required: [username, password, orderId]

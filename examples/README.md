@@ -72,7 +72,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
 
 Versioned URL: `POST /api/plans/petstore/v1.0.1/retrievePet`.
 
-Pick a `petId` from the response (first match). If find-by-status is down on the host, `GET https://petstore3.swagger.io/api/v3/pet/1` still works; use `petId: 1` for purchase.
+Pick a `petId` from the response (or `pet.id`). If find-by-status is down on the host, `GET https://petstore3.swagger.io/api/v3/pet/1` still works; use `petId: 1` for purchase.
 
 ### REST: purchase that pet (async order)
 
