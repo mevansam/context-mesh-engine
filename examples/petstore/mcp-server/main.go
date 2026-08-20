@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
@@ -44,14 +45,12 @@ func main() {
 	}
 }
 
+// plansDir is plans/ next to this source file. runtime.Caller records the
+// compile-time path of main.go, so go run / go test work from any cwd.
 func plansDir() string {
-	for _, p := range []string{
-		filepath.Join("examples", "petstore", "mcp-server", "plans"),
-		"plans",
-	} {
-		if st, err := os.Stat(p); err == nil && st.IsDir() {
-			return p
-		}
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatal("cannot resolve path of main.go")
 	}
-	return filepath.Join("examples", "petstore", "mcp-server", "plans")
+	return filepath.Join(filepath.Dir(file), "plans")
 }

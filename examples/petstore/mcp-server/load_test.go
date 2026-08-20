@@ -19,7 +19,7 @@ import (
 func TestPetstorePlanLoads(t *testing.T) {
 	e, err := engine.New(engine.Options{
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-		ArazzoLoaders: []arazzo.Loader{arazzo.NewFileLoader("plans")},
+		ArazzoLoaders: []arazzo.Loader{arazzo.NewFileLoader(plansDir())},
 	})
 	if err != nil {
 		t.Fatal(err)

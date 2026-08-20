@@ -1,6 +1,6 @@
 # mcp-server
 
-`context-mesh-engine` host for the petstore Arazzo plan. Run from the **repository root** (async adapter must already be listening):
+`context-mesh-engine` host for the petstore Arazzo plan. Plans are loaded from `plans/` next to `main.go` (not the working directory). Run `go run` from the **repository root** so module `replace`s resolve (async adapter must already be listening):
 
 ```bash
 go run ./examples/petstore/async-order-server
