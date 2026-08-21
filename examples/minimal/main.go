@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 
 	"github.com/mevansam/context-mesh-engine/engine"
@@ -14,7 +15,10 @@ import (
 )
 
 func main() {
-	e, err := engine.New(engine.Options{Addr: "localhost:8080"})
+	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
+	flag.Parse()
+
+	e, err := engine.New(engine.Options{Addr: "localhost:8080", DualMCPandREST: *dual})
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"net/http"
 	"time"
@@ -16,7 +17,10 @@ import (
 )
 
 func main() {
-	e, err := engine.New(engine.Options{})
+	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
+	flag.Parse()
+
+	e, err := engine.New(engine.Options{DualMCPandREST: *dual})
 	if err != nil {
 		log.Fatal(err)
 	}

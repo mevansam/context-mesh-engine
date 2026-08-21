@@ -22,6 +22,7 @@ import (
 func main() {
 	addr := flag.String("addr", "localhost:8080", "MCP/REST listen address")
 	asyncURL := flag.String("async-order-url", defaultAsyncBase, "async-order-server origin")
+	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -34,12 +35,18 @@ func main() {
 		},
 		ArazzoExecutor: newHTTPExec(*asyncURL),
 		PublicBaseURL:  "http://" + *addr,
+		DualMCPandREST: *dual,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("MCP http://%s%s  REST http://%s%s  async %s  petstore %s",
-		*addr, engine.MCPPath, *addr, e.APIPrefix(), *asyncURL, petstore3Base)
+	if *dual {
+		log.Printf("MCP http://%s%s  REST http://%s%s  async %s  petstore %s",
+			*addr, engine.MCPPath, *addr, e.APIPrefix(), *asyncURL, petstore3Base)
+	} else {
+		log.Printf("REST http://%s%s  async %s  petstore %s",
+			*addr, e.APIPrefix(), *asyncURL, petstore3Base)
+	}
 	if err := e.ListenAndServe(ctx); err != nil {
 		log.Fatal(err)
 	}

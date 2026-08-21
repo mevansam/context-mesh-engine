@@ -4,7 +4,10 @@ The plans directory is the first argument. From the **repository root**:
 
 ```bash
 go run ./examples/arazzo-fs testdata/arazzo/plans
+go run ./examples/arazzo-fs -dual testdata/arazzo/plans
 ```
+
+Default is REST only. `-dual` also mounts MCP Streamable HTTP at `/mcp`.
 
 Loads that directory recursively (sample Pet Store plans: `x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Serves:
 

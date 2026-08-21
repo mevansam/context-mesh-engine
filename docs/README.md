@@ -49,7 +49,7 @@ SDK users should not need Path B to ship an app.
 
 | Route | Protocol | Implementation |
 | --- | --- | --- |
-| `/mcp`, `/mcp/` | MCP Streamable HTTP (POST, GET SSE, DELETE) | `mcp.NewStreamableHTTPHandler` |
+| `/mcp`, `/mcp/` | MCP Streamable HTTP (POST, GET SSE, DELETE) | mounted when `DualMCPandREST` or `MCPOnly` |
 | `/api` (default `Options.APIPrefix`) | JSON REST | stdlib `ServeMux` + `api.Controller` |
 | `{APIPrefix}/tools` | JSON REST | always; MCP `tools/list` result |
 | `{APIPrefix}/plans/...`, `{APIPrefix}/openapi/...` | JSON REST | registered only when `Options.ArazzoLoaders` is non-empty |

@@ -21,7 +21,8 @@ import (
 func newTestEngine(t *testing.T) *engine.Engine {
 	t.Helper()
 	e, err := engine.New(engine.Options{
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DualMCPandREST: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -234,14 +235,76 @@ func TestNew_APIPrefixRejected(t *testing.T) {
 	}
 }
 
-func TestNew_MCPOnlyAndRESTOnlyRejected(t *testing.T) {
-	_, err := engine.New(engine.Options{
-		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-		MCPOnly:  true,
-		RESTOnly: true,
+func TestNew_ServeModesMutuallyExclusive(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	combos := []engine.Options{
+		{Logger: log, DualMCPandREST: true, MCPOnly: true},
+		{Logger: log, DualMCPandREST: true, RESTOnly: true},
+		{Logger: log, MCPOnly: true, RESTOnly: true},
+		{Logger: log, DualMCPandREST: true, MCPOnly: true, RESTOnly: true},
+	}
+	for i, opts := range combos {
+		if _, err := engine.New(opts); err == nil {
+			t.Fatalf("combo %d: expected mutually exclusive error", i)
+		}
+	}
+}
+
+func TestHandler_DefaultRESTOnly(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	if err == nil {
-		t.Fatal("expected error when MCPOnly and RESTOnly are both true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("REST status = %d, want 200", resp.StatusCode)
+	}
+
+	mcpResp, err := http.Get(ts.URL + engine.MCPPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mcpResp.Body.Close()
+	if mcpResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("MCP status = %d, want 404", mcpResp.StatusCode)
+	}
+}
+
+func TestHandler_DualMCPandREST(t *testing.T) {
+	e := newTestEngine(t)
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("REST status = %d, want 200", resp.StatusCode)
+	}
+
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint: ts.URL + engine.MCPPath,
+	}, nil)
+	if err != nil {
+		t.Fatalf("MCP connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ping"})
+	if err != nil || res.IsError {
+		t.Fatalf("ping: %v %#v", err, res)
 	}
 }
 

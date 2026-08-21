@@ -12,6 +12,8 @@ go run ./examples/petstore/async-order-server
 go run ./examples/petstore/mcp-server
 ```
 
+Default is REST only (`/api/...`). Pass `-dual` to also mount MCP Streamable HTTP at `/mcp` (same flag as `cmd/engine`).
+
 | Directory | Demonstrates |
 | --- | --- |
 | `minimal/` | `engine.ListenAndServe` — the engine owns the HTTP listener |
@@ -49,6 +51,7 @@ Optional flags:
 ```bash
 go run ./examples/petstore/async-order-server -addr localhost:8091
 go run ./examples/petstore/mcp-server -addr localhost:8080 -async-order-url http://localhost:8091
+go run ./examples/petstore/mcp-server -dual
 ```
 
 Checks:
@@ -130,7 +133,11 @@ curl -s -H 'Accept: application/json' https://petstore.swagger.io/v2/store/order
 
 ### MCP with an agent
 
-The engine advertises Streamable HTTP at **`http://localhost:8080/mcp`**. After both servers are up, point an MCP client at that URL (not `/mcp/`).
+Start `mcp-server` with `-dual` so Streamable HTTP is mounted at **`http://localhost:8080/mcp`**. After both servers are up, point an MCP client at that URL (not `/mcp/`).
+
+```bash
+go run ./examples/petstore/mcp-server -dual
+```
 
 Cursor: Settings → MCP → add a **URL** server `http://localhost:8080/mcp`. Restart the agent chat so it reloads tools.
 

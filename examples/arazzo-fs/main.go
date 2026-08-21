@@ -40,8 +40,9 @@ func (pingMatcher) Match(_ context.Context, req arazzo.QueryRequest) (*arazzo.Qu
 }
 
 func main() {
+	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s <plans-dir>\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(os.Stderr, "usage: %s [-dual] <plans-dir>\n", filepath.Base(os.Args[0]))
 	}
 	flag.Parse()
 	if flag.NArg() != 1 {
@@ -58,6 +59,7 @@ func main() {
 		ArazzoExecutor: okExec{},
 		QueryMatcher:   pingMatcher{},
 		PublicBaseURL:  "http://localhost:8080",
+		DualMCPandREST: *dual,
 	})
 	if err != nil {
 		log.Fatal(err)

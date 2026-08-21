@@ -10,10 +10,10 @@ One process, one TCP port:
 
 | URL | Role |
 | --- | --- |
-| `http://<addr>/mcp` | MCP Streamable HTTP. Clients POST JSON-RPC and optionally GET an SSE stream. Sessions use `Mcp-Session-Id`. |
-| `http://<addr>/api/health` | Default liveness JSON: `{"status":"ok"}`. |
+| `http://<addr>/api/health` | Default liveness JSON: `{"status":"ok"}`. Always mounted unless `MCPOnly`. |
 | `http://<addr>/api/tools` | MCP `tools/list` result (same `tools` array as Streamable HTTP). |
 | `http://<addr>/api/...` | Your `api.Controller` routes (and, if you set loaders, Arazzo plan routes). |
+| `http://<addr>/mcp` | MCP Streamable HTTP. Mounted only with `DualMCPandREST` or `MCPOnly`. |
 
 The engine does **not** register a `ping` MCP tool by itself. `cmd/engine` and `examples/minimal` add `ping` as a sample.
 
@@ -40,7 +40,8 @@ Flags (`cmd/engine/main.go`):
 | `-addr` | `localhost:8080` | Listen address (`engine.DefaultAddr`) |
 | `-api-prefix` | `/api` | REST path prefix (`engine.Options.APIPrefix`) |
 | `-mcp-only` | false | Serve only MCP at `/mcp` (`Options.MCPOnly`) |
-| `-rest-only` | false | Serve only REST under the API prefix (`Options.RESTOnly`) |
+| `-rest-only` | false | Serve only REST (`Options.RESTOnly`; same as the default) |
+| `-dual` | false | Serve MCP and REST (`Options.DualMCPandREST`) |
 | `-specs` | empty | Directory of Arazzo YAML/JSON (recursive `FileLoader`) |
 | `-public-base-url` | `http://` + `-addr` when `-specs` is set | Origin written into MCP tool descriptions |
 
@@ -52,9 +53,9 @@ curl -s http://localhost:8080/api/health
 curl -s http://localhost:8080/api/tools
 ```
 
-The sample registers an MCP `ping` tool. Point a Streamable HTTP client at `http://localhost:8080/mcp` ([MCP client](usage.md#mcp-client)).
+The sample registers an MCP `ping` tool. With the default (REST only) it appears on `GET /api/tools`. Point a Streamable HTTP client at `http://localhost:8080/mcp` only when you pass `-dual` or `-mcp-only` ([MCP client](usage.md#mcp-client)).
 
-Both `-mcp-only` and `-rest-only` false (the default) serves both surfaces. Both true is rejected.
+Default is REST only. `-dual` serves both surfaces. `-mcp-only`, `-rest-only`, and `-dual` are mutually exclusive.
 
 `-specs` loads plans and registers `run_*` tools, but **does not** set an `Executor` or `QueryMatcher`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. `query` is not published until you set `QueryMatcher`. Use [examples/arazzo-fs](examples.md#arazzo-fs) for a stub executor and dummy matcher, or [examples/petstore](examples.md#petstore) for live Petstore HTTP. Full Arazzo guide: [arazzo.md](arazzo.md).
 
@@ -99,6 +100,8 @@ func ping(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolR
 	}, nil, nil
 }
 ```
+
+Default is REST only. Set `DualMCPandREST: true` (or run `go run ./examples/minimal -dual`) to also mount `/mcp`.
 
 `engine.New` always returns `(*Engine, error)`. Construction fails if Arazzo loaders are set and specs/templates are invalid.
 

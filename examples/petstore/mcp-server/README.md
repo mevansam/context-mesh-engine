@@ -4,8 +4,10 @@
 
 ```bash
 go run ./examples/petstore/async-order-server
-go run ./examples/petstore/mcp-server
+go run ./examples/petstore/mcp-server [-dual]
 ```
+
+Default is REST only. `-dual` also mounts MCP Streamable HTTP at `/mcp`.
 
 Plan: `plans/petstore.arazzo.yaml` (`x-planId: petstore`, version `1.0.1`). Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`.
 

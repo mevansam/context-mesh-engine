@@ -71,7 +71,7 @@ Do not add `mcp.NewSSEHandler` unless a later phase needs 2024-11-05 clients.
 
 Tests in `engine/engine_test.go` encode the first four.
 
-1. **Sibling mount.** MCP and REST are two children of the root mux. REST middleware must not wrap `/mcp`. `MCPOnly` / `RESTOnly` omit one sibling; both false is the default dual mount; both true is rejected by `engine.New`.
+1. **Sibling mount.** MCP and REST are two children of the root mux. REST middleware must not wrap `/mcp`. Default (all serve-mode flags false) mounts REST only. `DualMCPandREST` mounts both; `MCPOnly` mounts only `/mcp`; `RESTOnly` mounts only REST. At most one of those three may be true.
 2. **No `StripPrefix` on `/mcp`.** Advertise `http://host:port/mcp`. Extra path under `/mcp/` still hits the same handler; go-sdk ignores the path.
 3. **REST timeout only.** `http.TimeoutHandler` wraps the REST mux (`APITimeout`, default 15s; negative disables). It wraps `ResponseWriter` and would break SSE if applied globally. Timeout body is plain text `request timeout\n`, not JSON.
 4. **No short `WriteTimeout`** on `http.Server`. GET SSE is a long write. `ReadHeaderTimeout` default 10s.

@@ -25,16 +25,18 @@ func main() {
 	publicBase := flag.String("public-base-url", "", "origin for MCP tool REST URLs (default http://<addr>)")
 	mcpOnly := flag.Bool("mcp-only", false, "serve only MCP Streamable HTTP at /mcp")
 	restOnly := flag.Bool("rest-only", false, "serve only REST under the API prefix")
+	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	opts := engine.Options{
-		Addr:      *addr,
-		APIPrefix: *apiPrefix,
-		MCPOnly:   *mcpOnly,
-		RESTOnly:  *restOnly,
+		Addr:           *addr,
+		APIPrefix:      *apiPrefix,
+		DualMCPandREST: *dual,
+		MCPOnly:        *mcpOnly,
+		RESTOnly:       *restOnly,
 	}
 	if *specs != "" {
 		opts.ArazzoLoaders = []arazzo.Loader{arazzo.NewFileLoader(*specs)}
@@ -53,20 +55,20 @@ func main() {
 		Description: "liveness probe for MCP",
 	}, ping)
 
-	log.Printf("listening on %s", listenSummary(*addr, e.APIPrefix(), *mcpOnly, *restOnly))
+	log.Printf("listening on %s", listenSummary(*addr, e.APIPrefix(), *dual, *mcpOnly))
 	if err := e.ListenAndServe(ctx); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func listenSummary(addr, apiPrefix string, mcpOnly, restOnly bool) string {
+func listenSummary(addr, apiPrefix string, dual, mcpOnly bool) string {
 	switch {
 	case mcpOnly:
 		return fmt.Sprintf("http://%s%s (MCP only)", addr, engine.MCPPath)
-	case restOnly:
-		return fmt.Sprintf("http://%s%s/health (REST only)", addr, apiPrefix)
-	default:
+	case dual:
 		return fmt.Sprintf("http://%s%s (MCP) and http://%s%s/health (REST)", addr, engine.MCPPath, addr, apiPrefix)
+	default:
+		return fmt.Sprintf("http://%s%s/health (REST only)", addr, apiPrefix)
 	}
 }
 

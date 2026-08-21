@@ -41,6 +41,7 @@ func newArazzoEngine(t *testing.T, exec arazzo.Executor) *engine.Engine {
 		ArazzoLoaders:  []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
 		ArazzoExecutor: exec,
 		PublicBaseURL:  "http://example.test",
+		DualMCPandREST: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -261,8 +262,9 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 			planID:     "petstore",
 			workflowID: "pingHealth",
 		},
-		PublicBaseURL: "http://example.test",
-		APIPrefix:     "/service/v2",
+		PublicBaseURL:  "http://example.test",
+		APIPrefix:      "/service/v2",
+		DualMCPandREST: true,
 	})
 	if err != nil {
 		t.Fatal(err)

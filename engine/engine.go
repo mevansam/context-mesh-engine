@@ -73,14 +73,21 @@ type Options struct {
 	// if missing; a trailing slash is stripped. Must not be "/" or [MCPPath].
 	APIPrefix string
 
+	// DualMCPandREST serves Streamable HTTP at [MCPPath] and REST under
+	// APIPrefix. DualMCPandREST, MCPOnly, and RESTOnly are mutually
+	// exclusive; at most one may be true.
+	//
+	// If all three are false (the default), only REST is mounted.
+	DualMCPandREST bool
+
 	// MCPOnly serves only Streamable HTTP at [MCPPath]. REST under
-	// APIPrefix is not mounted. If both MCPOnly and RESTOnly are false,
-	// both surfaces are served (the default). Both true is an error.
+	// APIPrefix is not mounted.
 	MCPOnly bool
 
 	// RESTOnly serves only REST under APIPrefix. [MCPPath] is not
 	// mounted. The MCP server still exists for GET {APIPrefix}/tools
-	// and mcp.AddTool.
+	// and mcp.AddTool. This is the same HTTP surface as the default
+	// (all three flags false).
 	RESTOnly bool
 
 	// ArazzoLoaders supply Arazzo documents. If empty, no plan tools or
@@ -125,13 +132,14 @@ type Engine struct {
 // When [Options.ArazzoLoaders] is set, plans are loaded and MCP run_*
 // tools plus REST plan routes are registered. MCP query and
 // POST {APIPrefix}/plans/query are added only when [Options.QueryMatcher]
-// is set. [Options.MCPOnly] and [Options.RESTOnly] control which HTTP
-// surfaces [Engine.Handler] mounts; both false serves both. Load or
-// template errors fail construction.
+// is set. [Options.DualMCPandREST], [Options.MCPOnly], and
+// [Options.RESTOnly] control which HTTP surfaces [Engine.Handler]
+// mounts; all false serves REST only. Load or template errors fail
+// construction.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
-	if opts.MCPOnly && opts.RESTOnly {
-		return nil, fmt.Errorf("MCPOnly and RESTOnly cannot both be true")
+	if err := validateServeMode(opts); err != nil {
+		return nil, err
 	}
 	if err := validateAPIPrefix(opts.APIPrefix); err != nil {
 		return nil, err
@@ -211,6 +219,31 @@ func normalizeAPIPrefix(p string) string {
 	return strings.TrimRight(p, "/")
 }
 
+func validateServeMode(opts Options) error {
+	n := 0
+	if opts.DualMCPandREST {
+		n++
+	}
+	if opts.MCPOnly {
+		n++
+	}
+	if opts.RESTOnly {
+		n++
+	}
+	if n > 1 {
+		return fmt.Errorf("DualMCPandREST, MCPOnly, and RESTOnly are mutually exclusive")
+	}
+	return nil
+}
+
+func (e *Engine) serveMCP() bool {
+	return e.opts.DualMCPandREST || e.opts.MCPOnly
+}
+
+func (e *Engine) serveREST() bool {
+	return !e.opts.MCPOnly
+}
+
 func validateAPIPrefix(p string) error {
 	if p == "" || p == "/" {
 		return fmt.Errorf("APIPrefix %q is not a valid REST path prefix", p)
@@ -238,10 +271,10 @@ func (e *Engine) APIPrefix() string {
 	return e.opts.APIPrefix
 }
 
-// Handler returns the root HTTP handler. By default /mcp and the REST
-// prefix are mounted as siblings. [Options.MCPOnly] omits REST;
-// [Options.RESTOnly] omits /mcp. Safe to call more than once; the mux
-// is built once.
+// Handler returns the root HTTP handler. By default only the REST prefix
+// is mounted. [Options.DualMCPandREST] mounts /mcp and REST;
+// [Options.MCPOnly] mounts only /mcp; [Options.RESTOnly] mounts only REST.
+// Safe to call more than once; the mux is built once.
 func (e *Engine) Handler() http.Handler {
 	e.once.Do(func() {
 		opts := httpserver.MuxOptions{
@@ -249,10 +282,10 @@ func (e *Engine) Handler() http.Handler {
 			APIPrefix:  e.opts.APIPrefix,
 			APITimeout: e.opts.APITimeout,
 		}
-		if !e.opts.RESTOnly {
+		if e.serveMCP() {
 			opts.MCPHandler = e.mcp.Handler()
 		}
-		if !e.opts.MCPOnly {
+		if e.serveREST() {
 			opts.APIHandler = e.router.Handler()
 		}
 		e.handler = httpserver.NewMux(opts)

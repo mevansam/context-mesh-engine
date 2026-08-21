@@ -11,7 +11,13 @@ How to run both, curl the workflows, change order status, and use an MCP agent: 
 
 ## MCP
 
-Streamable HTTP is **`http://localhost:8080/mcp`**. REST equivalent of `tools/list` (no session):
+Start with `-dual` so Streamable HTTP is at **`http://localhost:8080/mcp`**:
+
+```bash
+go run ./examples/petstore/mcp-server -dual
+```
+
+REST equivalent of `tools/list` (no session):
 
 ```bash
 curl -s http://localhost:8080/api/tools

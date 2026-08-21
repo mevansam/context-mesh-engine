@@ -21,7 +21,7 @@ curl -s http://localhost:8080/api/health
 curl -s http://localhost:8080/api/tools
 ```
 
-MCP clients connect to `http://localhost:8080/mcp`. See [MCP client](usage.md#mcp-client). Stop with Ctrl+C.
+Default is REST only. Pass `-dual` (same as `cmd/engine`) to also mount MCP Streamable HTTP. MCP clients then connect to `http://localhost:8080/mcp`. See [MCP client](usage.md#mcp-client). Stop with Ctrl+C.
 
 ---
 
@@ -31,9 +31,10 @@ MCP clients connect to `http://localhost:8080/mcp`. See [MCP client](usage.md#mc
 
 ```bash
 go run ./examples/minimal
+go run ./examples/minimal -dual
 ```
 
-Smallest embed: `engine.New` + one `mcp.AddTool` (`ping`) + `e.ListenAndServe`. The engine owns `http.Server`, bind, and shutdown when the context is cancelled.
+Smallest embed: `engine.New` + one `mcp.AddTool` (`ping`) + `e.ListenAndServe`. The engine owns `http.Server`, bind, and shutdown when the context is cancelled. Default is REST only (`GET /api/health`, `GET /api/tools`). `-dual` also mounts `/mcp`.
 
 Use this when the process does not already have an HTTP server.
 
@@ -45,9 +46,10 @@ Use this when the process does not already have an HTTP server.
 
 ```bash
 go run ./examples/embed-handler
+go run ./examples/embed-handler -dual
 ```
 
-Mount the same MCP + REST mux on an `http.Server` you construct. Call `e.Handler()`, set `ReadHeaderTimeout`, leave `WriteTimeout` unset.
+Mount the engine mux on an `http.Server` you construct. Call `e.Handler()`, set `ReadHeaderTimeout`, leave `WriteTimeout` unset. Default is REST only; `-dual` also mounts `/mcp`.
 
 Use this when you already own listen/TLS/shutdown.
 
@@ -59,10 +61,11 @@ Do not wrap `e.Handler()` in Gin, a buffering logger, or `http.TimeoutHandler`. 
 
 **Source:** [`examples/arazzo-fs/main.go`](../../examples/arazzo-fs/main.go)
 
-Pass the plans directory as the first argument. Relative paths are cwd-relative (from the repository root, the sample fixtures are `testdata/arazzo/plans`):
+Pass the plans directory as a positional argument. Relative paths are cwd-relative (from the repository root, the sample fixtures are `testdata/arazzo/plans`). Default is REST only; `-dual` also mounts `/mcp`:
 
 ```bash
 go run ./examples/arazzo-fs testdata/arazzo/plans
+go run ./examples/arazzo-fs -dual testdata/arazzo/plans
 ```
 
 Loads that directory (`x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Stub `Executor` always returns HTTP 200. Dummy `QueryMatcher` always selects `pingHealth` on the latest petstore plan.
@@ -91,7 +94,7 @@ Two processes, from the repository root:
 
 ```bash
 go run ./examples/petstore/async-order-server
-go run ./examples/petstore/mcp-server
+go run ./examples/petstore/mcp-server [-dual]
 ```
 
 Arazzo plan (`x-planId: petstore`, version `1.0.1`) based on the [1.1 spec example](https://spec.openapis.org/arazzo/latest.html), split into `retrievePet`, `purchasePet`, and `checkOrderStatus`. Hosted API is [petstore3.swagger.io](https://petstore3.swagger.io/). `purchasePet` sends/receives through the local AsyncAPI HTTP adapter, which calls `POST /store/order`.

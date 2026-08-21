@@ -93,6 +93,7 @@ e, err := engine.New(engine.Options{
     ArazzoExecutor: myExecutor{}, // nil: OpenAPI works; execute is 501
     QueryMatcher:   myMatcher{},  // nil: query tool and POST /plans/query are omitted
     PublicBaseURL:  "http://localhost:8080",
+    // DualMCPandREST: true,      // also mount /mcp; default is REST only
 })
 ```
 
