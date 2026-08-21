@@ -99,7 +99,7 @@ e, err := engine.New(engine.Options{
 
 `PublicBaseURL` is the origin written into MCP tool descriptions (REST POST and OpenAPI GET URLs). It is not `Addr`. Empty → path-only URLs (`{APIPrefix}/plans/...`).
 
-Runnable sample with a stub executor: [examples/arazzo-fs](examples.md#arazzo-fs). Live Petstore (MCP + async orders): [examples/petstore](examples.md#petstore).
+Runnable sample with a stub executor: [examples/arazzo-fs](../../examples/arazzo-fs/README.md). Live Petstore (MCP + async orders): [examples/petstore](../../examples/petstore/README.md).
 
 ## Executor
 
@@ -136,7 +136,7 @@ Nil executor:
 - MCP `run_*` → tool error (`IsError: true`), not a JSON-RPC protocol error
 - MCP `query` is not registered if `QueryMatcher` is nil
 
-This module does not ship an HTTP client executor. `examples/arazzo-fs` uses a stub that always returns 200. `examples/petstore/mcp-server` implements a real HTTP client against [petstore3.swagger.io](https://petstore3.swagger.io/) and the local async order adapter.
+This module does not ship an HTTP client executor. [examples/arazzo-fs](../../examples/arazzo-fs/README.md) uses a stub that always returns 200. [examples/petstore](../../examples/petstore/README.md) implements a real HTTP client against [petstore3.swagger.io](https://petstore3.swagger.io/) and the local async order adapter.
 
 ## MCP and REST: `query`
 
@@ -201,7 +201,7 @@ type PlanCatalog interface {
 
 Empty `Version` means latest among versions **loaded here**, not latest in the global registry.
 
-Wire it with `engine.Options.QueryMatcher`. Example: [examples/arazzo-fs](examples.md#arazzo-fs) ships a dummy matcher that always selects `petstore` / `pingHealth`.
+Wire it with `engine.Options.QueryMatcher`. Example: [examples/arazzo-fs](../../examples/arazzo-fs/README.md) ships a dummy matcher that always selects `petstore` / `pingHealth`.
 
 ## MCP: `run_*` arguments
 
@@ -321,7 +321,7 @@ Templates use `missingkey=zero`. Invalid template syntax fails `engine.New`.
 go run ./cmd/engine -addr localhost:8080 -specs testdata/arazzo/plans
 ```
 
-Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary does not set one. Use [examples/arazzo-fs](examples.md#arazzo-fs) for a stub, or [examples/petstore](examples.md#petstore) for live HTTP against petstore3 plus the async order adapter.
+Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary does not set one. Use [examples/arazzo-fs](../../examples/arazzo-fs/README.md) for a stub, or [examples/petstore](../../examples/petstore/README.md) for live HTTP against petstore3 plus the async order adapter.
 
 ## Coding-agent checklist (Arazzo)
 
@@ -337,5 +337,5 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 
 ## Next
 
-- [Examples](examples.md#arazzo-fs)
+- [Examples](examples.md)
 - Internals (contributors): [docs/contributors/arazzo.md](../contributors/arazzo.md)

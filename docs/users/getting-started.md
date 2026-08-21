@@ -57,7 +57,7 @@ The sample registers an MCP `ping` tool. With the default (REST only) it appears
 
 Default is REST only. `-dual` serves both surfaces. `-mcp-only`, `-rest-only`, and `-dual` are mutually exclusive.
 
-`-specs` loads plans and registers `run_*` tools, but **does not** set an `Executor` or `QueryMatcher`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. `query` is not published until you set `QueryMatcher`. Use [examples/arazzo-fs](examples.md#arazzo-fs) for a stub executor and dummy matcher, or [examples/petstore](examples.md#petstore) for live Petstore HTTP. Full Arazzo guide: [arazzo.md](arazzo.md).
+`-specs` loads plans and registers `run_*` tools, but **does not** set an `Executor` or `QueryMatcher`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. `query` is not published until you set `QueryMatcher`. Use [examples/arazzo-fs](../../examples/arazzo-fs/README.md) for a stub executor and dummy matcher, or [examples/petstore](../../examples/petstore/README.md) for live Petstore HTTP. Full Arazzo guide: [arazzo.md](arazzo.md).
 
 ## Use it as a library
 
@@ -101,11 +101,11 @@ func ping(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolR
 }
 ```
 
-Default is REST only. Set `DualMCPandREST: true` (or run `go run ./examples/minimal -dual`) to also mount `/mcp`.
+Default is REST only. Set `DualMCPandREST: true` (or pass `-dual` to [examples/minimal](../../examples/minimal/README.md)) to also mount `/mcp`.
 
 `engine.New` always returns `(*Engine, error)`. Construction fails if Arazzo loaders are set and specs/templates are invalid.
 
-Runnable copies of this pattern: [examples.md](examples.md). Full API: [usage.md](usage.md).
+Runnable copy of this pattern: [examples/minimal](../../examples/minimal/README.md). Full API: [usage.md](usage.md).
 
 ## Next
 

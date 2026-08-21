@@ -1,6 +1,10 @@
 # arazzo-fs
 
-The plans directory is the first argument. From the **repository root**:
+Arazzo `FileLoader` plus a stub `Executor` and a dummy `QueryMatcher`. Registers MCP `query` / `run_*` tools and REST `/plans` + `/openapi`.
+
+## Run
+
+The plans directory is a positional argument. Relative paths are cwd-relative. From the **repository root**:
 
 ```bash
 go run ./examples/arazzo-fs testdata/arazzo/plans
@@ -9,7 +13,13 @@ go run ./examples/arazzo-fs -dual testdata/arazzo/plans
 
 Default is REST only. `-dual` also mounts MCP Streamable HTTP at `/mcp`.
 
-Loads that directory recursively (sample Pet Store plans: `x-planId: petstore`, versions `1.0.0` and `1.1.0`). Registers MCP `query`, `run_petstore_v1.0.0`, `run_petstore_v1.1.0`. Serves:
+Do not run this at the same time as another example (or `cmd/engine`) on `localhost:8080`.
+
+## What it loads
+
+The sample fixtures (`x-planId: petstore`, versions `1.0.0` and `1.1.0`) register MCP `query`, `run_petstore_v1.0.0`, and `run_petstore_v1.1.0`. Workflows: `pingHealth` (both versions), `echoName` (1.1.0 only). OpenAPI sources live in `testdata/arazzo/sources/openapi.yaml` (not passed to `FileLoader`).
+
+Serves:
 
 - `GET /api/tools` (MCP `tools/list` result)
 - `POST /api/plans/query` (dummy matcher → latest petstore `pingHealth`)
@@ -20,9 +30,16 @@ Loads that directory recursively (sample Pet Store plans: `x-planId: petstore`, 
 
 Stub `Executor` always returns HTTP 200. Dummy `QueryMatcher` always selects `petstore` / `pingHealth` (not semantic search). Replace both in your app.
 
+## REST
+
 ```bash
+curl -s http://localhost:8080/api/openapi/petstore
+curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
+  -H 'Content-Type: application/json' -d '{"name":"demo"}'
+curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
+  -H 'Content-Type: application/json' -d '{"name":"demo"}'
 curl -s -X POST http://localhost:8080/api/plans/query \
   -H 'Content-Type: application/json' -d '{"query":"is the api up","data":{"name":"demo"}}'
 ```
 
-User guide: [docs/users/arazzo.md](../../docs/users/arazzo.md). Run notes: [docs/users/examples.md](../../docs/users/examples.md#arazzo-fs).
+Arazzo options and schemas: [docs/users/arazzo.md](../../docs/users/arazzo.md). Live Petstore HTTP: [petstore](../petstore/README.md).

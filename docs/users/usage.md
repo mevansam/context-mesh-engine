@@ -175,7 +175,7 @@ if err := e.ListenAndServe(ctx); err != nil {
 }
 ```
 
-See [`examples/minimal`](../../examples/minimal/main.go). How to run: [examples.md](examples.md#minimal).
+See [`examples/minimal`](../../examples/minimal/README.md).
 
 **Your `http.Server`:**
 
@@ -189,7 +189,7 @@ srv := &http.Server{
 log.Fatal(srv.ListenAndServe())
 ```
 
-See [`examples/embed-handler`](../../examples/embed-handler/main.go). How to run: [examples.md](examples.md#embed-handler).
+See [`examples/embed-handler`](../../examples/embed-handler/README.md).
 
 Do **not** wrap `e.Handler()` in Gin, a buffering logger, gzip that buffers, or `http.TimeoutHandler`. Those hide `http.Flusher` and break GET SSE. REST timeouts are already applied under `Options.APIPrefix` inside the engine.
 

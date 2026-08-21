@@ -10,7 +10,7 @@ context-mesh-engine/
   docs/                          users/ vs contributors/ (start at docs/README.md)
   cmd/engine/                    Sample process: -addr, -api-prefix, -dual, -mcp-only, -rest-only, -specs, -public-base-url, SIGINT, ping
   examples/
-    README.md                    Points at docs/users/examples.md
+    README.md                    Index; each example has its own README
     minimal/                     ListenAndServe
     embed-handler/               Your http.Server + Handler()
     arazzo-fs/                   FileLoader (plans dir arg) + stub Executor + dummy QueryMatcher

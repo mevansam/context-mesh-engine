@@ -9,7 +9,7 @@ docs/
     getting-started.md      install, first request, first embed
     usage.md                public API, routes, Options, MCP, REST
     arazzo.md               loaders, Executor, run_* tools, REST plans
-    examples.md             how to run examples/ and what each shows
+    examples.md             catalog of examples/; run details in each local README
   contributors/             people changing this repository
     getting-started.md      clone, replace directives, test, PR checks
     layout.md               package map and import rules
@@ -28,7 +28,7 @@ Do not import `internal/`.
 1. [Getting started](users/getting-started.md) — requirements, sample binary, first library snippet.
 2. [SDK usage](users/usage.md) — public types, `Options` defaults, adding tools/controllers, `ListenAndServe` vs `Handler()`, MCP client headers.
 3. [Arazzo plans](users/arazzo.md) — load specs, `Executor`, MCP `query`/`run_*`, REST query/execute and OpenAPI.
-4. [Examples](users/examples.md) — `go run ./examples/...` and what each program demonstrates.
+4. [Examples](users/examples.md) — what each program demonstrates; run details in `examples/*/README.md`.
 
 ---
 

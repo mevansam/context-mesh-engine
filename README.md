@@ -56,7 +56,7 @@ curl -s http://localhost:8080/api/health
 curl -s http://localhost:8080/api/tools
 ```
 
-Plans + a stub executor: `go run ./examples/arazzo-fs testdata/arazzo/plans`. Live Petstore demo: [examples/README.md](examples/README.md#petstore-demo). MCP Streamable HTTP at `/mcp` requires `-dual` on the examples (or `DualMCPandREST` / `MCPOnly` when embedding). Default is REST only.
+Plans + a stub executor: [examples/arazzo-fs](examples/arazzo-fs/README.md). Live Petstore demo: [examples/petstore](examples/petstore/README.md). MCP Streamable HTTP at `/mcp` requires `-dual` on the examples (or `DualMCPandREST` / `MCPOnly` when embedding). Default is REST only.
 
 ## Documentation
 
