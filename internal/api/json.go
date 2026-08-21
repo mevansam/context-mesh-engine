@@ -7,6 +7,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -40,4 +41,46 @@ func ReadJSON(r *http.Request, v any) error {
 		return err
 	}
 	return nil
+}
+
+// DecodeMap decodes a JSON object, keeping integers that do not fit in
+// float64 (JSON numbers become int64 when they parse as integers).
+func DecodeMap(r io.Reader) (map[string]any, error) {
+	dec := json.NewDecoder(r)
+	dec.UseNumber()
+	var inputs map[string]any
+	if err := dec.Decode(&inputs); err != nil {
+		return nil, err
+	}
+	if inputs == nil {
+		return nil, nil
+	}
+	return CanonicalJSON(inputs).(map[string]any), nil
+}
+
+// CanonicalJSON converts json.Number values to int64 when they are
+// integers, otherwise float64. Maps and slices are walked in place.
+func CanonicalJSON(v any) any {
+	switch t := v.(type) {
+	case json.Number:
+		if i, err := t.Int64(); err == nil {
+			return i
+		}
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+		return string(t)
+	case map[string]any:
+		for k, val := range t {
+			t[k] = CanonicalJSON(val)
+		}
+		return t
+	case []any:
+		for i, val := range t {
+			t[i] = CanonicalJSON(val)
+		}
+		return t
+	default:
+		return v
+	}
 }

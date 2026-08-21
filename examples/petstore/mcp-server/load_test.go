@@ -81,3 +81,43 @@ func TestIsAsyncSource(t *testing.T) {
 		t.Fatal("expected async source")
 	}
 }
+
+func TestDecodeJSONBody_LargeInt(t *testing.T) {
+	const id int64 = 9056269108963012608
+	got := decodeJSONBody([]byte(`{"payload":{"orderId":9056269108963012608}}`))
+	m, _ := got.(map[string]any)
+	payload, _ := m["payload"].(map[string]any)
+	if payload["orderId"] != id {
+		t.Fatalf("orderId = %#v (%T)", payload["orderId"], payload["orderId"])
+	}
+}
+
+func TestExecute_FallsBackOn404(t *testing.T) {
+	v3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not on v3", http.StatusNotFound)
+	}))
+	t.Cleanup(v3.Close)
+	v2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":9056269108963012608,"status":"placed"}`))
+	}))
+	t.Cleanup(v2.Close)
+
+	e := &httpExec{
+		client:   http.DefaultClient,
+		petstore: []string{v3.URL, v2.URL},
+	}
+	resp, err := e.Execute(t.Context(), &arazzo.ExecutionRequest{
+		OperationPath: "x#/paths/~1store~1order~11/get",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body=%v", resp.StatusCode, resp.Body)
+	}
+	body, _ := resp.Body.(map[string]any)
+	if body["id"] != int64(9056269108963012608) {
+		t.Fatalf("body = %#v", resp.Body)
+	}
+}

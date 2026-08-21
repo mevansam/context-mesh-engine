@@ -43,9 +43,13 @@ func (c *PlansController) postQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Body != nil {
 		dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+		dec.UseNumber()
 		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 			iapi.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
+		}
+		if body.Data != nil {
+			body.Data = iapi.CanonicalJSON(body.Data).(map[string]any)
 		}
 	}
 	res, err := c.runner.Query(r.Context(), body.Query, body.Data)
@@ -97,9 +101,8 @@ func decodeJSONObject(r *http.Request) (map[string]any, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
-	var inputs map[string]any
-	if err := dec.Decode(&inputs); err != nil {
+	inputs, err := iapi.DecodeMap(http.MaxBytesReader(nil, r.Body, 1<<20))
+	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, nil
 		}

@@ -84,3 +84,52 @@ func TestPlaceAndConfirm(t *testing.T) {
 		t.Fatalf("confirm = %#v", conf)
 	}
 }
+
+func TestPlaceAndConfirm_LargeOrderID(t *testing.T) {
+	const want int64 = 9056269108963012608
+	hosted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":9056269108963012608,"petId":10,"status":"placed"}`))
+	}))
+	t.Cleanup(hosted.Close)
+
+	s := newOrderServer([]string{hosted.URL})
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /place-order", s.handlePlaceOrder)
+	mux.HandleFunc("GET /confirm-order", s.handleConfirmOrder)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/place-order", strings.NewReader(`{"petId":10}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("orderCorrelationId", "corr-big")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("place status=%d", resp.StatusCode)
+	}
+
+	creq, _ := http.NewRequest(http.MethodGet, ts.URL+"/confirm-order", nil)
+	creq.Header.Set("orderCorrelationId", "corr-big")
+	cresp, err := http.DefaultClient.Do(creq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cresp.Body.Close()
+	raw, _ := io.ReadAll(cresp.Body)
+	if !strings.Contains(string(raw), "9056269108963012608") {
+		t.Fatalf("confirm lost precision: %s", raw)
+	}
+	if strings.Contains(string(raw), "9056269108963013000") {
+		t.Fatalf("confirm rounded id: %s", raw)
+	}
+	s.mu.Lock()
+	got := s.byCorr["corr-big"].OrderID
+	s.mu.Unlock()
+	if got != want {
+		t.Fatalf("stored id = %d", got)
+	}
+}

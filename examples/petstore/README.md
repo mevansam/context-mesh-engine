@@ -71,7 +71,9 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/purchasePet \
   -d '{"username":"user1","password":"abc123","petId":1,"orderCorrelationId":"demo-order-1"}'
 ```
 
-The engine: login → `POST http://localhost:8091/place-order` → poll `GET /confirm-order`. The adapter: `POST https://petstore3.swagger.io/api/v3/store/order` (then v2 on 5xx). Save `orderId`.
+The engine: login → `POST http://localhost:8091/place-order` → poll `GET /confirm-order`. The adapter: `POST https://petstore3.swagger.io/api/v3/store/order` (then v2 on 5xx). Save `orderId` from the raw JSON (do not pipe through `jq`: hosted ids are often larger than JSON float precision).
+
+`checkOrderStatus` tries v3 then v2. A direct `GET` on petstore3 will 404 for orders that were created on v2.
 
 ## REST: check order status
 
@@ -81,7 +83,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/checkOrderStatus \
   -d '{"username":"user1","password":"abc123","orderId":1}'
 ```
 
-Replace `orderId` with the id from `purchasePet`. `status` is `placed`, `approved`, or `delivered`.
+Replace `orderId` with the id from `purchasePet`. `status` is `placed`, `approved`, or `delivered`. If you GET the hosted Petstore yourself, use the same host the adapter logged (`v3` or `v2`); the engine tries both.
 
 ## Change order status on the hosted Petstore
 

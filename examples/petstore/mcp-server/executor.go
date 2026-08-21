@@ -70,6 +70,11 @@ func (e *httpExec) Execute(ctx context.Context, req *arazzo.ExecutionRequest) (*
 				lastErr = fmt.Errorf("%s returned %d", resp.URL, resp.StatusCode)
 				continue
 			}
+			// v3 and v2 are different stores. An order placed on v2 is 404 on v3.
+			if resp.StatusCode == http.StatusNotFound && !poll {
+				lastErr = fmt.Errorf("%s returned %d", resp.URL, resp.StatusCode)
+				continue
+			}
 			if poll && resp.StatusCode == http.StatusNotFound && time.Now().Before(deadline) {
 				lastErr = fmt.Errorf("confirmation not ready")
 				break
@@ -151,12 +156,7 @@ func (e *httpExec) do(ctx context.Context, base, method, path string, req *arazz
 	if err != nil {
 		return nil, err
 	}
-	var decoded any
-	if len(bytes.TrimSpace(raw)) == 0 {
-		decoded = nil
-	} else if err := json.Unmarshal(raw, &decoded); err != nil {
-		decoded = string(raw)
-	}
+	decoded := decodeJSONBody(raw)
 	return &arazzo.ExecutionResponse{
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header.Clone(),
@@ -279,6 +279,8 @@ func stringify(v any) string {
 	switch t := v.(type) {
 	case string:
 		return t
+	case json.Number:
+		return t.String()
 	case fmt.Stringer:
 		return t.String()
 	default:
@@ -287,5 +289,43 @@ func stringify(v any) string {
 			return fmt.Sprint(v)
 		}
 		return string(b)
+	}
+}
+
+func decodeJSONBody(raw []byte) any {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var decoded any
+	if err := dec.Decode(&decoded); err != nil {
+		return string(raw)
+	}
+	return canonicalJSON(decoded)
+}
+
+func canonicalJSON(v any) any {
+	switch t := v.(type) {
+	case json.Number:
+		if i, err := t.Int64(); err == nil {
+			return i
+		}
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+		return string(t)
+	case map[string]any:
+		for k, val := range t {
+			t[k] = canonicalJSON(val)
+		}
+		return t
+	case []any:
+		for i, val := range t {
+			t[i] = canonicalJSON(val)
+		}
+		return t
+	default:
+		return v
 	}
 }

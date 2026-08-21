@@ -134,8 +134,10 @@ func (s *orderServer) placeHosted(ctx context.Context, petID int64) (confirmatio
 			lastErr = fmt.Errorf("%s: HTTP %d %s", base, resp.StatusCode, bytes.TrimSpace(raw))
 			continue
 		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
 		var decoded map[string]any
-		if err := json.Unmarshal(raw, &decoded); err != nil {
+		if err := dec.Decode(&decoded); err != nil {
 			lastErr = err
 			continue
 		}
@@ -187,6 +189,9 @@ func asInt64(v any) (int64, bool) {
 		return int64(t), true
 	case json.Number:
 		n, err := t.Int64()
+		return n, err == nil
+	case string:
+		n, err := json.Number(t).Int64()
 		return n, err == nil
 	default:
 		return 0, false
