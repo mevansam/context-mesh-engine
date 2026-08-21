@@ -84,8 +84,8 @@ type Options struct {
 	// QueryMatcher selects a plan and workflow for MCP query and
 	// POST {APIPrefix}/plans/query. Matching (for example vector search
 	// against a global registry) is implemented by the application.
-	// If nil, query returns 501. After Match, the engine checks that
-	// the plan is loaded in this process.
+	// If nil, the query tool and REST route are not registered. After
+	// Match, the engine checks that the plan is loaded in this process.
 	QueryMatcher arazzo.QueryMatcher
 
 	// PublicBaseURL is the origin used in MCP tool descriptions
@@ -113,8 +113,9 @@ type Engine struct {
 // health and tools controllers registered under [Options.APIPrefix].
 // GET {APIPrefix}/tools returns the same JSON as MCP tools/list.
 // When [Options.ArazzoLoaders] is set, plans are loaded and MCP run_*
-// tools plus REST plan routes are registered. Load or template errors
-// fail construction.
+// tools plus REST plan routes are registered. MCP query and
+// POST {APIPrefix}/plans/query are added only when [Options.QueryMatcher]
+// is set. Load or template errors fail construction.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
 	if err := validateAPIPrefix(opts.APIPrefix); err != nil {
@@ -138,8 +139,10 @@ func New(opts Options) (*Engine, error) {
 		if _, _, _, err := arazzo.RenderToolDoc(opts.ToolDoc, docCtx); err != nil {
 			return nil, fmt.Errorf("tool doc templates: %w", err)
 		}
-		if _, _, _, err := arazzo.RenderQueryDoc(opts.ToolDoc, docCtx); err != nil {
-			return nil, fmt.Errorf("query tool doc templates: %w", err)
+		if opts.QueryMatcher != nil {
+			if _, _, _, err := arazzo.RenderQueryDoc(opts.ToolDoc, docCtx); err != nil {
+				return nil, fmt.Errorf("query tool doc templates: %w", err)
+			}
 		}
 		catalog, err := plans.Load(context.Background(), opts.ArazzoLoaders, opts.Logger)
 		if err != nil {

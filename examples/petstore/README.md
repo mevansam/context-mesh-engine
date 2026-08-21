@@ -34,7 +34,7 @@ curl -sS -X POST http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-Replace `<session>` with the `Mcp-Session-Id` value. The `data:` line lists `query` and `run_petstore_v1.0.1`. To print names only:
+Replace `<session>` with the `Mcp-Session-Id` value. The `data:` line lists `run_petstore_v1.0.1` (this example does not set `QueryMatcher`, so `query` is not registered). To print names only:
 
 ```bash
 curl -sS -X POST http://localhost:8080/mcp \

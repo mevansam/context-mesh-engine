@@ -59,6 +59,27 @@ func TestArazzo_InvalidTemplatesFailNew(t *testing.T) {
 	}
 }
 
+func TestArazzo_QueryTemplatesFailNewOnlyWithMatcher(t *testing.T) {
+	bad := arazzo.ToolDocTemplates{QueryName: "{{.Nope"}
+	_, err := engine.New(engine.Options{
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders: []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		ToolDoc:       bad,
+	})
+	if err != nil {
+		t.Fatalf("nil matcher should skip query templates: %v", err)
+	}
+	_, err = engine.New(engine.Options{
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders: []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		QueryMatcher:  pingMatcher{planID: "petstore", workflowID: "pingHealth"},
+		ToolDoc:       bad,
+	})
+	if err == nil {
+		t.Fatal("expected query template error")
+	}
+}
+
 func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 	e := newArazzoEngine(t, nil)
 	ts := httptest.NewServer(e.Handler())
@@ -160,14 +181,11 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 	got := map[string]bool{}
 	for _, tl := range tools.Tools {
 		got[tl.Name] = true
-		if tl.Name == "query" && !strings.Contains(tl.Description, "POST http://example.test/api/plans/query") {
-			t.Fatalf("query description missing REST URL:\n%s", tl.Description)
-		}
 		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/api/plans/") {
 			t.Fatalf("tool %s description missing REST URL:\n%s", tl.Name, tl.Description)
 		}
 	}
-	if !got["query"] || !got["run_petstore_v1.0.0"] || !got["run_petstore_v1.1.0"] {
+	if got["query"] || !got["run_petstore_v1.0.0"] || !got["run_petstore_v1.1.0"] {
 		t.Fatalf("tools = %v", got)
 	}
 
@@ -192,37 +210,14 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 		}
 	}
 
-	q, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      "query",
-		Arguments: map[string]any{"query": "hello"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !q.IsError {
-		t.Fatal("query should be unimplemented")
-	}
-	if got := toolErrorText(q); got != "query is not implemented" {
-		t.Fatalf("MCP query error = %q", got)
-	}
-
 	qresp, err := http.Post(ts.URL+"/api/plans/query", "application/json", strings.NewReader(`{"query":"hello","data":{}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer qresp.Body.Close()
-	if qresp.StatusCode != http.StatusNotImplemented {
+	if qresp.StatusCode != http.StatusNotFound {
 		b, _ := io.ReadAll(qresp.Body)
-		t.Fatalf("REST query status = %d, want 501 body = %s", qresp.StatusCode, b)
-	}
-	var qerr struct {
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(qresp.Body).Decode(&qerr); err != nil {
-		t.Fatal(err)
-	}
-	if qerr.Error != "query is not implemented" {
-		t.Fatalf("REST query error = %q", qerr.Error)
+		t.Fatalf("REST query status = %d, want 404 body = %s", qresp.StatusCode, b)
 	}
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{
@@ -262,8 +257,12 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		ArazzoLoaders:  []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
 		ArazzoExecutor: &countingExec{},
-		PublicBaseURL:  "http://example.test",
-		APIPrefix:      "/service/v2",
+		QueryMatcher: pingMatcher{
+			planID:     "petstore",
+			workflowID: "pingHealth",
+		},
+		PublicBaseURL: "http://example.test",
+		APIPrefix:     "/service/v2",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -356,6 +355,26 @@ func TestArazzo_QueryMatcher(t *testing.T) {
 	}
 	if exec.n != 1 {
 		t.Fatalf("executor calls = %d", exec.n)
+	}
+
+	toolsResp, err := http.Get(ts.URL + "/api/tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer toolsResp.Body.Close()
+	var listed mcp.ListToolsResult
+	if err := json.NewDecoder(toolsResp.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	foundQuery := false
+	for _, tl := range listed.Tools {
+		if tl.Name == "query" {
+			foundQuery = true
+			break
+		}
+	}
+	if !foundQuery {
+		t.Fatal("query tool missing when QueryMatcher is set")
 	}
 
 	e2, err := engine.New(engine.Options{

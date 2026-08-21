@@ -33,9 +33,9 @@ One process, one TCP port:
 
 | Surface | Where | Role |
 | --- | --- | --- |
-| MCP `query` | `/mcp` | Natural-language entry. Your `QueryMatcher` selects a plan (typically from a global registry); the engine runs it if that plan is loaded here. |
+| MCP `query` | `/mcp` | Natural-language entry, registered only when `QueryMatcher` is set. The matcher selects a plan; the engine runs it if that plan is loaded here. |
 | MCP `run_*` | `/mcp` | Direct execute of a known plan version. Arguments: `workflowId` + `inputs`. |
-| REST `query` | `POST /api/plans/query` | Same as MCP `query`. JSON body is `{ "query": "...", "data": { } }`. Success payload is the workflow outputs object. |
+| REST `query` | `POST /api/plans/query` | Same as MCP `query` (omitted without `QueryMatcher`). JSON body is `{ "query": "...", "data": { } }`. Success payload is the workflow outputs object. |
 | REST execute | `POST /api/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs. |
 | REST OpenAPI | `GET /api/openapi/{planId}` | Generated OAS 3.1 for those execute paths (latest or a specific version). |
 | REST tools | `GET /api/tools` | Same JSON as MCP `tools/list` (`ttlMs`, `cacheScope`, `tools`). |

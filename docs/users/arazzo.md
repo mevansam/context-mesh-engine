@@ -4,7 +4,7 @@ Load [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow documents, 
 
 Public package: `github.com/mevansam/context-mesh-engine/arazzo`.
 
-This is not enabled until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan or OpenAPI REST routes. `GET {APIPrefix}/tools` is always registered; with loaders it includes `query` and each `run_*`.
+This is not enabled until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan or OpenAPI REST routes. `GET {APIPrefix}/tools` is always registered; with loaders it includes each `run_*`, and `query` only when `QueryMatcher` is set.
 
 REST paths below use the default prefix `/api`. Set `Options.APIPrefix` (or `cmd/engine -api-prefix`) to change it. Generated OpenAPI `paths` omit that prefix either way.
 
@@ -14,10 +14,10 @@ When `ArazzoLoaders` is set, `New` loads every document from every loader, then:
 
 | Surface | Name / path |
 | --- | --- |
-| MCP `query` | `query` — semantically match a natural-language request to a plan and execute it (same contract as REST query) |
+| MCP `query` | `query` — only if `QueryMatcher` is set |
 | MCP `run_*` | one per catalog entry; default name `run_{{.SafePlanID}}_v{{.SafeVersion}}` |
 | REST `tools` | `GET /api/tools` — same JSON as MCP `tools/list` |
-| REST `query` | `POST /api/plans/query` |
+| REST `query` | `POST /api/plans/query` — only if `QueryMatcher` is set |
 | REST execute (latest) | `POST /api/plans/{planId}/{workflowId}` |
 | REST execute (versioned) | `POST /api/plans/{planId}/{version}/{workflowId}` |
 | OpenAPI (latest) | `GET /api/openapi/{planId}` |
@@ -91,7 +91,7 @@ e, err := engine.New(engine.Options{
         arazzo.NewFileLoader("/path/to/plans"),
     },
     ArazzoExecutor: myExecutor{}, // nil: OpenAPI works; execute is 501
-    QueryMatcher:   myMatcher{},  // nil: query is 501
+    QueryMatcher:   myMatcher{},  // nil: query tool and POST /plans/query are omitted
     PublicBaseURL:  "http://localhost:8080",
 })
 ```
@@ -128,11 +128,12 @@ func (myExecutor) Execute(_ context.Context, req *arazzo.ExecutionRequest) (*ara
 
 Nil executor:
 
-- `GET /api/tools` still works (lists `query` and `run_*`)
+- `GET /api/tools` still works (lists `run_*`; `query` only if `QueryMatcher` is set)
 - `GET /api/openapi/...` still works
 - `POST /api/plans/...` execute → **501** `{"error":"executor not configured"}`
-- `POST /api/plans/query` → **501** `{"error":"query is not implemented"}` if `QueryMatcher` is nil; if a matcher is set, same as execute (**501** executor, or **404** if the match is not loaded)
+- `POST /api/plans/query` is not registered if `QueryMatcher` is nil (**404**); if a matcher is set, same as execute (**501** executor, or **404** if the match is not loaded)
 - MCP `run_*` → tool error (`IsError: true`), not a JSON-RPC protocol error
+- MCP `query` is not registered if `QueryMatcher` is nil
 
 This module does not ship an HTTP client executor. `examples/arazzo-fs` uses a stub that always returns 200. `examples/petstore/mcp-server` implements a real HTTP client against [petstore3.swagger.io](https://petstore3.swagger.io/) and the local async order adapter.
 
@@ -155,7 +156,7 @@ Body / arguments:
 
 | Matcher / catalog | REST | MCP |
 | --- | --- | --- |
-| `QueryMatcher` nil | 501 `query is not implemented` | tool error |
+| `QueryMatcher` nil | route not registered (404) | tool not registered |
 | Empty `query` | 400 | tool error |
 | Matcher error | 400 | tool error |
 | No selection (`nil` match) | 404 | tool error |
@@ -326,7 +327,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Set `ArazzoLoaders`; otherwise plan routes and `run_*` tools do not exist.
 - Point `FileLoader` at the plans dir only; OpenAPI sources stay beside it (`../sources/...`).
 - Implement `Executor`; nil is 501 on execute, OpenAPI still works.
-- Implement `QueryMatcher` for MCP `query` / `POST /plans/query`; nil is 501. Matcher uses your global registry; the engine rejects plans not loaded here.
+- Implement `QueryMatcher` to publish MCP `query` / `POST /plans/query`; nil omits both. Matcher uses your global registry; the engine rejects plans not loaded here.
 - MCP args for `run_*` wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.

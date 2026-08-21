@@ -113,6 +113,9 @@ func TestRunner_RunAndNoExecutor(t *testing.T) {
 func TestRunner_QueryStub(t *testing.T) {
 	c := loadPetstore(t)
 	r := NewRunner(c, &stubExec{}, nil)
+	if r.QueryEnabled() {
+		t.Fatal("QueryEnabled with nil matcher")
+	}
 	_, err := r.Query(context.Background(), "check health", map[string]any{"name": "x"})
 	if err != ErrQueryNotImplemented {
 		t.Fatalf("err = %v, want ErrQueryNotImplemented", err)

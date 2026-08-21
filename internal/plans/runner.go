@@ -20,8 +20,8 @@ var (
 	ErrNotFound = errors.New("plan not found")
 	// ErrNoExecutor is returned when Run is called without an Executor.
 	ErrNoExecutor = errors.New("executor not configured")
-	// ErrQueryNotImplemented is returned by MCP query and POST /plans/query
-	// when [arazzo.QueryMatcher] is not set.
+	// ErrQueryNotImplemented is returned by [Runner.Query] when no matcher
+	// is set. The MCP tool and REST route are not registered in that case.
 	ErrQueryNotImplemented = errors.New("query is not implemented")
 	// ErrEmptyQuery is returned when the query string is empty.
 	ErrEmptyQuery = errors.New("query is required")
@@ -42,6 +42,11 @@ func NewRunner(catalog *Catalog, executor libarazzo.Executor, matcher arazzo.Que
 // Catalog returns the loaded plans.
 func (r *Runner) Catalog() *Catalog {
 	return r.catalog
+}
+
+// QueryEnabled is true when a [arazzo.QueryMatcher] was passed to [NewRunner].
+func (r *Runner) QueryEnabled() bool {
+	return r != nil && r.matcher != nil
 }
 
 // Run executes workflowID on planID at the given raw info.version.

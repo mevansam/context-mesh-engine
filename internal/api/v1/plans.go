@@ -27,7 +27,9 @@ func NewPlansController(catalog *plans.Catalog, runner *plans.Runner) *PlansCont
 
 // Register implements api.Controller.
 func (c *PlansController) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /plans/query", c.postQuery)
+	if c.runner != nil && c.runner.QueryEnabled() {
+		mux.HandleFunc("POST /plans/query", c.postQuery)
+	}
 	mux.HandleFunc("POST /plans/{planId}/{workflowId}", c.postLatest)
 	mux.HandleFunc("POST /plans/{planId}/{version}/{workflowId}", c.postVersioned)
 	mux.HandleFunc("GET /openapi/{planId}", c.openapiLatest)

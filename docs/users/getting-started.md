@@ -52,7 +52,7 @@ curl -s http://localhost:8080/api/tools
 
 The sample registers an MCP `ping` tool. Point a Streamable HTTP client at `http://localhost:8080/mcp` ([MCP client](usage.md#mcp-client)).
 
-`-specs` loads plans and registers `query` plus `run_*` tools, but **does not** set an `Executor` or `QueryMatcher`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. Query returns 501 until you set `QueryMatcher`. Use [examples/arazzo-fs](examples.md#arazzo-fs) for a stub executor and dummy matcher, or [examples/petstore](examples.md#petstore) for live Petstore HTTP. Full Arazzo guide: [arazzo.md](arazzo.md).
+`-specs` loads plans and registers `run_*` tools, but **does not** set an `Executor` or `QueryMatcher`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. `query` is not published until you set `QueryMatcher`. Use [examples/arazzo-fs](examples.md#arazzo-fs) for a stub executor and dummy matcher, or [examples/petstore](examples.md#petstore) for live Petstore HTTP. Full Arazzo guide: [arazzo.md](arazzo.md).
 
 ## Use it as a library
 

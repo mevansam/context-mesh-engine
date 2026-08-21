@@ -23,27 +23,30 @@ type queryArgs struct {
 	Data  map[string]any `json:"data,omitempty" jsonschema:"data inputs referenced by the query"`
 }
 
-// RegisterMCP adds query and one run_* tool per catalog entry.
+// RegisterMCP adds one run_* tool per catalog entry. When the runner has a
+// QueryMatcher, it also adds the query tool.
 func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls arazzo.ToolDocTemplates, publicBaseURL, apiPrefix string) error {
 	tmpls = arazzo.MergeTemplates(tmpls)
 	seen := map[string]string{}
 
-	qctx := arazzo.NewToolDocContext("plan", "1.0.0", "", "", "", nil, publicBaseURL, apiPrefix)
-	qName, qTitle, qDesc, err := arazzo.RenderQueryDoc(tmpls, qctx)
-	if err != nil {
-		return fmt.Errorf("query tool doc: %w", err)
-	}
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        qName,
-		Title:       qTitle,
-		Description: qDesc,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in queryArgs) (*mcp.CallToolResult, any, error) {
-		res, err := runner.Query(ctx, in.Query, in.Data)
+	if runner != nil && runner.QueryEnabled() {
+		qctx := arazzo.NewToolDocContext("plan", "1.0.0", "", "", "", nil, publicBaseURL, apiPrefix)
+		qName, qTitle, qDesc, err := arazzo.RenderQueryDoc(tmpls, qctx)
 		if err != nil {
-			return nil, nil, err
+			return fmt.Errorf("query tool doc: %w", err)
 		}
-		return nil, res, nil
-	})
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        qName,
+			Title:       qTitle,
+			Description: qDesc,
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, in queryArgs) (*mcp.CallToolResult, any, error) {
+			res, err := runner.Query(ctx, in.Query, in.Data)
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, res, nil
+		})
+	}
 
 	for _, e := range catalog.Entries() {
 		title, summary, desc := "", "", ""

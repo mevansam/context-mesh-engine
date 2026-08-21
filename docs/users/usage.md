@@ -51,7 +51,7 @@ Zero-value `engine.Options` after `New` (see `engine/engine.go`):
 | `APIPrefix` | empty | `/api` (`DefaultAPIPrefix`). Must not be `/` or `/mcp`. |
 | `ArazzoLoaders` | nil/empty | no plan tools or plan REST routes |
 | `ArazzoExecutor` | nil | catalog + OpenAPI still load; execute is 501 |
-| `QueryMatcher` | nil | MCP `query` and `POST /plans/query` are 501 |
+| `QueryMatcher` | nil | MCP `query` and `POST /plans/query` are not registered |
 | `PublicBaseURL` | empty | REST URLs in MCP descriptions are path-only (`{APIPrefix}/...`) |
 | `ToolDoc` | zero struct | `arazzo.DefaultToolDocTemplates()` |
 
@@ -85,7 +85,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 | DELETE | `/mcp` | End the MCP session |
 | GET | `/api/health` | `{"status":"ok"}` (`api.HealthResponse`) |
 | GET | `/api/tools` | MCP `tools/list` result (`ttlMs`, `cacheScope`, `tools`). Optional `?cursor=` |
-| POST | `/api/plans/query` | Natural-language match + execute (same contract as MCP `query`; loaders required) |
+| POST | `/api/plans/query` | Natural-language match + execute (same contract as MCP `query`; loaders **and** `QueryMatcher` required) |
 | POST | `/api/plans/{planId}/{workflowId}` | Execute **latest** plan version (loaders required) |
 | POST | `/api/plans/{planId}/{version}/{workflowId}` | Execute that version (`{version}` is `v` + `info.version`) |
 | GET | `/api/openapi/{planId}` | OAS 3.1 for latest execute paths |
@@ -94,7 +94,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 
 Advertise MCP at **`/mcp`** (no trailing slash). `/mcp/` is mounted so extra path segments still reach the same handler. Do not `http.StripPrefix("/mcp", ...)` yourself.
 
-Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md). `GET {APIPrefix}/tools` is always registered and lists every tool on the shared MCP server (including `query` / `run_*` when loaders are set, and any tools you add with `mcp.AddTool`). MCP `query` and `POST {APIPrefix}/plans/query` need `Options.QueryMatcher` or they return 501.
+Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md). `GET {APIPrefix}/tools` is always registered and lists every tool on the shared MCP server (including `run_*` when loaders are set, `query` when `QueryMatcher` is set, and any tools you add with `mcp.AddTool`). MCP `query` and `POST {APIPrefix}/plans/query` are omitted unless `Options.QueryMatcher` is set.
 
 REST errors from this SDK use `{"error":"<message>"}` (`api.ErrorBody`) except `http.TimeoutHandler` on the REST prefix, which writes plain text `request timeout\n`.
 

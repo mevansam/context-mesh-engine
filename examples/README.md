@@ -138,7 +138,6 @@ The plan registers:
 
 | Tool | Use |
 | --- | --- |
-| `query` | Natural-language match (501 until matching is wired) |
 | `run_petstore_v1.0.1` | Run one workflow; `workflowId` is `retrievePet`, `purchasePet`, or `checkOrderStatus` |
 
 Example prompts:
@@ -183,6 +182,6 @@ Go client: [docs/users/usage.md](../docs/users/usage.md#mcp-client) (`mcp.Stream
 - You supply loaders + an `Executor`. This demo’s executor is HTTP: OpenAPI operations on Petstore, AsyncAPI operations on the local adapter.
 - Generated `GET /api/openapi/petstore` describes the same execute routes (paths without the `/api` prefix).
 - `GET /api/tools` is the REST form of MCP `tools/list`.
-- `query` uses `Options.QueryMatcher` (nil → 501). Petstore leaves it unset; arazzo-fs ships a dummy matcher.
+- `query` is published only when `Options.QueryMatcher` is set. Petstore leaves it unset; arazzo-fs ships a dummy matcher.
 
 Arazzo file: `examples/petstore/mcp-server/plans/petstore.arazzo.yaml`. AsyncAPI file: `examples/petstore/async-order-server/pet-asyncapi.yaml`.

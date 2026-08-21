@@ -14,6 +14,8 @@ import (
 // on) lives in the application; this SDK only calls Match and then
 // checks that the selection is loaded in this process.
 //
+// A nil matcher means the query tool and REST route are not registered.
+//
 // Match must not treat a miss in [QueryRequest.Catalog] as “no match”.
 // The engine verifies the loaded catalog after Match returns.
 type QueryMatcher interface {
