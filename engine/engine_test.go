@@ -233,3 +233,101 @@ func TestNew_APIPrefixRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestNew_MCPOnlyAndRESTOnlyRejected(t *testing.T) {
+	_, err := engine.New(engine.Options{
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MCPOnly:  true,
+		RESTOnly: true,
+	})
+	if err == nil {
+		t.Fatal("expected error when MCPOnly and RESTOnly are both true")
+	}
+}
+
+func TestHandler_MCPOnly(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MCPOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcp.AddTool(e.MCP(), &mcp.Tool{Name: "ping", Description: "liveness probe"}, ping)
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("REST status = %d, want 404", resp.StatusCode)
+	}
+
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint: ts.URL + engine.MCPPath,
+	}, nil)
+	if err != nil {
+		t.Fatalf("MCP connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "ping"})
+	if err != nil || res.IsError {
+		t.Fatalf("ping: %v %#v", err, res)
+	}
+}
+
+func TestHandler_RESTOnly(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RESTOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcp.AddTool(e.MCP(), &mcp.Tool{Name: "ping", Description: "liveness probe"}, ping)
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("REST status = %d, want 200", resp.StatusCode)
+	}
+
+	mcpResp, err := http.Get(ts.URL + engine.MCPPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mcpResp.Body.Close()
+	if mcpResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("MCP status = %d, want 404", mcpResp.StatusCode)
+	}
+
+	tools, err := http.Get(ts.URL + "/api/tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tools.Body.Close()
+	var body mcp.ListToolsResult
+	if err := json.NewDecoder(tools.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, tl := range body.Tools {
+		if tl.Name == "ping" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("REST /tools should still list MCP ping")
+	}
+}

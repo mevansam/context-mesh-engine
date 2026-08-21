@@ -22,19 +22,24 @@ type MuxOptions struct {
 	APITimeout time.Duration
 }
 
-// NewMux mounts MCP and REST as siblings. It does not StripPrefix on MCP.
-// APITimeout wraps only the REST handler.
+// NewMux mounts MCP and REST as siblings. A nil MCPHandler or APIHandler
+// is not mounted. It does not StripPrefix on MCP. APITimeout wraps only
+// the REST handler.
 func NewMux(opts MuxOptions) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle(opts.MCPPath, opts.MCPHandler)
-	mux.Handle(opts.MCPPath+"/", opts.MCPHandler)
-
-	api := opts.APIHandler
-	if opts.APITimeout > 0 {
-		api = http.TimeoutHandler(api, opts.APITimeout, "request timeout\n")
+	if opts.MCPHandler != nil {
+		mux.Handle(opts.MCPPath, opts.MCPHandler)
+		mux.Handle(opts.MCPPath+"/", opts.MCPHandler)
 	}
-	mux.Handle(opts.APIPrefix+"/", http.StripPrefix(opts.APIPrefix, api))
+
+	if opts.APIHandler != nil {
+		api := opts.APIHandler
+		if opts.APITimeout > 0 {
+			api = http.TimeoutHandler(api, opts.APITimeout, "request timeout\n")
+		}
+		mux.Handle(opts.APIPrefix+"/", http.StripPrefix(opts.APIPrefix, api))
+	}
 
 	return mux
 }

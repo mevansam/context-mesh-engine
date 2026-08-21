@@ -8,7 +8,7 @@ context-mesh-engine/
   LICENSE                        MIT (novassist.ai)
   go.mod / go.sum                replace -> ../go-sdk and ../libopenapi
   docs/                          users/ vs contributors/ (start at docs/README.md)
-  cmd/engine/                    Sample process: -addr, -api-prefix, -specs, -public-base-url, SIGINT, ping
+  cmd/engine/                    Sample process: -addr, -api-prefix, -mcp-only, -rest-only, -specs, -public-base-url, SIGINT, ping
   examples/
     README.md                    Points at docs/users/examples.md
     minimal/                     ListenAndServe
@@ -51,7 +51,7 @@ context-mesh-engine/
 
 | File | Responsibility |
 | --- | --- |
-| `engine/engine.go` | `Options` (incl. `APIPrefix`), `New` (`error`), `MCP`, `AddController`, `APIPrefix`, `Handler`, `ListenAndServe` |
+| `engine/engine.go` | `Options` (incl. `APIPrefix`, `MCPOnly`, `RESTOnly`), `New` (`error`), `MCP`, `AddController`, `APIPrefix`, `Handler`, `ListenAndServe` |
 | `engine/engine_test.go` | Mux contract: health JSON, custom prefix, MCP handshake, SSE GET 400, REST ≠ MCP |
 | `engine/arazzo_test.go` | Plan MCP tools, REST execute, OpenAPI, query matcher, 501 |
 | `api/controller.go` | `Controller` |
@@ -66,7 +66,7 @@ context-mesh-engine/
 
 | File | Responsibility |
 | --- | --- |
-| `httpserver/server.go` | Sibling mount of `/mcp` and `Options.APIPrefix`; `ListenAndServe` + 10s `Shutdown` |
+| `httpserver/server.go` | Sibling mount of `/mcp` and `Options.APIPrefix` (optional omit either); `ListenAndServe` + 10s `Shutdown` |
 | `mcpgw/server.go` | Shared `mcp.Server`; `Stateless`/`JSONResponse` left false |
 | `api/json.go` | JSON encode/decode; `ReadJSON` unknown fields rejected; 1 MiB |
 | `api/v1/router.go` | v1 `ServeMux` and `Register` |
@@ -87,6 +87,9 @@ context-mesh-engine/
 | `TestHandler_ToolsListJSON` | `{APIPrefix}/tools` lists MCP tools |
 | `TestHandler_CustomAPIPrefix` | custom prefix serves health; default `/api` is 404 |
 | `TestNew_APIPrefixRejected` | `/`, `/mcp` fail `New` |
+| `TestNew_MCPOnlyAndRESTOnlyRejected` | both `MCPOnly` and `RESTOnly` fail `New` |
+| `TestHandler_MCPOnly` | `/mcp` works; REST prefix is 404 |
+| `TestHandler_RESTOnly` | REST works; `/mcp` is 404 |
 | `TestHandler_MCPInitializeAndPing` | Streamable HTTP at `/mcp` |
 | `TestHandler_MCPGETRequiresSession` | GET `/mcp` without session is 400 (handler is mounted) |
 | `TestHandler_RESTNotMCP` | POST `/api/health` is REST 405, not MCP |

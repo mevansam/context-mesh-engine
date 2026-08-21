@@ -73,6 +73,16 @@ type Options struct {
 	// if missing; a trailing slash is stripped. Must not be "/" or [MCPPath].
 	APIPrefix string
 
+	// MCPOnly serves only Streamable HTTP at [MCPPath]. REST under
+	// APIPrefix is not mounted. If both MCPOnly and RESTOnly are false,
+	// both surfaces are served (the default). Both true is an error.
+	MCPOnly bool
+
+	// RESTOnly serves only REST under APIPrefix. [MCPPath] is not
+	// mounted. The MCP server still exists for GET {APIPrefix}/tools
+	// and mcp.AddTool.
+	RESTOnly bool
+
 	// ArazzoLoaders supply Arazzo documents. If empty, no plan tools or
 	// plan REST routes are registered.
 	ArazzoLoaders []arazzo.Loader
@@ -115,9 +125,14 @@ type Engine struct {
 // When [Options.ArazzoLoaders] is set, plans are loaded and MCP run_*
 // tools plus REST plan routes are registered. MCP query and
 // POST {APIPrefix}/plans/query are added only when [Options.QueryMatcher]
-// is set. Load or template errors fail construction.
+// is set. [Options.MCPOnly] and [Options.RESTOnly] control which HTTP
+// surfaces [Engine.Handler] mounts; both false serves both. Load or
+// template errors fail construction.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
+	if opts.MCPOnly && opts.RESTOnly {
+		return nil, fmt.Errorf("MCPOnly and RESTOnly cannot both be true")
+	}
 	if err := validateAPIPrefix(opts.APIPrefix); err != nil {
 		return nil, err
 	}
@@ -223,17 +238,24 @@ func (e *Engine) APIPrefix() string {
 	return e.opts.APIPrefix
 }
 
-// Handler returns the root HTTP handler with /mcp and the REST prefix
-// mounted as siblings. Safe to call more than once; the mux is built once.
+// Handler returns the root HTTP handler. By default /mcp and the REST
+// prefix are mounted as siblings. [Options.MCPOnly] omits REST;
+// [Options.RESTOnly] omits /mcp. Safe to call more than once; the mux
+// is built once.
 func (e *Engine) Handler() http.Handler {
 	e.once.Do(func() {
-		e.handler = httpserver.NewMux(httpserver.MuxOptions{
+		opts := httpserver.MuxOptions{
 			MCPPath:    MCPPath,
 			APIPrefix:  e.opts.APIPrefix,
-			MCPHandler: e.mcp.Handler(),
-			APIHandler: e.router.Handler(),
 			APITimeout: e.opts.APITimeout,
-		})
+		}
+		if !e.opts.RESTOnly {
+			opts.MCPHandler = e.mcp.Handler()
+		}
+		if !e.opts.MCPOnly {
+			opts.APIHandler = e.router.Handler()
+		}
+		e.handler = httpserver.NewMux(opts)
 	})
 	return e.handler
 }

@@ -49,6 +49,8 @@ Zero-value `engine.Options` after `New` (see `engine/engine.go`):
 | `APITimeout` | 0 | 15s on the REST prefix only. Set a **negative** duration to disable. |
 | `ReadHeaderTimeout` | 0 | 10s on `http.Server` |
 | `APIPrefix` | empty | `/api` (`DefaultAPIPrefix`). Must not be `/` or `/mcp`. |
+| `MCPOnly` | false | if true, mount only `/mcp` |
+| `RESTOnly` | false | if true, mount only REST under `APIPrefix` |
 | `ArazzoLoaders` | nil/empty | no plan tools or plan REST routes |
 | `ArazzoExecutor` | nil | catalog + OpenAPI still load; execute is 501 |
 | `QueryMatcher` | nil | MCP `query` and `POST /plans/query` are not registered |
@@ -72,7 +74,7 @@ if err != nil {
 }
 ```
 
-`New` returns an error when `APIPrefix` is `/` or `/mcp` (after normalize), or when `ArazzoLoaders` is non-empty and templates fail to parse, specs fail to load, `(planId, version)` is duplicated, or rendered MCP tool names collide.
+`New` returns an error when `APIPrefix` is `/` or `/mcp` (after normalize), when `MCPOnly` and `RESTOnly` are both true, or when `ArazzoLoaders` is non-empty and templates fail to parse, specs fail to load, `(planId, version)` is duplicated, or rendered MCP tool names collide.
 
 ## Routes
 
@@ -92,7 +94,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 | GET | `/api/openapi/{planId}/{version}` | OAS 3.1 for that version |
 | * | `/api/...` | Your controllers |
 
-Advertise MCP at **`/mcp`** (no trailing slash). `/mcp/` is mounted so extra path segments still reach the same handler. Do not `http.StripPrefix("/mcp", ...)` yourself.
+Advertise MCP at **`/mcp`** (no trailing slash). `/mcp/` is mounted so extra path segments still reach the same handler. Do not `http.StripPrefix("/mcp", ...)` yourself. `Options.MCPOnly` omits REST; `Options.RESTOnly` omits `/mcp`. Both false (default) serves both.
 
 Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md). `GET {APIPrefix}/tools` is always registered and lists every tool on the shared MCP server (including `run_*` when loaders are set, `query` when `QueryMatcher` is set, and any tools you add with `mcp.AddTool`). MCP `query` and `POST {APIPrefix}/plans/query` are omitted unless `Options.QueryMatcher` is set.
 
