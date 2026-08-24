@@ -17,13 +17,15 @@ If you expose those operations as individual MCP tools (or leave the model to pi
 
 Arazzo plans move that design **out of the model**. Authors publish a versioned document (`x-planId` + `info.version`) that names the steps, operations, inputs, and success criteria. The engine runs that document the same way every time and returns a structured trace. The LLM still interprets the user’s question and chooses a plan plus inputs; it does not decide how domain APIs are chained.
 
-| Without a plan | With an engine-executed plan |
-| --- | --- |
-| Path through the mesh is inferred per request | Path is the published workflow |
-| Order, mapping, and “done” can change between runs | Same steps, criteria, and retries on every run |
-| Failures are whatever the model tries next | The runner applies the plan’s success and failure rules |
-| Agents and REST clients each re-implement composition | One catalog and one runner: MCP `run_*` and `POST /api/plans/...` |
-| Review means reading prompts and traces after the fact | Review means accepting a plan version before it can run |
+
+| Without a plan                                         | With an engine-executed plan                                      |
+| ------------------------------------------------------ | ----------------------------------------------------------------- |
+| Path through the mesh is inferred per request          | Path is the published workflow                                    |
+| Order, mapping, and “done” can change between runs     | Same steps, criteria, and retries on every run                    |
+| Failures are whatever the model tries next             | The runner applies the plan’s success and failure rules           |
+| Agents and REST clients each re-implement composition  | One catalog and one runner: MCP `run_*` and `POST /api/plans/...` |
+| Review means reading prompts and traces after the fact | Review means accepting a plan version before it can run           |
+
 
 The unit of work is a **pre-built, validated, governed plan**, not unbounded tool-use against every domain operation.
 
@@ -31,16 +33,18 @@ The unit of work is a **pre-built, validated, governed plan**, not unbounded too
 
 One process, one TCP port:
 
-| Surface | Where | Role |
-| --- | --- | --- |
-| MCP `query` | `/mcp` | Natural-language entry, registered only when `QueryMatcher` is set. The matcher selects a plan; the engine runs it if that plan is loaded here. |
-| MCP `run_*` | `/mcp` | Direct execute of a known plan version. Arguments: `workflowId` + `inputs`. |
-| REST `query` | `POST /api/plans/query` | Same as MCP `query` (omitted without `QueryMatcher`). JSON body is `{ "query": "...", "data": { } }`. Success payload is the workflow outputs object. |
-| REST execute | `POST /api/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs. |
-| REST OpenAPI | `GET /api/openapi/{planId}` | Generated OAS 3.1 for those execute paths (latest or a specific version). |
-| REST tools | `GET /api/tools` | Same JSON as MCP `tools/list` (`ttlMs`, `cacheScope`, `tools`). |
 
-`query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_*` and `POST /api/plans/{planId}/...` are for when the plan and version are already known.
+| Surface      | Where                          | Role                                                                                                                                                  |
+| ------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MCP `query`  | `/mcp`                         | Natural-language entry, registered only when `QueryMatcher` is set. The matcher selects a plan; the engine runs it if that plan is loaded here.       |
+| MCP `run_*`  | `/mcp`                         | Direct execute of a known plan version. Arguments: `workflowId` + `inputs`.                                                                           |
+| REST `query` | `POST /api/plans/query`        | Same as MCP `query` (omitted without `QueryMatcher`). JSON body is `{ "query": "...", "data": { } }`. Success payload is the workflow outputs object. |
+| REST execute | `POST /api/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs.                                                                                                |
+| REST OpenAPI | `GET /api/openapi/{planId}`    | Generated OAS 3.1 for those execute paths (latest or a specific version).                                                                             |
+| REST tools   | `GET /api/tools`               | Same JSON as MCP `tools/list` (`ttlMs`, `cacheScope`, `tools`).                                                                                       |
+
+
+`query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_`* and `POST /api/plans/{planId}/...` are for when the plan and version are already known.
 
 You supply **loaders**, an **Executor** for domain HTTP, and optionally a **QueryMatcher** for natural-language plan selection. The engine loads plans, exposes tools and OpenAPI, and runs steps through libopenapi’s Arazzo engine.
 
@@ -62,11 +66,15 @@ Plans + a stub executor: [examples/arazzo-fs](examples/arazzo-fs/README.md). Liv
 
 **[docs/README.md](docs/README.md)** — pick one path:
 
-| Path | Audience |
-| --- | --- |
-| [Use the SDK](docs/users/getting-started.md) | Embed `engine.Engine`; MCP, REST, Arazzo options |
-| [Contribute](docs/contributors/getting-started.md) | Change this repository |
+
+| Path                                               | Audience                                         |
+| -------------------------------------------------- | ------------------------------------------------ |
+| [Use the SDK](docs/users/getting-started.md)       | Embed `engine.Engine`; MCP, REST, Arazzo options |
+| [Contribute](docs/contributors/getting-started.md) | Change this repository                           |
+
+
+
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](LICENSE).
