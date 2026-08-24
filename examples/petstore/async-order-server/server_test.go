@@ -133,3 +133,21 @@ func TestPlaceAndConfirm_LargeOrderID(t *testing.T) {
 		t.Fatalf("stored id = %d", got)
 	}
 }
+
+func TestResolvePetstoreBase(t *testing.T) {
+	got, err := resolvePetstoreBase("local", "")
+	if err != nil || got != petstoreLocalBase {
+		t.Fatalf("local: %q %v", got, err)
+	}
+	got, err = resolvePetstoreBase("hosted", "")
+	if err != nil || got != petstoreHostedBase {
+		t.Fatalf("hosted: %q %v", got, err)
+	}
+	got, err = resolvePetstoreBase("local", "http://example:9/api/v3/")
+	if err != nil || got != "http://example:9/api/v3" {
+		t.Fatalf("override: %q %v", got, err)
+	}
+	if _, err := resolvePetstoreBase("other", ""); err == nil {
+		t.Fatal("expected error for unknown -petstore")
+	}
+}

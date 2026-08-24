@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Build (if needed) and run the local Petstore 3 OpenAPI server in Docker.
+# Pull (if needed) and run the local Petstore 3 OpenAPI server in Docker.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 IMAGE="${PETSTORE_IMAGE:-context-mesh-petstore3:local}"
 NAME="${PETSTORE_CONTAINER:-petstore-openapi-server}"
 HOST_PORT="${PETSTORE_PORT:-8090}"
+UPSTREAM="${PETSTORE_UPSTREAM:-swaggerapi/petstore3:latest}"
+PLATFORM="${PETSTORE_PLATFORM:-linux/amd64}"
+PULL_TIMEOUT="${PETSTORE_PULL_TIMEOUT:-120}"
 CONTAINER_PORT=8080
 BASE_URL="http://localhost:${HOST_PORT}/api/v3"
 
@@ -13,13 +16,52 @@ usage() {
   cat <<EOF
 usage: $(basename "$0") [--rebuild]
 
-  --rebuild   remove the local image/container and build again
+  --rebuild   remove the local image/container and pull again
 
 Env:
-  PETSTORE_IMAGE      docker image tag (default ${IMAGE})
-  PETSTORE_CONTAINER  container name (default ${NAME})
-  PETSTORE_PORT       host port mapped to container 8080 (default ${HOST_PORT})
+  PETSTORE_IMAGE         local tag (default ${IMAGE})
+  PETSTORE_CONTAINER     container name (default ${NAME})
+  PETSTORE_PORT          host port mapped to 8080 (default ${HOST_PORT})
+  PETSTORE_UPSTREAM      image to pull (default ${UPSTREAM})
+  PETSTORE_PLATFORM      pull/run platform (default ${PLATFORM})
+  PETSTORE_PULL_TIMEOUT  seconds to wait for docker pull (default ${PULL_TIMEOUT})
 EOF
+}
+
+registry_help() {
+  cat >&2 <<EOF
+
+docker could not pull ${UPSTREAM} (often a Docker Desktop + VPN registry hang).
+
+Host DNS can work while the Docker VM cannot. Try:
+  1. Disconnect VPN
+  2. Restart Docker Desktop
+  3. Re-run this script
+
+Or skip Docker and use the hosted API:
+  go run ./examples/petstore/async-order-server -petstore hosted
+  go run ./examples/petstore/mcp-server -petstore hosted
+EOF
+}
+
+# docker pull with a client-side timeout (macOS has no GNU timeout by default).
+pull_upstream() {
+  echo "pulling ${UPSTREAM} (--platform ${PLATFORM}, timeout ${PULL_TIMEOUT}s)..."
+  docker pull --platform "$PLATFORM" "$UPSTREAM" &
+  local pid=$!
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [[ "$i" -ge "$PULL_TIMEOUT" ]]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      echo "timed out after ${PULL_TIMEOUT}s pulling ${UPSTREAM}" >&2
+      registry_help
+      return 1
+    fi
+    sleep 1
+  done
+  wait "$pid"
 }
 
 REBUILD=0
@@ -50,11 +92,18 @@ if [[ "$REBUILD" -eq 1 ]]; then
   docker image rm -f "$IMAGE" >/dev/null 2>&1 || true
 fi
 
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "image ${IMAGE} not found; building (pulls swaggerapi/petstore3:unstable once)..."
-  docker build -t "$IMAGE" "$ROOT"
-else
+image_exists() {
+  docker image inspect "$1" >/dev/null 2>&1
+}
+
+if image_exists "$IMAGE"; then
   echo "using existing image ${IMAGE}"
+elif image_exists "$UPSTREAM"; then
+  echo "tagging local ${UPSTREAM} as ${IMAGE} (skipping pull)"
+  docker tag "$UPSTREAM" "$IMAGE"
+else
+  pull_upstream
+  docker tag "$UPSTREAM" "$IMAGE"
 fi
 
 if docker ps --format '{{.Names}}' | grep -qx "$NAME"; then
@@ -64,7 +113,8 @@ elif docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
   docker start "$NAME" >/dev/null
 else
   echo "starting container ${NAME} on localhost:${HOST_PORT}"
-  docker run -d --name "$NAME" -p "${HOST_PORT}:${CONTAINER_PORT}" "$IMAGE" >/dev/null
+  docker run -d --name "$NAME" --platform "$PLATFORM" \
+    -p "${HOST_PORT}:${CONTAINER_PORT}" "$IMAGE" >/dev/null
 fi
 
 echo "waiting for ${BASE_URL}/openapi.json ..."

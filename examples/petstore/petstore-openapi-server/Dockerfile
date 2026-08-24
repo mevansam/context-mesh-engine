@@ -1,9 +1,8 @@
-# Published Petstore 3 image from
-# https://github.com/swagger-api/swagger-petstore
-# (README: docker pull swaggerapi/petstore3:unstable).
+# Optional. run.sh / run.ps1 pull swaggerapi/petstore3:latest and tag it
+# locally. This file is only for `docker build` when Hub is reachable.
 #
-# First `docker build` pulls that image if it is not already local.
-# Later launches skip this file when the tagged image already exists.
-FROM swaggerapi/petstore3:unstable
+# https://github.com/swagger-api/swagger-petstore
+# Image is linux/amd64; Apple Silicon runs it via emulation.
+FROM swaggerapi/petstore3:latest
 
 EXPOSE 8080

@@ -1,6 +1,6 @@
 # petstore demo
 
-End-to-end Arazzo demo: MCP/REST engine plus an AsyncAPI-shaped order adapter in front of a **local** [Petstore 3](https://github.com/swagger-api/swagger-petstore) OpenAPI server (Docker).
+End-to-end Arazzo demo: MCP/REST engine plus an AsyncAPI-shaped order adapter in front of [Petstore 3](https://github.com/swagger-api/swagger-petstore). Default is a **local Docker** server. Pass `-petstore hosted` to use [petstore3.swagger.io](https://petstore3.swagger.io/) instead.
 
 | Directory | Role |
 | --- | --- |
@@ -14,13 +14,13 @@ Three processes:
 2. **`async-order-server`** (`localhost:8091`) — HTTP adapter for the official AsyncAPI 3 [pet-asyncapi.yaml](https://github.com/OAI/Arazzo-Specification/blob/main/examples/1.1.0/pet-asyncapi.yaml). `POST /place-order` calls local Petstore `POST /store/order`.
 3. **`mcp-server`** (`localhost:8080`) — `context-mesh-engine` with an Arazzo plan based on the [1.1 spec example](https://spec.openapis.org/arazzo/latest.html), plus `x-planId: petstore`. Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`.
 
-`mcp-server` and `async-order-server` default to `http://localhost:8090/api/v3`. They do **not** call the hosted [petstore3.swagger.io](https://petstore3.swagger.io/) demo.
+`mcp-server` and `async-order-server` default to local Docker (`-petstore local` → `http://localhost:8090/api/v3`). Use `-petstore hosted` for [petstore3.swagger.io](https://petstore3.swagger.io/api/v3), or `-petstore-url` for any origin. Both Go processes must use the same target.
 
 Do not run `mcp-server` at the same time as another example (or `cmd/engine`) on `localhost:8080`.
 
 ## Petstore 3 in Docker
 
-Needs [Docker](https://docs.docker.com/get-docker/) on `PATH`. The scripts wrap [swaggerapi/petstore3:unstable](https://hub.docker.com/r/swaggerapi/petstore3) as described in the [upstream README](https://github.com/swagger-api/swagger-petstore/blob/master/README.md). They **build only if** the local image `context-mesh-petstore3:local` is missing, then start (or reuse) a container.
+Needs [Docker](https://docs.docker.com/get-docker/) on `PATH`. The scripts pull [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) **only if** `context-mesh-petstore3:local` is missing, then start (or reuse) a container. If pull times out (`DeadlineExceeded` / hung pull), the Docker VM often cannot reach Hub while a VPN is up — disconnect VPN, restart Docker Desktop, retry, or use `-petstore hosted`.
 
 From the **repository root**:
 
@@ -57,9 +57,27 @@ Stop: `docker stop petstore-openapi-server`.
 
 Image/container names and port: [petstore-openapi-server/README.md](petstore-openapi-server/README.md). If you change the port, pass `-petstore-url http://localhost:PORT/api/v3` to both Go processes.
 
+## Hosted Petstore 3
+
+Skip Docker and point both Go processes at the public demo. It is often flaky (`/pet/findByStatus`, `/store/order`).
+
+```bash
+go run ./examples/petstore/async-order-server -petstore hosted
+go run ./examples/petstore/mcp-server -petstore hosted
+go run ./examples/petstore/mcp-server -dual -petstore hosted
+```
+
+Direct checks then use `https://petstore3.swagger.io/api/v3/...` instead of `http://localhost:8090/api/v3/...`.
+
+A custom origin (any `-petstore` value):
+
+```bash
+go run ./examples/petstore/mcp-server -petstore-url http://127.0.0.1:8090/api/v3
+```
+
 ## Run the Go servers
 
-After Petstore Docker is up, two more terminals from the **repository root**:
+For **local** Petstore (`-petstore local`, the default), start Docker first. Then two more terminals from the **repository root**:
 
 ```bash
 go run ./examples/petstore/async-order-server
@@ -74,8 +92,8 @@ Default for `mcp-server` is REST only. `-dual` also mounts MCP Streamable HTTP a
 Optional flags:
 
 ```bash
-go run ./examples/petstore/async-order-server -addr localhost:8091 -petstore-url http://localhost:8090/api/v3
-go run ./examples/petstore/mcp-server -addr localhost:8080 -async-order-url http://localhost:8091 -petstore-url http://localhost:8090/api/v3
+go run ./examples/petstore/async-order-server -addr localhost:8091 -petstore local
+go run ./examples/petstore/mcp-server -addr localhost:8080 -async-order-url http://localhost:8091 -petstore local
 go run ./examples/petstore/mcp-server -dual
 ```
 

@@ -1,4 +1,4 @@
-# Build (if needed) and run the local Petstore 3 OpenAPI server in Docker.
+# Pull (if needed) and run the local Petstore 3 OpenAPI server in Docker.
 param(
     [switch]$Rebuild,
     [switch]$Help
@@ -10,22 +10,43 @@ if ($Help) {
     Write-Host @"
 usage: ./run.ps1 [-Rebuild]
 
-  -Rebuild   remove the local image/container and build again
+  -Rebuild   remove the local image/container and pull again
 
 Env:
-  PETSTORE_IMAGE      docker image tag (default context-mesh-petstore3:local)
-  PETSTORE_CONTAINER  container name (default petstore-openapi-server)
-  PETSTORE_PORT       host port mapped to container 8080 (default 8090)
+  PETSTORE_IMAGE         local tag (default context-mesh-petstore3:local)
+  PETSTORE_CONTAINER     container name (default petstore-openapi-server)
+  PETSTORE_PORT          host port mapped to 8080 (default 8090)
+  PETSTORE_UPSTREAM      image to pull (default swaggerapi/petstore3:latest)
+  PETSTORE_PLATFORM      pull/run platform (default linux/amd64)
+  PETSTORE_PULL_TIMEOUT  seconds to wait for docker pull (default 120)
 "@
     exit 0
 }
 
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Image = if ($env:PETSTORE_IMAGE) { $env:PETSTORE_IMAGE } else { "context-mesh-petstore3:local" }
 $Name = if ($env:PETSTORE_CONTAINER) { $env:PETSTORE_CONTAINER } else { "petstore-openapi-server" }
 $HostPort = if ($env:PETSTORE_PORT) { $env:PETSTORE_PORT } else { "8090" }
+$Upstream = if ($env:PETSTORE_UPSTREAM) { $env:PETSTORE_UPSTREAM } else { "swaggerapi/petstore3:latest" }
+$Platform = if ($env:PETSTORE_PLATFORM) { $env:PETSTORE_PLATFORM } else { "linux/amd64" }
+$PullTimeout = if ($env:PETSTORE_PULL_TIMEOUT) { [int]$env:PETSTORE_PULL_TIMEOUT } else { 120 }
 $ContainerPort = 8080
 $BaseUrl = "http://localhost:${HostPort}/api/v3"
+
+function Write-RegistryHelp {
+    Write-Host @"
+
+docker could not pull $Upstream (often a Docker Desktop + VPN registry hang).
+
+Host DNS can work while the Docker VM cannot. Try:
+  1. Disconnect VPN
+  2. Restart Docker Desktop
+  3. Re-run this script
+
+Or skip Docker and use the hosted API:
+  go run ./examples/petstore/async-order-server -petstore hosted
+  go run ./examples/petstore/mcp-server -petstore hosted
+"@
+}
 
 function Test-Docker {
     try {
@@ -51,6 +72,29 @@ function Get-ContainerState {
     return "missing"
 }
 
+function Invoke-PullUpstream {
+    Write-Host "pulling $Upstream (--platform $Platform, timeout ${PullTimeout}s)..."
+    $job = Start-Job -ScriptBlock {
+        param($Image, $Plat)
+        docker pull --platform $Plat $Image
+        if ($LASTEXITCODE -ne 0) { throw "docker pull failed: $LASTEXITCODE" }
+    } -ArgumentList $Upstream, $Platform
+    if (-not (Wait-Job $job -Timeout $PullTimeout)) {
+        Stop-Job $job -ErrorAction SilentlyContinue
+        Remove-Job $job -Force -ErrorAction SilentlyContinue
+        Write-Error "timed out after ${PullTimeout}s pulling $Upstream"
+        Write-RegistryHelp
+        exit 1
+    }
+    Receive-Job $job
+    if ($job.State -ne "Completed") {
+        Remove-Job $job -Force -ErrorAction SilentlyContinue
+        Write-RegistryHelp
+        exit 1
+    }
+    Remove-Job $job -Force -ErrorAction SilentlyContinue
+}
+
 Test-Docker
 
 if ($Rebuild) {
@@ -58,12 +102,14 @@ if ($Rebuild) {
     docker image rm -f $Image 2>$null | Out-Null
 }
 
-if (-not (Test-LocalImage $Image)) {
-    Write-Host "image $Image not found; building (pulls swaggerapi/petstore3:unstable once)..."
-    docker build -t $Image $Root
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-} else {
+if (Test-LocalImage $Image) {
     Write-Host "using existing image $Image"
+} elseif (Test-LocalImage $Upstream) {
+    Write-Host "tagging local $Upstream as $Image (skipping pull)"
+    docker tag $Upstream $Image
+} else {
+    Invoke-PullUpstream
+    docker tag $Upstream $Image
 }
 
 switch (Get-ContainerState $Name) {
@@ -74,7 +120,7 @@ switch (Get-ContainerState $Name) {
     }
     default {
         Write-Host "starting container $Name on localhost:${HostPort}"
-        docker run -d --name $Name -p "${HostPort}:${ContainerPort}" $Image | Out-Null
+        docker run -d --name $Name --platform $Platform -p "${HostPort}:${ContainerPort}" $Image | Out-Null
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 }

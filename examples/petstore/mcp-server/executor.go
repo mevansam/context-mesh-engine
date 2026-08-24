@@ -20,10 +20,28 @@ import (
 )
 
 const (
-	defaultPetstoreBase = "http://localhost:8090/api/v3"
+	petstoreLocalBase   = "http://localhost:8090/api/v3"
+	petstoreHostedBase  = "https://petstore3.swagger.io/api/v3"
+	defaultPetstoreBase = petstoreLocalBase
 	defaultAsyncBase    = "http://localhost:8091"
 	confirmWait         = 6 * time.Second
 )
+
+// resolvePetstoreBase maps -petstore local|hosted to an origin.
+// urlOverride (-petstore-url) wins when set.
+func resolvePetstoreBase(kind, urlOverride string) (string, error) {
+	if u := strings.TrimSpace(urlOverride); u != "" {
+		return strings.TrimRight(u, "/"), nil
+	}
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "", "local":
+		return petstoreLocalBase, nil
+	case "hosted":
+		return petstoreHostedBase, nil
+	default:
+		return "", fmt.Errorf("-petstore must be local or hosted, got %q", kind)
+	}
+}
 
 type httpExec struct {
 	client    *http.Client

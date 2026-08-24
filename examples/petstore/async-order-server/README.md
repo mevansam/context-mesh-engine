@@ -8,6 +8,6 @@ HTTP adapter for the official AsyncAPI 3 example [pet-asyncapi.yaml](https://git
 | GET | `/confirm-order` | `confirmOrder` (same correlation header) |
 | GET | `/health` | liveness |
 
-On place, the server `POST`s the local Petstore 3 OpenAPI server (`http://localhost:8090/api/v3` by default) `/store/order`. Override with `-petstore-url`. Start Docker first: [../petstore-openapi-server/README.md](../petstore-openapi-server/README.md).
+On place, the server `POST`s Petstore 3 `/store/order`. `-petstore local` (default, Docker `http://localhost:8090/api/v3`) or `-petstore hosted` (`https://petstore3.swagger.io/api/v3`). Override with `-petstore-url`. Local Docker: [../petstore-openapi-server/README.md](../petstore-openapi-server/README.md).
 
 How to run this with `mcp-server` and curl the workflows: **[../README.md](../README.md)**.

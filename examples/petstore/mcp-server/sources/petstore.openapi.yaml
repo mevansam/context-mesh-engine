@@ -1,5 +1,5 @@
-# Operations used by the petstore Arazzo plan. Runtime default is the
-# local Docker Petstore 3 server (http://localhost:8090/api/v3).
+# Operations used by the petstore Arazzo plan. Runtime origin is
+# -petstore local (http://localhost:8090/api/v3), -petstore hosted, or -petstore-url.
 openapi: 3.0.3
 info:
   title: Swagger Petstore

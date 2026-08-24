@@ -46,7 +46,27 @@ func newOrderServer(hosts []string) *orderServer {
 	}
 }
 
-const defaultPetstoreStore = "http://localhost:8090/api/v3"
+const (
+	petstoreLocalBase    = "http://localhost:8090/api/v3"
+	petstoreHostedBase   = "https://petstore3.swagger.io/api/v3"
+	defaultPetstoreStore = petstoreLocalBase
+)
+
+// resolvePetstoreBase maps -petstore local|hosted to an origin.
+// urlOverride (-petstore-url) wins when set.
+func resolvePetstoreBase(kind, urlOverride string) (string, error) {
+	if u := strings.TrimSpace(urlOverride); u != "" {
+		return strings.TrimRight(u, "/"), nil
+	}
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "", "local":
+		return petstoreLocalBase, nil
+	case "hosted":
+		return petstoreHostedBase, nil
+	default:
+		return "", fmt.Errorf("-petstore must be local or hosted, got %q", kind)
+	}
+}
 
 func (s *orderServer) handlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
