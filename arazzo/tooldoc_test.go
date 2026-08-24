@@ -1,5 +1,5 @@
-// Copyright 2026 novassist.ai. All rights reserved.
-// Use of this source code is governed by the MIT license
+// Copyright 2026 Fidelity Investments. All rights reserved.
+// Use of this source code is governed by the Apache 2.0 license
 // that can be found in the LICENSE file.
 
 package arazzo_test

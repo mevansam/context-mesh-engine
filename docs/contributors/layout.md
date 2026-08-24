@@ -5,7 +5,7 @@ Module: `github.com/mevansam/context-mesh-engine`
 ```text
 context-mesh-engine/
   README.md                      Entry; points at docs/
-  LICENSE                        MIT (novassist.ai)
+  LICENSE                        MIT (Fidelity Investments)
   go.mod / go.sum                replace -> ../go-sdk and ../libopenapi
   docs/                          users/ vs contributors/ (start at docs/README.md)
   cmd/engine/                    Sample process: -addr, -api-prefix, -dual, -mcp-only, -rest-only, -specs, -public-base-url, SIGINT, ping
