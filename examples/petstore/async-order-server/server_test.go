@@ -63,6 +63,10 @@ func TestPlaceAndConfirm(t *testing.T) {
 	if body["petId"] != float64(10) {
 		t.Fatalf("hosted body = %s", placed)
 	}
+	postedID, ok := asInt64(body["id"])
+	if !ok || postedID == 0 {
+		t.Fatalf("expected non-zero posted id, body = %s", placed)
+	}
 
 	creq, _ := http.NewRequest(http.MethodGet, ts.URL+"/confirm-order", nil)
 	creq.Header.Set("orderCorrelationId", "corr-1")
@@ -131,6 +135,62 @@ func TestPlaceAndConfirm_LargeOrderID(t *testing.T) {
 	s.mu.Unlock()
 	if got != want {
 		t.Fatalf("stored id = %d", got)
+	}
+}
+
+func TestPlaceOrder_ZeroResponseIDUsesPostedID(t *testing.T) {
+	var posted map[string]any
+	hosted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &posted)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":0,"petId":10,"status":"placed"}`))
+	}))
+	t.Cleanup(hosted.Close)
+
+	s := newOrderServer([]string{hosted.URL})
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /place-order", s.handlePlaceOrder)
+	mux.HandleFunc("GET /confirm-order", s.handleConfirmOrder)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/place-order", strings.NewReader(`{"petId":10}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("orderCorrelationId", "corr-zero")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("place status=%d body=%s", resp.StatusCode, b)
+	}
+	postedID, ok := asInt64(posted["id"])
+	if !ok || postedID == 0 {
+		t.Fatalf("expected non-zero posted id, got %#v", posted)
+	}
+
+	creq, _ := http.NewRequest(http.MethodGet, ts.URL+"/confirm-order", nil)
+	creq.Header.Set("orderCorrelationId", "corr-zero")
+	cresp, err := http.DefaultClient.Do(creq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cresp.Body.Close()
+	if cresp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(cresp.Body)
+		t.Fatalf("confirm status=%d body=%s", cresp.StatusCode, b)
+	}
+	var conf map[string]any
+	if err := json.NewDecoder(cresp.Body).Decode(&conf); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := conf["payload"].(map[string]any)
+	got, ok := asInt64(payload["orderId"])
+	if !ok || got != postedID {
+		t.Fatalf("confirm orderId=%v posted=%d conf=%#v", payload["orderId"], postedID, conf)
 	}
 }
 

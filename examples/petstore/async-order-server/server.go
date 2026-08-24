@@ -14,8 +14,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// Local Petstore 3 does not allocate store order ids; omitting id stores 0.
+// Hosted petstore3 usually returns its own id, which we prefer when non-zero.
+var orderIDs atomic.Int64
 
 type confirmation struct {
 	OrderID int64
@@ -91,6 +96,7 @@ func (s *orderServer) handlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 
 	order, err := s.placeHosted(r.Context(), petID)
 	if err != nil {
+		log.Printf("place-order corr=%s pet=%d: %v", corr, petID, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -128,8 +134,21 @@ func (s *orderServer) handleConfirmOrder(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+func nextOrderID() int64 {
+	if orderIDs.Load() == 0 {
+		orderIDs.CompareAndSwap(0, time.Now().UnixMilli())
+	}
+	n := orderIDs.Add(1)
+	if n <= 0 {
+		return 1
+	}
+	return n
+}
+
 func (s *orderServer) placeHosted(ctx context.Context, petID int64) (confirmation, error) {
+	postedID := nextOrderID()
 	payload, _ := json.Marshal(map[string]any{
+		"id":       postedID,
 		"petId":    petID,
 		"quantity": 1,
 		"status":   "placed",
@@ -164,8 +183,7 @@ func (s *orderServer) placeHosted(ctx context.Context, petID int64) (confirmatio
 		}
 		id, _ := asInt64(decoded["id"])
 		if id == 0 {
-			lastErr = fmt.Errorf("%s: order response missing id: %s", base, raw)
-			continue
+			id = postedID
 		}
 		status, _ := decoded["status"].(string)
 		log.Printf("placed order %d for pet %d via %s status=%s", id, petID, base, status)

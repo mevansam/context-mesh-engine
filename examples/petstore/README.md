@@ -130,7 +130,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/purchasePet \
   -d '{"username":"user1","password":"abc123","petId":1,"orderCorrelationId":"demo-order-1"}'
 ```
 
-The engine: login → `POST http://localhost:8091/place-order` → poll `GET /confirm-order`. The adapter: `POST http://localhost:8090/api/v3/store/order`. Save `orderId`.
+The engine: login → `POST http://localhost:8091/place-order` → poll `GET /confirm-order`. The adapter: `POST http://localhost:8090/api/v3/store/order` **with a generated `id`** (local Petstore stores `id: 0` if you omit it). Save `orderId`.
 
 ## REST: check order status
 
