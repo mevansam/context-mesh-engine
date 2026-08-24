@@ -77,8 +77,22 @@ curl -s -H 'Accept: application/json' http://localhost:8090/api/v3/store/order/9
 
 ## Stop
 
+Stop only (container stays, `run.sh` can start it again):
+
 ```bash
 docker stop petstore-openapi-server
+```
+
+Stop, remove the container, and delete anonymous volumes attached to it (`-v`). This demo does not create named volumes.
+
+```bash
+docker rm -fv petstore-openapi-server
+```
+
+Optional — also drop the local image tag (next `run.sh` will pull/tag again):
+
+```bash
+docker image rm context-mesh-petstore3:local
 ```
 
 ## Env
