@@ -20,10 +20,9 @@ import (
 )
 
 const (
-	petstore3Base    = "https://petstore3.swagger.io/api/v3"
-	petstoreV2Base   = "https://petstore.swagger.io/v2"
-	defaultAsyncBase = "http://localhost:8091"
-	confirmWait      = 6 * time.Second
+	defaultPetstoreBase = "http://localhost:8090/api/v3"
+	defaultAsyncBase    = "http://localhost:8091"
+	confirmWait         = 6 * time.Second
 )
 
 type httpExec struct {
@@ -32,13 +31,16 @@ type httpExec struct {
 	asyncBase string
 }
 
-func newHTTPExec(asyncBase string) *httpExec {
+func newHTTPExec(asyncBase, petstoreBase string) *httpExec {
 	if asyncBase == "" {
 		asyncBase = defaultAsyncBase
 	}
+	if petstoreBase == "" {
+		petstoreBase = defaultPetstoreBase
+	}
 	return &httpExec{
 		client:    &http.Client{Timeout: 20 * time.Second},
-		petstore:  []string{petstore3Base, petstoreV2Base},
+		petstore:  []string{strings.TrimRight(petstoreBase, "/")},
 		asyncBase: strings.TrimRight(asyncBase, "/"),
 	}
 }
@@ -70,7 +72,6 @@ func (e *httpExec) Execute(ctx context.Context, req *arazzo.ExecutionRequest) (*
 				lastErr = fmt.Errorf("%s returned %d", resp.URL, resp.StatusCode)
 				continue
 			}
-			// v3 and v2 are different stores. An order placed on v2 is 404 on v3.
 			if resp.StatusCode == http.StatusNotFound && !poll {
 				lastErr = fmt.Errorf("%s returned %d", resp.URL, resp.StatusCode)
 				continue

@@ -33,19 +33,20 @@ type orderServer struct {
 
 func newOrderServer(hosts []string) *orderServer {
 	if len(hosts) == 0 {
-		hosts = []string{petstore3Store, petstoreV2Store}
+		hosts = []string{defaultPetstoreStore}
+	}
+	trimmed := make([]string, len(hosts))
+	for i, h := range hosts {
+		trimmed[i] = strings.TrimRight(h, "/")
 	}
 	return &orderServer{
 		byCorr: make(map[string]confirmation),
 		client: &http.Client{Timeout: 15 * time.Second},
-		hosts:  hosts,
+		hosts:  trimmed,
 	}
 }
 
-const (
-	petstore3Store  = "https://petstore3.swagger.io/api/v3"
-	petstoreV2Store = "https://petstore.swagger.io/v2"
-)
+const defaultPetstoreStore = "http://localhost:8090/api/v3"
 
 func (s *orderServer) handlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

@@ -11,7 +11,7 @@ How to run, flags, curl walkthroughs, and implementation notes live in **each ex
 | [minimal](../../examples/minimal/README.md) | Engine-owned listener via `ListenAndServe` |
 | [embed-handler](../../examples/embed-handler/README.md) | Your `http.Server` using `Handler()` |
 | [arazzo-fs](../../examples/arazzo-fs/README.md) | `FileLoader` + stub `Executor`, MCP `run_*` and REST plans |
-| [petstore](../../examples/petstore/README.md) | Arazzo + HTTP executor over [petstore3](https://petstore3.swagger.io/) and the async order adapter |
+| [petstore](../../examples/petstore/README.md) | Arazzo + HTTP executor over local Docker [Petstore 3](../../examples/petstore/petstore-openapi-server/README.md) and the async order adapter |
 
 `cmd/engine` is a fourth runnable (`go run ./cmd/engine -addr localhost:8080`). It is the sample **product** binary (flags + SIGINT shutdown), not an SDK usage example. Flags: [getting started](getting-started.md#run-the-sample-binary).
 

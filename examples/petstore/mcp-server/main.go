@@ -2,7 +2,7 @@
 // Use of this source code is governed by the MIT license
 // that can be found in the LICENSE file.
 
-// Petstore MCP + REST engine: Arazzo plans over petstore3 and the async order adapter.
+// Petstore MCP + REST engine: Arazzo plans over local Petstore 3 and the async order adapter.
 package main
 
 import (
@@ -22,6 +22,7 @@ import (
 func main() {
 	addr := flag.String("addr", "localhost:8080", "MCP/REST listen address")
 	asyncURL := flag.String("async-order-url", defaultAsyncBase, "async-order-server origin")
+	petstoreURL := flag.String("petstore-url", defaultPetstoreBase, "Petstore 3 OpenAPI origin (local Docker)")
 	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
 	flag.Parse()
 
@@ -33,7 +34,7 @@ func main() {
 		ArazzoLoaders: []arazzo.Loader{
 			arazzo.NewFileLoader(plansDir()),
 		},
-		ArazzoExecutor: newHTTPExec(*asyncURL),
+		ArazzoExecutor: newHTTPExec(*asyncURL, *petstoreURL),
 		PublicBaseURL:  "http://" + *addr,
 		DualMCPandREST: *dual,
 	})
@@ -42,10 +43,10 @@ func main() {
 	}
 	if *dual {
 		log.Printf("MCP http://%s%s  REST http://%s%s  async %s  petstore %s",
-			*addr, engine.MCPPath, *addr, e.APIPrefix(), *asyncURL, petstore3Base)
+			*addr, engine.MCPPath, *addr, e.APIPrefix(), *asyncURL, *petstoreURL)
 	} else {
 		log.Printf("REST http://%s%s  async %s  petstore %s",
-			*addr, e.APIPrefix(), *asyncURL, petstore3Base)
+			*addr, e.APIPrefix(), *asyncURL, *petstoreURL)
 	}
 	if err := e.ListenAndServe(ctx); err != nil {
 		log.Fatal(err)

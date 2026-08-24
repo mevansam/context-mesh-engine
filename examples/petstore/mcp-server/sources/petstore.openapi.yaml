@@ -1,12 +1,11 @@
-# Operations used by the petstore Arazzo plan. Runtime default is
-# https://petstore3.swagger.io/api/v3; the executor may fall back to
-# https://petstore.swagger.io/v2 when the v3 host returns 5xx.
+# Operations used by the petstore Arazzo plan. Runtime default is the
+# local Docker Petstore 3 server (http://localhost:8090/api/v3).
 openapi: 3.0.3
 info:
   title: Swagger Petstore
   version: "1.0.27"
 servers:
-  - url: https://petstore3.swagger.io/api/v3
+  - url: http://localhost:8090/api/v3
 paths:
   /user/login:
     get:

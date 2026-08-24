@@ -57,7 +57,7 @@ The sample registers an MCP `ping` tool. With the default (REST only) it appears
 
 Default is REST only. `-dual` serves both surfaces. `-mcp-only`, `-rest-only`, and `-dual` are mutually exclusive.
 
-`-specs` loads plans and registers `run_*` tools, but **does not** set an `Executor` or `QueryMatcher`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. `query` is not published until you set `QueryMatcher`. Use [examples/arazzo-fs](../../examples/arazzo-fs/README.md) for a stub executor and dummy matcher, or [examples/petstore](../../examples/petstore/README.md) for live Petstore HTTP. Full Arazzo guide: [arazzo.md](arazzo.md).
+`-specs` loads plans and registers `run_*` tools, but **does not** set an `Executor` or `QueryMatcher`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. `query` is not published until you set `QueryMatcher`. Use [examples/arazzo-fs](../../examples/arazzo-fs/README.md) for a stub executor and dummy matcher, or [examples/petstore](../../examples/petstore/README.md) for live Petstore HTTP against local Docker Petstore 3. Full Arazzo guide: [arazzo.md](arazzo.md).
 
 ## Use it as a library
 

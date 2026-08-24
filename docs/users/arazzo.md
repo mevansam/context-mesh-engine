@@ -136,7 +136,7 @@ Nil executor:
 - MCP `run_*` → tool error (`IsError: true`), not a JSON-RPC protocol error
 - MCP `query` is not registered if `QueryMatcher` is nil
 
-This module does not ship an HTTP client executor. [examples/arazzo-fs](../../examples/arazzo-fs/README.md) uses a stub that always returns 200. [examples/petstore](../../examples/petstore/README.md) implements a real HTTP client against [petstore3.swagger.io](https://petstore3.swagger.io/) and the local async order adapter.
+This module does not ship an HTTP client executor. [examples/arazzo-fs](../../examples/arazzo-fs/README.md) uses a stub that always returns 200. [examples/petstore](../../examples/petstore/README.md) implements a real HTTP client against a local Docker Petstore 3 server and the local async order adapter.
 
 ## MCP and REST: `query`
 
@@ -321,7 +321,7 @@ Templates use `missingkey=zero`. Invalid template syntax fails `engine.New`.
 go run ./cmd/engine -addr localhost:8080 -specs testdata/arazzo/plans
 ```
 
-Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary does not set one. Use [examples/arazzo-fs](../../examples/arazzo-fs/README.md) for a stub, or [examples/petstore](../../examples/petstore/README.md) for live HTTP against petstore3 plus the async order adapter.
+Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary does not set one. Use [examples/arazzo-fs](../../examples/arazzo-fs/README.md) for a stub, or [examples/petstore](../../examples/petstore/README.md) for live HTTP against local Docker Petstore 3 plus the async order adapter.
 
 ## Coding-agent checklist (Arazzo)
 
