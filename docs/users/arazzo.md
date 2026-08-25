@@ -2,7 +2,16 @@
 
 Load [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow documents, expose **one MCP tool per plan version**, and execute the same workflows over REST. MCP and REST share one runner.
 
-Public package: `github.com/mevansam/context-mesh-engine/arazzo`.
+Public package: `github.com/mevansam/context-mesh-engine/arazzo`. Wire loaders through `engine.Options.ArazzoLoaders`, executors through `ArazzoExecutor`, matchers through `QueryMatcher`, help through `ToolHelpLookup`. Do **not** import `internal/plans`.
+
+| Type / func | Role |
+| --- | --- |
+| `Loader`, `Source` | Pluggable spec source |
+| `NewFileLoader` | Recursive `.yaml` / `.yml` / `.json` |
+| `Executor`, `ExecutionRequest`, `ExecutionResponse` | Backend HTTP for workflow steps (aliases of libopenapi) |
+| `QueryMatcher`, `QueryRequest`, `QueryMatch`, `PlanCatalog` | Pluggable plan selection for MCP/REST `query` |
+| `ToolDocTemplates`, `ToolDocContext`, `RenderedToolDoc` | `text/template` recipes for shared name/title plus MCP vs REST descriptions |
+| `ToolHelpLookup`, `ToolHelp`, `DefaultToolHelpLookup` | Optional per-plan/query title and description templates (looked up on `tools/list`) |
 
 This is not enabled until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan or OpenAPI REST routes. `GET {APIPrefix}/tools` is always registered; with loaders it includes each `run_*`, and `query` only when `QueryMatcher` is set.
 
@@ -153,7 +162,7 @@ Body / arguments:
 { "query": "natural language", "data": { } }
 ```
 
-`data` is the input outline (optional object). Used as workflow inputs when the matcher does not set `Inputs`. Override display strings with `ToolDoc.QueryName`, `QueryTitle`, `QueryDescription` (MCP) and `RESTQueryDescription` (`GET /tools`).
+`data` is the input outline (optional object). Used as workflow inputs when the matcher does not set `Inputs`. Override display strings with `ToolDoc.QueryName` (name only) and `ToolHelpLookup` (`Kind: query`) for title/description, or `ToolDoc.QueryTitle` / `QueryDescription` / `RESTQueryDescription` as global fallbacks.
 
 | Matcher / catalog | REST | MCP |
 | --- | --- | --- |
@@ -289,14 +298,52 @@ Write `{{.Title}}` for Arazzo `info.title`. Do **not** write `{{.ToolDoc.Title}}
 
 | Field | Used on |
 | --- | --- |
-| `Name`, `Title` | both MCP `tools/list` and `GET /tools` |
+| `Name` | both MCP `tools/list` and `GET /tools` (not looked up) |
+| `Title` | both, unless `ToolHelpLookup` returns `Title` |
 | `Description` | MCP `tools/list` only (no REST URLs in the default) |
 | `RESTDescription` | `GET /tools` only (no MCP wording in the default) |
-| `QueryName`, `QueryTitle` | both, when `QueryMatcher` is set |
+| `QueryName` | both, when `QueryMatcher` is set (not looked up) |
+| `QueryTitle` | both, unless lookup `Kind: query` returns `Title` |
 | `QueryDescription` | MCP `query` only |
 | `RESTQueryDescription` | `GET /tools` `query` entry; default includes `{{.RESTQueryURL}}` |
 
 Empty fields fall back to `DefaultToolDocTemplates()`.
+
+### Help registry (`ToolHelpLookup`)
+
+`Options.ToolHelpLookup` supplies **per-plan** and **query** title/description templates at list time. Nil uses `DefaultToolHelpLookup()`, which returns empty help so the `ToolDoc` defaults apply.
+
+```go
+e, err := engine.New(engine.Options{
+    ArazzoLoaders:    loaders,
+    ToolHelpLookup:   myRegistry, // optional
+    ToolHelpCacheTTL: 5 * time.Minute, // 0 → 5m; negative → always refresh
+})
+```
+
+```go
+type ToolHelpLookup interface {
+    Lookup(ctx context.Context, req ToolHelpRequest) (*ToolHelp, error)
+}
+
+type ToolHelpRequest struct {
+    Kind    ToolHelpKind // "plan" or "query"
+    PlanID  string       // set when Kind is plan
+    Version string
+}
+
+type ToolHelp struct {
+    Title           string
+    Description     string
+    RESTDescription string
+}
+```
+
+- Lookups run on MCP `tools/list` and `GET /tools`, **not** in `engine.New`.
+- Successful results are cached for `Options.ToolHelpCacheTTL` (default 5m). Zero TTL in `Options` means that default; a **negative** duration disables caching.
+- Lookup error: last cached templates if any, otherwise defaults. The list request does not fail.
+- `RESTDescription` empty → use `Description` (MCP and REST share that template). If both are empty → `ToolDoc` / built-in REST default.
+- Names stay on `ToolDoc.Name` / `QueryName`.
 
 Default name recipe: `run_{{.SafePlanID}}_v{{.SafeVersion}}`. After render, the name is sanitized to MCP runes `[A-Za-z0-9_.-]` (spaces and other runes → `_`) and truncated to 128 characters.
 
@@ -343,6 +390,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
 - Generated OpenAPI `paths` keys omit `Options.APIPrefix`. They describe execute routes, not `/plans/query`. **200** is the workflow outputs object.
 - `PublicBaseURL` must be set if you want absolute URLs in REST descriptions (and in custom MCP templates that use URL fields).
+- Optional `ToolHelpLookup` for per-plan/query title and description; nil uses built-in templates. Lookup runs on `tools/list`, not `New`.
 
 ## Next
 

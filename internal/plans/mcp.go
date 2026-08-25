@@ -7,6 +7,8 @@ package plans
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/mevansam/context-mesh-engine/arazzo"
@@ -23,21 +25,31 @@ type queryArgs struct {
 	Data  map[string]any `json:"data,omitempty" jsonschema:"data inputs referenced by the query"`
 }
 
+// RegisterMCPConfig is documentation and help-lookup wiring for plan tools.
+type RegisterMCPConfig struct {
+	Templates     arazzo.ToolDocTemplates
+	HelpLookup    arazzo.ToolHelpLookup
+	HelpCacheTTL  time.Duration
+	Logger        *slog.Logger
+	PublicBaseURL string
+	APIPrefix     string
+}
+
 // RegisterMCP adds one run_* tool per catalog entry. When the runner has a
-// QueryMatcher, it also adds the query tool. The returned map is tool name →
-// REST description for GET /tools overlays.
-func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls arazzo.ToolDocTemplates, publicBaseURL, apiPrefix string) (map[string]string, error) {
-	tmpls = arazzo.MergeTemplates(tmpls)
+// QueryMatcher, it also adds the query tool. Title and description are filled
+// on tools/list / GET /tools via the returned [HelpCache].
+func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, cfg RegisterMCPConfig) (*HelpCache, error) {
+	tmpls := arazzo.MergeTemplates(cfg.Templates)
+	cache := newHelpCache(tmpls, cfg.HelpLookup, cfg.HelpCacheTTL, cfg.Logger)
 	seen := map[string]string{}
-	restDescs := map[string]string{}
 
 	if runner != nil && runner.QueryEnabled() {
-		qctx := arazzo.NewToolDocContext("plan", "1.0.0", "", "", "", nil, publicBaseURL, apiPrefix)
+		qctx := arazzo.NewToolDocContext("plan", "1.0.0", "", "", "", nil, cfg.PublicBaseURL, cfg.APIPrefix)
 		qdoc, err := arazzo.RenderQueryDoc(tmpls, qctx)
 		if err != nil {
 			return nil, fmt.Errorf("query tool doc: %w", err)
 		}
-		restDescs[qdoc.Name] = qdoc.RESTDescription
+		cache.add(qdoc.Name, helpTarget{kind: arazzo.ToolHelpKindQuery, docCtx: qctx})
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        qdoc.Name,
 			Title:       qdoc.Title,
@@ -58,8 +70,8 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls ara
 			summary = e.Doc.Info.Summary
 			desc = e.Doc.Info.Description
 		}
-		ctx := arazzo.NewToolDocContext(e.PlanID, e.Version, title, summary, desc, e.Workflows, publicBaseURL, apiPrefix)
-		doc, err := arazzo.RenderToolDoc(tmpls, ctx)
+		docCtx := arazzo.NewToolDocContext(e.PlanID, e.Version, title, summary, desc, e.Workflows, cfg.PublicBaseURL, cfg.APIPrefix)
+		doc, err := arazzo.RenderToolDoc(tmpls, docCtx)
 		if err != nil {
 			return nil, fmt.Errorf("%s@%s: tool doc: %w", e.PlanID, e.Version, err)
 		}
@@ -67,7 +79,12 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls ara
 			return nil, fmt.Errorf("duplicate MCP tool name %q (%s and %s@%s)", doc.Name, prev, e.PlanID, e.Version)
 		}
 		seen[doc.Name] = e.PlanID + "@" + e.Version
-		restDescs[doc.Name] = doc.RESTDescription
+		cache.add(doc.Name, helpTarget{
+			kind:    arazzo.ToolHelpKindPlan,
+			planID:  e.PlanID,
+			version: e.Version,
+			docCtx:  docCtx,
+		})
 
 		schema, err := InputSchema(e.Doc)
 		if err != nil {
@@ -89,5 +106,5 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, tmpls ara
 			return nil, res, nil
 		})
 	}
-	return restDescs, nil
+	return cache, nil
 }

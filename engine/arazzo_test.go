@@ -15,7 +15,9 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/mevansam/context-mesh-engine/engine"
@@ -386,6 +388,204 @@ func (p pingMatcher) Match(_ context.Context, req arazzo.QueryRequest) (*arazzo.
 	}, nil
 }
 
+type recordingHelp struct {
+	n atomic.Int32
+}
+
+func (r *recordingHelp) Lookup(_ context.Context, req arazzo.ToolHelpRequest) (*arazzo.ToolHelp, error) {
+	r.n.Add(1)
+	switch req.Kind {
+	case arazzo.ToolHelpKindQuery:
+		return &arazzo.ToolHelp{Title: "Ask", Description: "query-help"}, nil
+	case arazzo.ToolHelpKindPlan:
+		if req.PlanID == "petstore" && req.Version == "1.1.0" {
+			return &arazzo.ToolHelp{
+				Title:       "Custom {{.PlanID}}",
+				Description: "plan-help-{{.Version}}",
+			}, nil
+		}
+	}
+	return nil, nil
+}
+
+func TestArazzo_ToolHelpLookupOnDemand(t *testing.T) {
+	h := &recordingHelp{}
+	e, err := engine.New(engine.Options{
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:    []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		ArazzoExecutor:   &countingExec{},
+		QueryMatcher:     pingMatcher{planID: "petstore", workflowID: "pingHealth"},
+		PublicBaseURL:    "http://example.test",
+		ToolHelpLookup:   h,
+		ToolHelpCacheTTL: time.Hour,
+		DualMCPandREST:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := h.n.Load(); n != 0 {
+		t.Fatalf("lookup during New = %d, want 0", n)
+	}
+
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint: ts.URL + engine.MCPPath,
+	}, nil)
+	if err != nil {
+		t.Fatalf("MCP connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := h.n.Load(); n != 3 {
+		t.Fatalf("lookups after first list = %d, want 3 (query + 2 plans)", n)
+	}
+	byName := map[string]*mcp.Tool{}
+	for _, tl := range tools.Tools {
+		byName[tl.Name] = tl
+	}
+	q := byName["query"]
+	if q == nil || q.Title != "Ask" || q.Description != "query-help" {
+		t.Fatalf("query = %#v", q)
+	}
+	v11 := byName["run_petstore_v1.1.0"]
+	if v11 == nil || v11.Title != "Custom petstore" || v11.Description != "plan-help-1.1.0" {
+		t.Fatalf("v1.1.0 = %#v", v11)
+	}
+	v10 := byName["run_petstore_v1.0.0"]
+	if v10 == nil || !strings.Contains(v10.Description, "How to call this MCP tool") {
+		t.Fatalf("v1.0.0 default MCP desc missing: %#v", v10)
+	}
+
+	rest, err := http.Get(ts.URL + "/api/tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rest.Body.Close()
+	var restBody mcp.ListToolsResult
+	if err := json.NewDecoder(rest.Body).Decode(&restBody); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.n.Load(); n != 3 {
+		t.Fatalf("lookups after GET /tools = %d, want 3 (cached)", n)
+	}
+	restBy := map[string]*mcp.Tool{}
+	for _, tl := range restBody.Tools {
+		restBy[tl.Name] = tl
+	}
+	if restBy["query"] == nil || restBy["query"].Description != "query-help" {
+		t.Fatalf("REST query = %#v", restBy["query"])
+	}
+	if restBy["run_petstore_v1.1.0"] == nil || restBy["run_petstore_v1.1.0"].Description != "plan-help-1.1.0" {
+		t.Fatalf("REST v1.1.0 should reuse Description, got %#v", restBy["run_petstore_v1.1.0"])
+	}
+	if restBy["run_petstore_v1.0.0"] == nil || !strings.Contains(restBy["run_petstore_v1.0.0"].Description, "POST http://example.test/api/plans/") {
+		t.Fatalf("REST v1.0.0 default REST desc missing: %#v", restBy["run_petstore_v1.0.0"])
+	}
+
+	if _, err := session.ListTools(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.n.Load(); n != 3 {
+		t.Fatalf("lookups after second list = %d, want 3", n)
+	}
+}
+
+type failHelp struct{}
+
+func (failHelp) Lookup(context.Context, arazzo.ToolHelpRequest) (*arazzo.ToolHelp, error) {
+	return nil, fmt.Errorf("registry down")
+}
+
+func TestArazzo_ToolHelpLookupErrorUsesDefaults(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:  []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		ToolHelpLookup: failHelp{},
+		DualMCPandREST: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts.URL + engine.MCPPath}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools.Tools) == 0 {
+		t.Fatal("expected tools")
+	}
+	for _, tl := range tools.Tools {
+		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "How to call this MCP tool") {
+			t.Fatalf("%s should fall back to defaults:\n%s", tl.Name, tl.Description)
+		}
+	}
+}
+
+func TestArazzo_ToolHelpCacheTTLDisabled(t *testing.T) {
+	h := &recordingHelp{}
+	e, err := engine.New(engine.Options{
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:    []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		QueryMatcher:     pingMatcher{planID: "petstore", workflowID: "pingHealth"},
+		ToolHelpLookup:   h,
+		ToolHelpCacheTTL: -1,
+		DualMCPandREST:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts.URL + engine.MCPPath}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	if _, err := session.ListTools(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	first := h.n.Load()
+	if first != 3 {
+		t.Fatalf("first list lookups = %d, want 3", first)
+	}
+	if _, err := session.ListTools(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.n.Load(); n != 6 {
+		t.Fatalf("second list lookups = %d, want 6 (cache disabled)", n)
+	}
+}
+
+func TestArazzo_InvalidRESTQueryDescriptionFailNew(t *testing.T) {
+	_, err := engine.New(engine.Options{
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders: []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		QueryMatcher:  pingMatcher{planID: "petstore", workflowID: "pingHealth"},
+		ToolDoc:       arazzo.ToolDocTemplates{RESTQueryDescription: "{{.Nope"},
+	})
+	if err == nil {
+		t.Fatal("expected REST query description template error")
+	}
+}
+
 func TestArazzo_QueryMatcher(t *testing.T) {
 	exec := &countingExec{}
 	e, err := engine.New(engine.Options{
@@ -396,7 +596,8 @@ func TestArazzo_QueryMatcher(t *testing.T) {
 			planID:     "petstore",
 			workflowID: "pingHealth",
 		},
-		PublicBaseURL: "http://example.test",
+		PublicBaseURL:  "http://example.test",
+		DualMCPandREST: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -470,6 +671,87 @@ func TestArazzo_QueryMatcher(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("empty query status = %d %s", resp.StatusCode, b)
+	}
+
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts.URL + engine.MCPPath}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	qtool, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "query",
+		Arguments: map[string]any{"query": "health", "data": map[string]any{"name": "mcp"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qtool.IsError {
+		t.Fatalf("MCP query: %s", toolErrorText(qtool))
+	}
+	if exec.n != 2 {
+		t.Fatalf("executor calls = %d, want 2 (REST+MCP)", exec.n)
+	}
+}
+
+func TestArazzo_RESTNotFoundAndBadJSON(t *testing.T) {
+	e := newArazzoEngine(t, &countingExec{})
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Post(ts.URL+"/api/plans/missing/pingHealth", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing plan status = %d", resp.StatusCode)
+	}
+
+	resp, err = http.Post(ts.URL+"/api/plans/petstore/v9.9.9/pingHealth", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing version status = %d", resp.StatusCode)
+	}
+
+	resp, err = http.Get(ts.URL + "/api/openapi/missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing openapi status = %d", resp.StatusCode)
+	}
+
+	resp, err = http.Get(ts.URL + "/api/openapi/petstore/v9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing openapi version status = %d", resp.StatusCode)
+	}
+
+	resp, err = http.Post(ts.URL+"/api/plans/petstore/pingHealth", "application/json", strings.NewReader(`{`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad json status = %d", resp.StatusCode)
+	}
+
+	resp, err = http.Post(ts.URL+"/api/plans/query", "application/json", strings.NewReader(`{`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("query without matcher status = %d, want 404 (route not registered)", resp.StatusCode)
 	}
 }
 

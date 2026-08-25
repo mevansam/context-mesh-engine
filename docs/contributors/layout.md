@@ -17,9 +17,9 @@ context-mesh-engine/
     petstore/                    Petstore e2e: mcp-server + async-order-server
   engine/                        Public facade: New, Handler, ListenAndServe
   api/                           Public facade: Controller, JSON helpers, HealthResponse
-  arazzo/                        Public Loader, FileLoader, Executor, QueryMatcher, ToolDoc
+  arazzo/                        Public Loader, FileLoader, Executor, QueryMatcher, ToolDoc, ToolHelpLookup
   testdata/arazzo/
-    plans/                       Arazzo fixtures (FileLoader root)
+    plans/                       Arazzo fixtures (FileLoader root; not testdata/arazzo/)
     sources/openapi.yaml         OpenAPI referenced as ../sources/openapi.yaml
   internal/
     httpserver/server.go         http.Server, root mux, Shutdown
@@ -60,6 +60,7 @@ context-mesh-engine/
 | `arazzo/loader.go` | `Loader`, `Source`, `Executor` / request / response aliases |
 | `arazzo/fileloader.go` | Recursive filesystem loader; `BaseURL` trailing slash |
 | `arazzo/tooldoc.go` | Templates + `ToolDocContext` |
+| `arazzo/toolhelp.go` | `ToolHelpLookup` + overlay |
 | `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
 
 ## File map (`internal/`)
@@ -78,6 +79,7 @@ context-mesh-engine/
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
 | `plans/openapi.go` | OAS 3.1 JSON (paths **without** `APIPrefix`) |
 | `plans/mcp.go` | `query` + `run_*` tools |
+| `plans/help.go` | Help TTL cache + `tools/list` overlay |
 
 ## Tests as the contract
 

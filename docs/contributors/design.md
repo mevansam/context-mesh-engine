@@ -95,7 +95,7 @@ The REST prefix (`Options.APIPrefix`, default `/api`) is mounted as `StripPrefix
 
 ## Lifecycle
 
-1. `engine.New` applies defaults, constructs `mcpgw.Gateway` and `apiv1.Router`, registers health. If `ArazzoLoaders` is non-empty: validate tool-doc templates, `plans.Load`, `plans.RegisterMCP`, register `PlansController`. Any of those errors fail `New`.
+1. `engine.New` applies defaults, constructs `mcpgw.Gateway` and `apiv1.Router`, registers health. If `ArazzoLoaders` is non-empty: validate tool-doc templates, `plans.Load`, `plans.RegisterMCP` (help cache + `tools/list` middleware), register `PlansController`. Any of those errors fail `New`. Help `Lookup` is not called at `New`.
 2. Caller may `mcp.AddTool` on `Engine.MCP()` and `AddController`.
 3. `Handler()` calls `httpserver.NewMux` once.
 4. `ListenAndServe` binds TCP, serves, and on context cancel calls `Shutdown` (10s) then `Close` if shutdown fails. In-flight GET SSE ends when request contexts cancel.
@@ -115,6 +115,8 @@ MCP already validates `Content-Type` / `Accept` and applies localhost DNS-rebind
 Implement `api.Controller.Register(*http.ServeMux)`. Routes are relative to `Options.APIPrefix`. Register via `Engine.AddController`. Prefer before serve.
 
 Built-in plan routes are registered inside `New` when loaders are set (`internal/api/v1/plans.go`). `GET /tools` is always registered (`internal/api/v1/tools.go`). Do not duplicate those patterns.
+
+`GET /tools` opens an in-memory MCP session against the shared `mcp.Server`, so names, schemas, and non-Arazzo tools match Streamable HTTP `tools/list` (including tools registered after `engine.New`). Arazzo plan/query `description` fields are then replaced with REST templates from `ToolHelpLookup` (cached). Optional `?cursor=` is MCP pagination. Paths on this mux are relative after `StripPrefix` of `Options.APIPrefix`.
 
 ## Adding MCP features
 

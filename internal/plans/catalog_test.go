@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
+	high "github.com/pb33f/libopenapi/datamodel/high/arazzo"
+	"github.com/pb33f/libopenapi/orderedmap"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -74,6 +76,72 @@ func TestPickLatest(t *testing.T) {
 	if got := pickLatest([]string{"beta", "alpha"}); got != "beta" {
 		t.Fatalf("lex latest = %q", got)
 	}
+	if got := pickLatest(nil); got != "" {
+		t.Fatalf("empty = %q", got)
+	}
+}
+
+type errLoader struct {
+	err  error
+	srcs []arazzo.Source
+}
+
+func (e errLoader) Load(context.Context) ([]arazzo.Source, error) {
+	return e.srcs, e.err
+}
+
+func TestLoad_LoaderAndParseErrors(t *testing.T) {
+	_, err := Load(context.Background(), []arazzo.Loader{errLoader{err: errors.New("boom")}}, discardLogger())
+	if err == nil || err.Error() != "boom" {
+		t.Fatalf("loader err = %v", err)
+	}
+	_, err = Load(context.Background(), []arazzo.Loader{errLoader{srcs: []arazzo.Source{{
+		URI:  "bad.yaml",
+		Data: []byte("not: [valid"),
+	}}}}, discardLogger())
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+}
+
+func TestLoad_Cancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := Load(ctx, []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))}, discardLogger())
+	if err == nil {
+		t.Fatal("expected cancelled context error")
+	}
+}
+
+func TestCatalog_MissesAndNilView(t *testing.T) {
+	c := loadPetstore(t)
+	if _, ok := c.GetBySegment("petstore", "1.0.0"); ok {
+		t.Fatal("segment without v prefix should miss")
+	}
+	if _, ok := c.GetBySegment("petstore", "v"); ok {
+		t.Fatal("empty raw version should miss")
+	}
+	if _, ok := c.Latest("missing"); ok {
+		t.Fatal("missing plan")
+	}
+	e, ok := c.Get("petstore", "1.1.0")
+	if !ok {
+		t.Fatal("1.1.0")
+	}
+	if e.VersionSegment() != "v1.1.0" {
+		t.Fatalf("segment = %q", e.VersionSegment())
+	}
+	var nilCat *Catalog
+	view := nilCat.View()
+	if _, ok := view.Get("petstore", "1.0.0"); ok {
+		t.Fatal("nil catalog Get")
+	}
+	if _, ok := view.Latest("petstore"); ok {
+		t.Fatal("nil catalog Latest")
+	}
+	for range view.Plans() {
+		t.Fatal("nil catalog Plans")
+	}
 }
 
 type stubExec struct{ n int }
@@ -81,6 +149,12 @@ type stubExec struct{ n int }
 func (s *stubExec) Execute(_ context.Context, _ *arazzo.ExecutionRequest) (*arazzo.ExecutionResponse, error) {
 	s.n++
 	return &arazzo.ExecutionResponse{StatusCode: 200, Body: map[string]any{"ok": true}}, nil
+}
+
+type statusExec struct{ code int }
+
+func (s statusExec) Execute(_ context.Context, _ *arazzo.ExecutionRequest) (*arazzo.ExecutionResponse, error) {
+	return &arazzo.ExecutionResponse{StatusCode: s.code}, nil
 }
 
 func TestRunner_RunAndNoExecutor(t *testing.T) {
@@ -108,11 +182,32 @@ func TestRunner_RunAndNoExecutor(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected not found")
 	}
+
+	_, err = r.Run(context.Background(), "petstore", "1.1.0", "noSuchWorkflow", nil)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown workflow err = %v", err)
+	}
+
+	fail := NewRunner(c, statusExec{code: 500}, nil)
+	_, err = fail.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{"name": "x"})
+	if err == nil {
+		t.Fatal("expected workflow failure")
+	}
+}
+
+func TestQueryEnabled_NilRunner(t *testing.T) {
+	var r *Runner
+	if r.QueryEnabled() {
+		t.Fatal("nil runner should not be query-enabled")
+	}
 }
 
 func TestRunner_QueryStub(t *testing.T) {
 	c := loadPetstore(t)
 	r := NewRunner(c, &stubExec{}, nil)
+	if r.Catalog() != c {
+		t.Fatal("Catalog mismatch")
+	}
 	if r.QueryEnabled() {
 		t.Fatal("QueryEnabled with nil matcher")
 	}
@@ -236,6 +331,42 @@ func TestInputSchema_OneOf(t *testing.T) {
 	}
 }
 
+func TestInputSchema_EmptyAndNilNode(t *testing.T) {
+	s, err := InputSchema(&high.Arazzo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.OneOf) != 1 || s.OneOf[0].Type != "object" {
+		t.Fatalf("empty workflows schema = %#v", s)
+	}
+	ns, err := nodeToSchema(nil)
+	if err != nil || ns.Type != "object" {
+		t.Fatalf("nil node schema = %#v err=%v", ns, err)
+	}
+	v, err := nodeToJSON(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := v.(map[string]any)
+	if m["type"] != "object" {
+		t.Fatalf("nil node json = %#v", v)
+	}
+}
+
+func TestOutputsToJSONSchema(t *testing.T) {
+	empty := outputsToJSONSchema(nil)
+	if empty["type"] != "object" {
+		t.Fatalf("empty = %#v", empty)
+	}
+	props := orderedmap.New[string, string]()
+	props.Set("petId", "$steps.x.outputs.id")
+	got := outputsToJSONSchema(props)
+	p, _ := got["properties"].(map[string]any)
+	if _, ok := p["petId"]; !ok {
+		t.Fatalf("properties = %#v", got)
+	}
+}
+
 func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	c := loadPetstore(t)
 	latest, ok := c.Latest("petstore")
@@ -279,5 +410,12 @@ func TestNativeOutput_YAMLMapping(t *testing.T) {
 	out := nativeOutputs(nil)
 	if len(out) != 0 {
 		t.Fatalf("nil outputs = %#v", out)
+	}
+	var node yaml.Node
+	if err := node.Encode("hello"); err != nil {
+		t.Fatal(err)
+	}
+	if got := nativeOutput(node); got != "hello" {
+		t.Fatalf("value node = %#v", got)
 	}
 }

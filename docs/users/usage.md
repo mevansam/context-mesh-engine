@@ -6,7 +6,7 @@ Public import paths (the SDK contract):
 | --- | --- |
 | `github.com/mevansam/context-mesh-engine/engine` | Construct the listener, mux, and shared `mcp.Server` |
 | `github.com/mevansam/context-mesh-engine/api` | `Controller`, JSON helpers, `HealthResponse` |
-| `github.com/mevansam/context-mesh-engine/arazzo` | Arazzo `Loader`, `FileLoader`, `Executor`, `QueryMatcher`, tool-doc templates |
+| `github.com/mevansam/context-mesh-engine/arazzo` | Arazzo `Loader`, `FileLoader`, `Executor`, `QueryMatcher`, tool-doc templates, `ToolHelpLookup` |
 | `github.com/modelcontextprotocol/go-sdk/mcp` | Tools, prompts, resources, Streamable HTTP client |
 
 `internal/` is not part of the SDK contract. Do not import it from an application.
@@ -57,6 +57,8 @@ Zero-value `engine.Options` after `New` (see `engine/engine.go`):
 | `QueryMatcher` | nil | MCP `query` and `POST /plans/query` are not registered |
 | `PublicBaseURL` | empty | REST URLs in `GET /tools` descriptions are path-only (`{APIPrefix}/...`) |
 | `ToolDoc` | zero struct | `arazzo.DefaultToolDocTemplates()` |
+| `ToolHelpLookup` | nil | `arazzo.DefaultToolHelpLookup()` (built-in templates; no I/O at `New`) |
+| `ToolHelpCacheTTL` | 0 | 5m (`arazzo.DefaultToolHelpCacheTTL`). Set a **negative** duration to always refresh. |
 
 `WriteTimeout` is **never** set on the engine-owned `http.Server`. A short write timeout kills GET SSE.
 
@@ -87,7 +89,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 | GET | `/mcp` | Standalone SSE (requires `Mcp-Session-Id` and `Accept: text/event-stream`) |
 | DELETE | `/mcp` | End the MCP session |
 | GET | `/api/health` | `{"status":"ok"}` (`api.HealthResponse`) |
-| GET | `/api/tools` | MCP `tools/list` envelope (`ttlMs`, `cacheScope`, `tools`). Arazzo plan/query descriptions are REST-specific. Optional `?cursor=` |
+| GET | `/api/tools` | MCP `tools/list` envelope (`ttlMs`, `cacheScope`, `tools`). Arazzo plan/query descriptions are REST-specific (`ToolHelpLookup`, cached). Optional `?cursor=` |
 | POST | `/api/plans/query` | Natural-language match + execute (same contract as MCP `query`; loaders **and** `QueryMatcher` required) |
 | POST | `/api/plans/{planId}/{workflowId}` | Execute **latest** plan version (loaders required) |
 | POST | `/api/plans/{planId}/{version}/{workflowId}` | Execute that version (`{version}` is `v` + `info.version`) |
@@ -97,7 +99,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 
 Advertise MCP at **`/mcp`** (no trailing slash) when `DualMCPandREST` or `MCPOnly` is set. `/mcp/` is mounted so extra path segments still reach the same handler. Do not `http.StripPrefix("/mcp", ...)` yourself. Default (all serve-mode flags false) is REST only. `RESTOnly` is the same HTTP surface as the default. The three flags are mutually exclusive.
 
-Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md). `GET {APIPrefix}/tools` is always registered and lists every tool on the shared MCP server (including `run_*` when loaders are set, `query` when `QueryMatcher` is set, and any tools you add with `mcp.AddTool`). MCP `query` and `POST {APIPrefix}/plans/query` are omitted unless `Options.QueryMatcher` is set.
+Plan routes exist only after `New` with non-empty `ArazzoLoaders`. Details: [arazzo.md](arazzo.md). `GET {APIPrefix}/tools` is always registered and lists every tool on the shared MCP server (including `run_*` when loaders are set, `query` when `QueryMatcher` is set, and any tools you add with `mcp.AddTool`). Names and schemas match Streamable HTTP `tools/list`; Arazzo plan/query `description` fields use REST templates. MCP `query` and `POST {APIPrefix}/plans/query` are omitted unless `Options.QueryMatcher` is set.
 
 REST errors from this SDK use `{"error":"<message>"}` (`api.ErrorBody`) except `http.TimeoutHandler` on the REST prefix, which writes plain text `request timeout\n`.
 

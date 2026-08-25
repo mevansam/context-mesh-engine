@@ -113,8 +113,20 @@ type Options struct {
 
 	// ToolDoc are Go text/templates for generated tool name, title,
 	// MCP description, and REST description. Empty fields use
-	// [arazzo.DefaultToolDocTemplates].
+	// [arazzo.DefaultToolDocTemplates]. Per-plan and query title/description
+	// templates may be supplied at list time by [Options.ToolHelpLookup].
 	ToolDoc arazzo.ToolDocTemplates
+
+	// ToolHelpLookup returns title and description templates for run_* and
+	// query tools. Lookups run on MCP tools/list and GET {APIPrefix}/tools,
+	// not during [New]. Nil uses [arazzo.DefaultToolHelpLookup] (built-in
+	// templates).
+	ToolHelpLookup arazzo.ToolHelpLookup
+
+	// ToolHelpCacheTTL is how long a successful help lookup is reused.
+	// If zero, [arazzo.DefaultToolHelpCacheTTL] (5m) is used. A negative
+	// duration disables caching (every list calls Lookup).
+	ToolHelpCacheTTL time.Duration
 }
 
 // Engine is a thin facade over internal/mcpgw, internal/httpserver,
@@ -131,13 +143,14 @@ type Engine struct {
 // New constructs an Engine with a shared MCP server and the default
 // health and tools controllers registered under [Options.APIPrefix].
 // GET {APIPrefix}/tools returns the MCP tools/list envelope with REST
-// descriptions for Arazzo plan/query tools. When [Options.ArazzoLoaders]
-// is set, plans are loaded and MCP run_* tools plus REST plan routes
-// are registered. MCP query and POST {APIPrefix}/plans/query are added
-// only when [Options.QueryMatcher] is set. [Options.DualMCPandREST],
-// [Options.MCPOnly], and [Options.RESTOnly] control which HTTP surfaces
-// [Engine.Handler] mounts; all false serves REST only. Load or template
-// errors fail construction.
+// descriptions for Arazzo plan/query tools (looked up on demand). When
+// [Options.ArazzoLoaders] is set, plans are loaded and MCP run_* tools
+// plus REST plan routes are registered. MCP query and
+// POST {APIPrefix}/plans/query are added only when [Options.QueryMatcher]
+// is set. [Options.DualMCPandREST], [Options.MCPOnly], and
+// [Options.RESTOnly] control which HTTP surfaces [Engine.Handler]
+// mounts; all false serves REST only. Load or template errors fail
+// construction. Help registry I/O is deferred until tools/list.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
 	if err := validateServeMode(opts); err != nil {
@@ -175,11 +188,19 @@ func New(opts Options) (*Engine, error) {
 			return nil, err
 		}
 		runner := plans.NewRunner(catalog, opts.ArazzoExecutor, opts.QueryMatcher)
-		restDescs, err := plans.RegisterMCP(gw.Server(), catalog, runner, opts.ToolDoc, opts.PublicBaseURL, opts.APIPrefix)
+		help, err := plans.RegisterMCP(gw.Server(), catalog, runner, plans.RegisterMCPConfig{
+			Templates:     opts.ToolDoc,
+			HelpLookup:    opts.ToolHelpLookup,
+			HelpCacheTTL:  opts.ToolHelpCacheTTL,
+			Logger:        opts.Logger,
+			PublicBaseURL: opts.PublicBaseURL,
+			APIPrefix:     opts.APIPrefix,
+		})
 		if err != nil {
 			return nil, err
 		}
-		toolsCtrl.SetRESTDescriptions(restDescs)
+		gw.Server().AddReceivingMiddleware(help.ReceivingMiddleware())
+		toolsCtrl.SetToolHelpOverlay(help.ApplyREST)
 		router.Register(apiv1.NewPlansController(catalog, runner))
 	}
 
@@ -210,6 +231,12 @@ func applyDefaults(opts Options) Options {
 		opts.APITimeout = defaultAPITimeout
 	}
 	opts.APIPrefix = normalizeAPIPrefix(opts.APIPrefix)
+	if opts.ToolHelpLookup == nil {
+		opts.ToolHelpLookup = arazzo.DefaultToolHelpLookup()
+	}
+	if opts.ToolHelpCacheTTL == 0 {
+		opts.ToolHelpCacheTTL = arazzo.DefaultToolHelpCacheTTL
+	}
 	return opts
 }
 

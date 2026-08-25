@@ -394,3 +394,41 @@ func TestHandler_RESTOnly(t *testing.T) {
 		t.Fatal("REST /tools should still list MCP ping")
 	}
 }
+
+type extraController struct{}
+
+func (extraController) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /extra", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func TestEngine_AddController(t *testing.T) {
+	e := newTestEngine(t)
+	e.AddController(extraController{})
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+	resp, err := http.Get(ts.URL + "/api/extra")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+}
+
+func TestEngine_ListenAndServeCancel(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Addr:   "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := e.ListenAndServe(ctx); err != nil {
+		t.Fatal(err)
+	}
+}

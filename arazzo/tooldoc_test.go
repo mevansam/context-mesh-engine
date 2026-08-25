@@ -122,4 +122,83 @@ func TestSanitizeToolName(t *testing.T) {
 	if got := arazzo.SanitizeToolName("run petstore/v1"); got != "run_petstore_v1" {
 		t.Fatalf("got %q", got)
 	}
+	long := strings.Repeat("a", 200)
+	if got := arazzo.SanitizeToolName(long); len(got) != 128 {
+		t.Fatalf("len = %d, want 128", len(got))
+	}
+}
+
+func TestRenderToolDoc_EmptyName(t *testing.T) {
+	_, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{Name: "{{if false}}x{{end}}"}, arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", ""))
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestMergeTemplates_FillsDefaults(t *testing.T) {
+	def := arazzo.DefaultToolDocTemplates()
+	got := arazzo.MergeTemplates(arazzo.ToolDocTemplates{Name: "custom"})
+	if got.Name != "custom" {
+		t.Fatalf("custom name overwritten: %q", got.Name)
+	}
+	if got.Title != def.Title || got.Description != def.Description || got.RESTDescription != def.RESTDescription {
+		t.Fatal("empty fields should use defaults")
+	}
+	if got.QueryName != def.QueryName || got.QueryTitle != def.QueryTitle {
+		t.Fatal("empty query fields should use defaults")
+	}
+}
+
+func TestFileLoader_Cancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := arazzo.NewFileLoader(filepath.Join("..", "testdata", "arazzo", "plans")).Load(ctx)
+	if err == nil {
+		t.Fatal("expected cancelled context error")
+	}
+}
+
+func TestRenderQueryDoc_InvalidTemplate(t *testing.T) {
+	ctx := arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", "")
+	if _, err := arazzo.RenderQueryDoc(arazzo.ToolDocTemplates{QueryName: "{{.Nope"}, ctx); err == nil {
+		t.Fatal("expected query name parse error")
+	}
+}
+
+func TestRenderToolDoc_InvalidTitleAndDescription(t *testing.T) {
+	ctx := arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", "")
+	if _, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{Title: "{{.Nope"}, ctx); err == nil {
+		t.Fatal("expected title parse error")
+	}
+	if _, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{Description: "{{.Nope"}, ctx); err == nil {
+		t.Fatal("expected description parse error")
+	}
+}
+
+func TestNewToolDocContext_WorkflowFallbackAndPrefix(t *testing.T) {
+	ctx := arazzo.NewToolDocContext(
+		"plan/id", "1.0.0-beta", "t", "", "",
+		[]arazzo.WorkflowDoc{{ID: "wf", Description: "first line\nsecond"}},
+		"", "service/v2",
+	)
+	if ctx.SafePlanID != "plan_id" {
+		t.Fatalf("SafePlanID = %q", ctx.SafePlanID)
+	}
+	if ctx.SafeVersion != "1.0.0-beta" {
+		t.Fatalf("SafeVersion = %q", ctx.SafeVersion)
+	}
+	if ctx.APIRoot != "/service/v2" {
+		t.Fatalf("APIRoot = %q", ctx.APIRoot)
+	}
+	if len(ctx.Workflows) != 1 || ctx.Workflows[0].SummaryOrDescription != "first line" {
+		t.Fatalf("workflows = %+v", ctx.Workflows)
+	}
+	ctx2 := arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", "/")
+	if ctx2.APIRoot != "/api" {
+		t.Fatalf("empty/slash prefix APIRoot = %q", ctx2.APIRoot)
+	}
+	empty := arazzo.NewToolDocContext("p", "1", "t", "", "", []arazzo.WorkflowDoc{{}}, "", "")
+	if empty.Workflows[0].SummaryOrDescription != "" {
+		t.Fatalf("empty workflow summary = %q", empty.Workflows[0].SummaryOrDescription)
+	}
 }

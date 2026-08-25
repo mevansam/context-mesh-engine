@@ -76,7 +76,7 @@ Targeted tests:
 - User-facing behavior → `docs/users/`
 - Internals, mux rules, package map → `docs/contributors/`
 - Keep root `README.md` short; link to `docs/README.md`
-- Package `README.md` files (`arazzo/`, `examples/`, `internal/plans/`, `internal/api/v1/`) point at `docs/`; do not duplicate design there
+- Do **not** add package-local `README.md` files (`arazzo/`, `internal/*`, `testdata/*`). Example runbooks stay in `examples/*/README.md`.
 - Write for two readers: a human embedding the SDK, and a coding agent that must not import `internal/` or wrap `/mcp` in Gin
 
 ## Next

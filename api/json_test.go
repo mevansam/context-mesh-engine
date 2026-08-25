@@ -52,3 +52,18 @@ func TestReadJSONUnknownField(t *testing.T) {
 		t.Fatal("expected error for unknown field")
 	}
 }
+
+func TestWriteError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	api.WriteError(rec, http.StatusBadRequest, "nope")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d", rec.Code)
+	}
+	var body api.ErrorBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error != "nope" {
+		t.Fatalf("error = %q", body.Error)
+	}
+}

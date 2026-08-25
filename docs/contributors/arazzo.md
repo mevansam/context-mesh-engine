@@ -10,6 +10,8 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 | `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
 | `arazzo/fileloader.go` | Recursive `.yaml/.yml/.json`; `BaseURL` **must** end with `/` |
 | `arazzo/tooldoc.go` | Recipes vs `ToolDocContext`; `SanitizeToolName` |
+| `arazzo/toolhelp.go` | `ToolHelpLookup`; overlay; default lookup |
+| `internal/plans/help.go` | TTL cache; MCP `tools/list` middleware; REST overlay |
 | `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest, `View()` |
 | `internal/plans/runner.go` | `NewEngine` per `Run`; returns workflow outputs |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const |
@@ -80,11 +82,11 @@ POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not
 `RegisterMCP`:
 
 1. Merge templates; if `QueryEnabled()`, add `query` (`queryArgs`: `query`, optional `data`) — same contract as `POST /plans/query`
-2. For each catalog entry: `RenderToolDoc`, reject duplicate **names**, `InputSchema`, `mcp.AddTool` with captured `planID`/`version`. REST descriptions are returned for `GET /tools`.
+2. For each catalog entry: render **name** from `ToolDoc`, reject duplicate **names**, `InputSchema`, `mcp.AddTool` with captured `planID`/`version`. Title/description placeholders use default templates. `HelpCache` records each tool for on-demand lookup.
 
 `InputSchema` is top-level `type: object` + `oneOf` of `{workflowId: const, inputs: workflow schema}`. Do not put overlapping workflow input schemas in a single `properties.inputs.oneOf` — JSON Schema `oneOf` fails when more than one branch matches.
 
-Query name/title and `run_*` name/title are shared. MCP descriptions (`Description` / `QueryDescription`) and REST descriptions (`RESTDescription` / `RESTQueryDescription`) are separate templates (`RenderQueryDoc` / `RenderToolDoc`). REST URLs use `Options.APIPrefix`.
+Query name and `run_*` name are `ToolDoc` recipes. Title and MCP/REST descriptions are filled on `tools/list` / `GET /tools` via `ToolHelpLookup` (cached). Empty `RESTDescription` from the registry uses `Description`. REST URLs in default templates use `Options.APIPrefix`.
 
 ## OpenAPI generator
 
@@ -97,9 +99,9 @@ No `APIPrefix` on paths (matches `StripPrefix` on the REST mux). `info.title` fr
 
 ## Templates
 
-`ToolDoc.Name` / `Title` / `Description` / `RESTDescription` are `text/template` executed with `missingkey=zero`. `{{.Title}}` is Arazzo info.title, not the MCP title recipe. MCP `tools/list` uses `Description`; `GET /tools` overlays `RESTDescription` (clone the `*mcp.Tool` so the MCP cache is not mutated).
+`ToolDoc.Name` / `Title` / `Description` / `RESTDescription` are `text/template` executed with `missingkey=zero`. `{{.Title}}` is Arazzo info.title, not the MCP title recipe. MCP `tools/list` middleware and `GET /tools` overlay clone `*mcp.Tool` so the MCP registry is not mutated.
 
-`engine.New` renders run templates (and query templates when `QueryMatcher` is set) once with a dummy context **before** load so syntax errors fail fast even if the catalog is empty. Per-entry render still happens in `RegisterMCP`.
+`engine.New` renders run templates (and query templates when `QueryMatcher` is set) once with a dummy context **before** load so syntax errors fail fast even if the catalog is empty. Per-entry **name** render still happens in `RegisterMCP`. Registry `Lookup` is not called at `New`.
 
 After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Empty name is an error.
 
@@ -113,16 +115,32 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 6. Plan REST is under `Options.APIPrefix` only (default `/api`). Do not `StripPrefix` `/mcp`.
 7. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
 8. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
+9. Help `Lookup` is on `tools/list` / `GET /tools` only. Lookup errors must not fail the list.
 
 ## Tests to update when you change behavior
 
 | File | Behavior |
 | --- | --- |
-| `arazzo/tooldoc_test.go` | FileLoader skip `ignore.txt`; BaseURL trailing `/`; MCP vs REST default descriptions; invalid template |
+| `arazzo/tooldoc_test.go` | FileLoader skip `ignore.txt`; BaseURL trailing `/`; MCP vs REST default descriptions; invalid/empty-name templates; MergeTemplates |
+| `arazzo/toolhelp_test.go` | Default lookup; REST falls back to Description; distinct RESTDescription; query overlay |
+| `internal/plans/help_test.go` | Cache TTL / always-refresh; stale-on-error; singleflight; REST surface; middleware skips non-list |
+| `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
 | `internal/plans/catalog_test.go` | skip `no-plan-id`; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys |
-| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; MCP `query` + `POST /plans/query`; `run_*` + REST share executor |
+| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
 
-Fixtures: `testdata/arazzo/plans/petstore-v1.0.0.yaml`, `petstore-v1.1.0.yaml` (`echoName` only on 1.1.0), `no-plan-id.yaml`, `ignore.txt`; `testdata/arazzo/sources/openapi.yaml` (`operationId: getHealth`).
+Fixtures live under `testdata/arazzo/`. `FileLoader` must be pointed at **`plans/`**, not `testdata/arazzo/` (otherwise `sources/openapi.yaml` is parsed as Arazzo and fails). Latest petstore version in tests is `1.1.0`.
+
+```text
+testdata/arazzo/
+  plans/
+    petstore-v1.0.0.yaml   x-planId: petstore, version 1.0.0, workflow pingHealth
+    petstore-v1.1.0.yaml   same planId, version 1.1.0, pingHealth + echoName
+    no-plan-id.yaml        skipped (no x-planId)
+    ignore.txt             skipped (not yaml/json)
+  sources/
+    openapi.yaml           OpenAPI 3; operationId getHealth
+                           referenced from plans as ../sources/openapi.yaml
+```
 
 ## Coding-agent checklist (contributors)
 
