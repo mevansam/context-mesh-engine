@@ -18,7 +18,7 @@ info:
     Login, find a pet by availability status, purchase it, and check the
     resulting order. Use these workflows only; they are the supported
     interface for this plan.
-  version: 1.0.1
+  version: 0.0.1
   x-planId: petstore
 sourceDescriptions:
   - name: petStoreDescription

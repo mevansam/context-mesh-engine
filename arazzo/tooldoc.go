@@ -89,7 +89,7 @@ const defaultRESTQueryDescription = `Match a simple natural-language request plu
 const defaultMCPDescriptionTemplate = `{{.Title}}
 
 Plan ID: {{.PlanID}}
-Arazzo version: {{.Version}}
+Version: {{.Version}}
 MCP tool name: run_{{.SafePlanID}}_v{{.SafeVersion}}
 
 {{if .Summary}}Summary:
@@ -107,7 +107,7 @@ Workflows in this plan:
 const defaultRESTDescriptionTemplate = `{{.Title}}
 
 Plan ID: {{.PlanID}}
-Arazzo version: {{.Version}}
+Version: {{.Version}}
 
 {{if .Summary}}Summary:
 {{.Summary}}
