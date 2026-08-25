@@ -2,7 +2,7 @@
 
 Runnable programs under this directory. Run them from the **repository root** (sibling `go-sdk` / `libopenapi` `replace`s). Do not run two examples that bind `localhost:8080` at the same time.
 
-Each example’s **local README** has the run commands, flags, curl walkthroughs, and implementation notes:
+Each example’s **local README** has run commands, flags, and curl walkthroughs. What each program is **for** (adapters it implements, when to copy it): [docs/users/examples.md](../docs/users/examples.md).
 
 | Directory | Demonstrates |
 | --- | --- |

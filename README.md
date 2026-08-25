@@ -69,7 +69,7 @@ Plans + a stub executor: [examples/arazzo-fs](examples/arazzo-fs/README.md). Liv
 
 | Path                                               | Audience                                         |
 | -------------------------------------------------- | ------------------------------------------------ |
-| [Use the SDK](docs/users/getting-started.md)       | Embed `engine.Engine`; MCP, REST, Arazzo options |
+| [Use the SDK](docs/users/getting-started.md)       | Embed `engine.Engine`; configuration, adapters, Arazzo |
 | [Contribute](docs/contributors/getting-started.md) | Change this repository                           |
 
 

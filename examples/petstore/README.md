@@ -218,7 +218,7 @@ The agent should call `run_petstore_v1.0.1` with:
 }
 ```
 
-Go client: [docs/users/usage.md](../../docs/users/usage.md#mcp-client) (`mcp.StreamableClientTransport{Endpoint: "http://localhost:8080/mcp"}`).
+Go client: [docs/users/configuration.md](../../docs/users/configuration.md#mcp-client) (`mcp.StreamableClientTransport{Endpoint: "http://localhost:8080/mcp"}`).
 
 ### MCP handshake with curl
 

@@ -1,29 +1,44 @@
-# Getting started (SDK users)
+# Getting started
 
-This path is for **application authors**. You import `github.com/mevansam/context-mesh-engine/...`.
+Embed `engine.Engine` in a Go process so **MCP tools** and **REST + OpenAPI** share one TCP port and the same Arazzo plan catalog.
 
-If you intend to change mux wiring, timeouts, or package layout in **this** repository, switch to the [contributor path](../contributors/getting-started.md).
+This guide is for application authors. If you are changing this repository, use the [contributor path](../contributors/getting-started.md) instead.
 
 ## What you get
 
-One process, one TCP port:
+| Surface | Default URL | Purpose |
+| --- | --- | --- |
+| Health | `GET /api/health` | Liveness JSON `{"status":"ok"}` |
+| Tools | `GET /api/tools` | Same tool names and schemas as MCP `tools/list`; Arazzo descriptions are REST-specific |
+| REST API | `/api/...` | Your controllers, plus plan execute/OpenAPI when loaders are set |
+| MCP | `/mcp` | Streamable HTTP. Mounted only when you opt in (see [serve modes](configuration.md#serve-modes)) |
 
-| URL | Role |
-| --- | --- |
-| `http://<addr>/api/health` | Default liveness JSON: `{"status":"ok"}`. Always mounted unless `MCPOnly`. |
-| `http://<addr>/api/tools` | MCP `tools/list` envelope (same `tools` names as Streamable HTTP; Arazzo descriptions are REST-specific). |
-| `http://<addr>/api/...` | Your `api.Controller` routes (and, if you set loaders, Arazzo plan routes). |
-| `http://<addr>/mcp` | MCP Streamable HTTP. Mounted only with `DualMCPandREST` or `MCPOnly`. |
-
-The engine does **not** register a `ping` MCP tool by itself. `cmd/engine` and `examples/minimal` add `ping` as a sample.
+The engine does **not** register a `ping` MCP tool. `cmd/engine` and the [minimal](examples.md#minimal) example add one as a sample.
 
 ## Requirements
 
-- Go **1.25.7** or newer (`go.mod` in this repo).
-- Import this module. It pulls [`github.com/modelcontextprotocol/go-sdk/mcp`](https://github.com/modelcontextprotocol/go-sdk).
-- Arazzo plans also need [`github.com/pb33f/libopenapi`](https://github.com/pb33f/libopenapi) (already a dependency).
+- Go **1.25.7** or newer (`go.mod` in this repository).
+- Module `github.com/mevansam/context-mesh-engine`.
+- Transitive dependencies: [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and [libopenapi](https://github.com/pb33f/libopenapi).
 
-When you `go get` this module from a published version, you do not need local clones of go-sdk or libopenapi. Local development of **this** repo uses `replace` directives; that is a [contributor](../contributors/getting-started.md) concern.
+Published module versions do not require local clones of those libraries. This checkout uses `replace` directives for development; that is a [contributor](../contributors/getting-started.md) concern.
+
+Do **not** import `github.com/mevansam/context-mesh-engine/internal/...`.
+
+## Install
+
+```bash
+go get github.com/mevansam/context-mesh-engine
+```
+
+Public packages:
+
+| Import | Role |
+| --- | --- |
+| `.../engine` | Construct, configure, and serve |
+| `.../api` | REST `Controller` and JSON helpers |
+| `.../arazzo` | Loaders, Executor, QueryMatcher, tool help |
+| `github.com/modelcontextprotocol/go-sdk/mcp` | `AddTool`, MCP client |
 
 ## Run the sample binary
 
@@ -33,46 +48,17 @@ From a clone of this repository:
 go run ./cmd/engine -addr localhost:8080
 ```
 
-Flags (`cmd/engine/main.go`):
-
-| Flag | Default | Meaning |
-| --- | --- | --- |
-| `-addr` | `localhost:8080` | Listen address (`engine.DefaultAddr`) |
-| `-api-prefix` | `/api` | REST path prefix (`engine.Options.APIPrefix`) |
-| `-mcp-only` | false | Serve only MCP at `/mcp` (`Options.MCPOnly`) |
-| `-rest-only` | false | Serve only REST (`Options.RESTOnly`; same as the default) |
-| `-dual` | false | Serve MCP and REST (`Options.DualMCPandREST`) |
-| `-specs` | empty | Directory of Arazzo YAML/JSON (recursive `FileLoader`) |
-| `-public-base-url` | `http://` + `-addr` when `-specs` is set | Origin written into REST tool descriptions |
-
-Check REST:
-
 ```bash
 curl -s http://localhost:8080/api/health
 # {"status":"ok"}
 curl -s http://localhost:8080/api/tools
 ```
 
-The sample registers an MCP `ping` tool. With the default (REST only) it appears on `GET /api/tools`. Point a Streamable HTTP client at `http://localhost:8080/mcp` only when you pass `-dual` or `-mcp-only` ([MCP client](usage.md#mcp-client)).
+Default is **REST only**. Pass `-dual` to also mount MCP at `/mcp`. Flags map 1:1 to [`engine.Options`](configuration.md#options-reference) (`-addr`, `-api-prefix`, `-mcp-only`, `-rest-only`, `-dual`, `-specs`, `-public-base-url`).
 
-Default is REST only. `-dual` serves both surfaces. `-mcp-only`, `-rest-only`, and `-dual` are mutually exclusive.
+`-specs` loads Arazzo files but does **not** set an [`Executor`](adapters.md#executor) or [`QueryMatcher`](adapters.md#querymatcher). Execute returns **501** until you embed with your own executor. `query` is unpublished until you set a matcher. Use [arazzo-fs](examples.md#arazzo-fs) for stubs, or [petstore](examples.md#petstore) for live HTTP.
 
-`-specs` loads plans and registers `run_*` tools, but **does not** set an `Executor` or `QueryMatcher`. Execute (`POST /api/plans/...` and MCP `run_*`) returns 501 until you embed with your own executor. `query` is not published until you set `QueryMatcher`. Use [examples/arazzo-fs](../../examples/arazzo-fs/README.md) for a stub executor and dummy matcher, or [examples/petstore](../../examples/petstore/README.md) for live Petstore HTTP against local Docker Petstore 3. Full Arazzo guide: [arazzo.md](arazzo.md).
-
-## Use it as a library
-
-Module path: `github.com/mevansam/context-mesh-engine`.
-
-Public packages:
-
-| Import | Use |
-| --- | --- |
-| `.../engine` | `New`, `ListenAndServe`, `Handler`, `MCP` |
-| `.../api` | `Controller`, JSON helpers |
-| `.../arazzo` | `Loader`, `FileLoader`, `Executor`, `QueryMatcher`, tool-doc templates |
-| `github.com/modelcontextprotocol/go-sdk/mcp` | `AddTool`, client |
-
-Do **not** import `.../internal/...`.
+## Embed the engine
 
 ```go
 package main
@@ -86,11 +72,19 @@ import (
 )
 
 func main() {
-	e, err := engine.New(engine.Options{Addr: "localhost:8080"})
+	e, err := engine.New(engine.Options{
+		Addr:           "localhost:8080",
+		DualMCPandREST: true, // omit for REST only
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	mcp.AddTool(e.MCP(), &mcp.Tool{Name: "ping", Description: "liveness probe"}, ping)
+
+	mcp.AddTool(e.MCP(), &mcp.Tool{
+		Name:        "ping",
+		Description: "liveness probe",
+	}, ping)
+
 	log.Fatal(e.ListenAndServe(context.Background()))
 }
 
@@ -101,14 +95,13 @@ func ping(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolR
 }
 ```
 
-Default is REST only. Set `DualMCPandREST: true` (or pass `-dual` to [examples/minimal](../../examples/minimal/README.md)) to also mount `/mcp`.
+`engine.New` always returns `(*Engine, error)`. Construction fails if Arazzo loaders are set and specs or templates are invalid.
 
-`engine.New` always returns `(*Engine, error)`. Construction fails if Arazzo loaders are set and specs/templates are invalid.
+Runnable copies: [minimal](examples.md#minimal) (`ListenAndServe`) and [embed-handler](examples.md#embed-handler) (your `http.Server`).
 
-Runnable copy of this pattern: [examples/minimal](../../examples/minimal/README.md). Full API: [usage.md](usage.md).
+## Reading order
 
-## Next
-
-- [SDK usage](usage.md) — Options, routes, tools, controllers, embed vs listen.
-- [Arazzo plans](arazzo.md) — loaders, Executor, MCP `run_*`, REST execute.
-- [Examples](examples.md)
+1. **[Configuration](configuration.md)** — every `Options` field, serve modes, `ListenAndServe` vs `Handler()`, routes.
+2. **[Adapters](adapters.md)** — implement `Loader`, `Executor`, `QueryMatcher`, `ToolHelpLookup`, REST controllers.
+3. **[Arazzo plans](arazzo.md)** — spec requirements, MCP `run_*` / `query`, REST execute, generated OpenAPI.
+4. **[Examples](examples.md)** — what each program demonstrates and when to copy it.

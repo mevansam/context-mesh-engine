@@ -6,10 +6,11 @@ Two paths. Read only the one that matches what you are doing. Mixing them is how
 docs/
   README.md                 you are here
   users/                    application authors (import this module)
-    getting-started.md      install, first request, first embed
-    usage.md                public API, routes, Options, MCP, REST
-    arazzo.md               loaders, Executor, run_* tools, REST plans
-    examples.md             catalog of examples/; run details in each local README
+    getting-started.md      install, sample binary, first embed
+    configuration.md        Options, serve modes, ListenAndServe vs Handler, routes
+    adapters.md             Loader, Executor, QueryMatcher, ToolHelpLookup, Controller
+    arazzo.md               spec rules, MCP/REST contracts, OpenAPI
+    examples.md             what each example demonstrates
   contributors/             people changing this repository
     getting-started.md      clone, replace directives, test, PR checks
     layout.md               package map and import rules
@@ -26,9 +27,10 @@ docs/
 Do not import `internal/`.
 
 1. [Getting started](users/getting-started.md) — requirements, sample binary, first library snippet.
-2. [SDK usage](users/usage.md) — public types, `Options` defaults, adding tools/controllers, `ListenAndServe` vs `Handler()`, MCP client headers.
-3. [Arazzo plans](users/arazzo.md) — load specs, `Executor`, MCP `query`/`run_*`, REST query/execute and OpenAPI.
-4. [Examples](users/examples.md) — what each program demonstrates; run details in `examples/*/README.md`.
+2. [Configuration](users/configuration.md) — every `Options` field, serve modes, starting the server, routes.
+3. [Adapters](users/adapters.md) — implement loaders, executors, query matchers, tool help, REST controllers.
+4. [Arazzo plans](users/arazzo.md) — spec requirements, MCP `query` / `run_*`, REST execute, generated OpenAPI.
+5. [Examples](users/examples.md) — what each program demonstrates; run details in `examples/*/README.md`.
 
 ---
 

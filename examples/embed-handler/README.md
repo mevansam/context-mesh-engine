@@ -25,4 +25,4 @@ curl -s http://localhost:8080/api/tools
 
 Do not run this at the same time as another example (or `cmd/engine`) on `localhost:8080`.
 
-SDK: [docs/users/usage.md](../../docs/users/usage.md#run-vs-embed).
+SDK: [docs/users/configuration.md](../../docs/users/configuration.md#your-own-http-server). What this example is for: [docs/users/examples.md](../../docs/users/examples.md#embed-handler).

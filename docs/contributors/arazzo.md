@@ -1,6 +1,6 @@
 # Arazzo plans (contributors)
 
-SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when catalog, runner, templates, or generated OpenAPI behavior changes.
+SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/adapters.md](../users/adapters.md) (how to implement loaders, executors, matchers, tool help). Change this document when catalog, runner, templates, or generated OpenAPI behavior changes.
 
 ## Layout
 
@@ -151,3 +151,4 @@ testdata/arazzo/
 - Keep `oneOf` at the tool-args object with `workflowId` const.
 - If you add a REST route, add it on the **v1** mux with a method pattern, and add an `engine` test.
 - If you change skip/fail rules, update `docs/users/arazzo.md` in the same change.
+- If you change public adapter interfaces, update `docs/users/adapters.md`.

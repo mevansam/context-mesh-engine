@@ -1,6 +1,6 @@
 # Code design
 
-This document is for **contributors**. SDK usage lives in [docs/users/usage.md](../users/usage.md).
+This document is for **contributors**. SDK usage lives in [docs/users/configuration.md](../users/configuration.md).
 
 ## Goal
 

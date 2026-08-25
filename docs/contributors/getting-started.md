@@ -69,7 +69,7 @@ Targeted tests:
 4. An MCP client can still `Connect` to `/mcp` (`TestHandler_MCPInitializeAndPing`).
 5. You did not wrap the **root** handler in buffering middleware or set `WriteTimeout`.
 6. User-facing behavior changes are reflected in `docs/users/`; internals in `docs/contributors/`.
-7. New **public** types have a godoc comment and an update to [docs/users/usage.md](../users/usage.md) (Arazzo types: [docs/users/arazzo.md](../users/arazzo.md)).
+7. New **public** types have a godoc comment and an update to [docs/users/configuration.md](../users/configuration.md) (adapters: [docs/users/adapters.md](../users/adapters.md); Arazzo contracts: [docs/users/arazzo.md](../users/arazzo.md)).
 
 ## Documentation rules
 

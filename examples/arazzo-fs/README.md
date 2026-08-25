@@ -42,4 +42,4 @@ curl -s -X POST http://localhost:8080/api/plans/query \
   -H 'Content-Type: application/json' -d '{"query":"is the api up","data":{"name":"demo"}}'
 ```
 
-Arazzo options and schemas: [docs/users/arazzo.md](../../docs/users/arazzo.md). Live Petstore HTTP: [petstore](../petstore/README.md).
+Arazzo contracts: [docs/users/arazzo.md](../../docs/users/arazzo.md). How to replace the stub executor and dummy matcher: [docs/users/adapters.md](../../docs/users/adapters.md). Live Petstore HTTP: [petstore](../petstore/README.md). What this example is for: [docs/users/examples.md](../../docs/users/examples.md#arazzo-fs).
