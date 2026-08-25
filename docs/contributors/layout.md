@@ -27,7 +27,7 @@ context-mesh-engine/
     api/json.go                  WriteJSON / ReadJSON implementation
     api/v1/router.go             REST ServeMux (mounted at Options.APIPrefix)
     api/v1/health.go             GET /health
-    api/v1/tools.go              GET /tools (MCP tools/list)
+    api/v1/tools.go              GET /tools (MCP envelope; REST descriptions for Arazzo tools)
     api/v1/plans.go              POST /plans, GET /openapi
     plans/                       Catalog, runner, MCP tools, OAS generator
 ```
@@ -71,7 +71,7 @@ context-mesh-engine/
 | `api/json.go` | JSON encode/decode; `ReadJSON` unknown fields rejected; 1 MiB |
 | `api/v1/router.go` | v1 `ServeMux` and `Register` |
 | `api/v1/health.go` | Default `GET /health` |
-| `api/v1/tools.go` | `GET /tools` (MCP `tools/list` result) |
+| `api/v1/tools.go` | `GET /tools` (MCP envelope; REST descriptions for Arazzo tools) |
 | `api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; error mapping |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
 | `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; workflow outputs |

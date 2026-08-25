@@ -11,18 +11,32 @@ import (
 	"unicode"
 )
 
-// ToolDocTemplates are Go text/templates that produce MCP Tool.name,
-// Tool.title, and Tool.description. Empty fields use [DefaultToolDocTemplates].
+// ToolDocTemplates are Go text/templates that produce tool name, title,
+// and transport-specific descriptions. Empty fields use [DefaultToolDocTemplates].
+//
+// Description and QueryDescription are used on MCP tools/list.
+// RESTDescription and RESTQueryDescription are used on GET /tools.
+// Name and title are shared.
 //
 // These fields are recipes, not template variables. Do not write
 // {{.ToolDoc.Title}} — write {{.Title}} to insert Arazzo info.title.
 type ToolDocTemplates struct {
-	Name             string
-	Title            string
-	Description      string
-	QueryName        string
-	QueryTitle       string
-	QueryDescription string
+	Name                 string
+	Title                string
+	Description          string
+	RESTDescription      string
+	QueryName            string
+	QueryTitle           string
+	QueryDescription     string
+	RESTQueryDescription string
+}
+
+// RenderedToolDoc is the result of [RenderToolDoc] or [RenderQueryDoc].
+type RenderedToolDoc struct {
+	Name            string
+	Title           string
+	Description     string
+	RESTDescription string
 }
 
 // WorkflowDoc is one workflow in [ToolDocContext.Workflows].
@@ -57,16 +71,22 @@ type ToolDocContext struct {
 // DefaultToolDocTemplates returns the built-in recipes.
 func DefaultToolDocTemplates() ToolDocTemplates {
 	return ToolDocTemplates{
-		Name:             `run_{{.SafePlanID}}_v{{.SafeVersion}}`,
-		Title:            `{{.Title}} ({{.PlanID}} {{.VersionSegment}})`,
-		Description:      defaultDescriptionTemplate,
-		QueryName:        "query",
-		QueryTitle:       "Query plans",
-		QueryDescription: "Match a simple natural-language request plus inputs against Arazzo plans, then execute the selected plan. Same contract as POST {{.RESTQueryURL}}.",
+		Name:                 `run_{{.SafePlanID}}_v{{.SafeVersion}}`,
+		Title:                `{{.Title}} ({{.PlanID}} {{.VersionSegment}})`,
+		Description:          defaultMCPDescriptionTemplate,
+		RESTDescription:      defaultRESTDescriptionTemplate,
+		QueryName:            "query",
+		QueryTitle:           "Query plans",
+		QueryDescription:     defaultMCPQueryDescription,
+		RESTQueryDescription: defaultRESTQueryDescription,
 	}
 }
 
-const defaultDescriptionTemplate = `{{.Title}}
+const defaultMCPQueryDescription = `Match a simple natural-language request plus inputs against Arazzo plans, then execute the selected plan.`
+
+const defaultRESTQueryDescription = `Match a simple natural-language request plus inputs against Arazzo plans, then execute the selected plan. POST {{.RESTQueryURL}}.`
+
+const defaultMCPDescriptionTemplate = `{{.Title}}
 
 Plan ID: {{.PlanID}}
 Arazzo version: {{.Version}}
@@ -82,16 +102,30 @@ MCP tool name: run_{{.SafePlanID}}_v{{.SafeVersion}}
 
 Workflows in this plan:
 {{range .Workflows}}- {{.ID}}: {{.SummaryOrDescription}}
-{{end}}REST equivalent:
-This MCP tool can also be invoked with an HTTP POST. The JSON body is the same object as the MCP inputs argument. Content-Type: application/json.
+{{end}}`
+
+const defaultRESTDescriptionTemplate = `{{.Title}}
+
+Plan ID: {{.PlanID}}
+Arazzo version: {{.Version}}
+
+{{if .Summary}}Summary:
+{{.Summary}}
+{{end}}{{if .Description}}Description:
+{{.Description}}
+{{end}}How to call:
+POST with Content-Type: application/json. The JSON body is the workflow inputs object.
 - This version: POST {{.RESTExecuteVersionedURL}}
 - Latest version of this plan: POST {{.RESTExecuteLatestURL}}
-Replace {workflowId} with the workflowId you would pass to this tool.
+Replace {workflowId} with one of: {{.WorkflowIDs}}
 
-OpenAPI for these REST resources:
+OpenAPI:
 - This version: GET {{.OpenAPIVersionedURL}}
 - Latest: GET {{.OpenAPILatestURL}}
-`
+
+Workflows in this plan:
+{{range .Workflows}}- {{.ID}}: {{.SummaryOrDescription}}
+{{end}}`
 
 // MergeTemplates fills empty fields from defaults.
 func MergeTemplates(t ToolDocTemplates) ToolDocTemplates {
@@ -105,6 +139,9 @@ func MergeTemplates(t ToolDocTemplates) ToolDocTemplates {
 	if t.Description == "" {
 		t.Description = d.Description
 	}
+	if t.RESTDescription == "" {
+		t.RESTDescription = d.RESTDescription
+	}
 	if t.QueryName == "" {
 		t.QueryName = d.QueryName
 	}
@@ -113,6 +150,9 @@ func MergeTemplates(t ToolDocTemplates) ToolDocTemplates {
 	}
 	if t.QueryDescription == "" {
 		t.QueryDescription = d.QueryDescription
+	}
+	if t.RESTQueryDescription == "" {
+		t.RESTQueryDescription = d.RESTQueryDescription
 	}
 	return t
 }
@@ -172,48 +212,47 @@ func joinPublicURL(base, prefix string) string {
 	return base + prefix
 }
 
-// RenderToolDoc executes name, title, and description templates.
-func RenderToolDoc(tmpls ToolDocTemplates, ctx ToolDocContext) (name, title, description string, err error) {
+// RenderToolDoc executes name, title, MCP description, and REST description templates.
+func RenderToolDoc(tmpls ToolDocTemplates, ctx ToolDocContext) (RenderedToolDoc, error) {
 	tmpls = MergeTemplates(tmpls)
-	name, err = execTemplate("name", tmpls.Name, ctx)
-	if err != nil {
-		return "", "", "", err
-	}
-	name = SanitizeToolName(name)
-	if name == "" {
-		return "", "", "", errEmptyToolName
-	}
-	title, err = execTemplate("title", tmpls.Title, ctx)
-	if err != nil {
-		return "", "", "", err
-	}
-	description, err = execTemplate("description", tmpls.Description, ctx)
-	if err != nil {
-		return "", "", "", err
-	}
-	return name, strings.TrimSpace(title), strings.TrimSpace(description), nil
+	return renderDoc(tmpls.Name, tmpls.Title, tmpls.Description, tmpls.RESTDescription,
+		"name", "title", "description", "restDescription", ctx)
 }
 
-// RenderQueryDoc executes query name, title, and description templates.
-func RenderQueryDoc(tmpls ToolDocTemplates, ctx ToolDocContext) (name, title, description string, err error) {
+// RenderQueryDoc executes query name, title, MCP description, and REST description templates.
+func RenderQueryDoc(tmpls ToolDocTemplates, ctx ToolDocContext) (RenderedToolDoc, error) {
 	tmpls = MergeTemplates(tmpls)
-	name, err = execTemplate("queryName", tmpls.QueryName, ctx)
+	return renderDoc(tmpls.QueryName, tmpls.QueryTitle, tmpls.QueryDescription, tmpls.RESTQueryDescription,
+		"queryName", "queryTitle", "queryDescription", "restQueryDescription", ctx)
+}
+
+func renderDoc(nameSrc, titleSrc, descSrc, restSrc, nameID, titleID, descID, restID string, ctx ToolDocContext) (RenderedToolDoc, error) {
+	name, err := execTemplate(nameID, nameSrc, ctx)
 	if err != nil {
-		return "", "", "", err
+		return RenderedToolDoc{}, err
 	}
 	name = SanitizeToolName(name)
 	if name == "" {
-		return "", "", "", errEmptyToolName
+		return RenderedToolDoc{}, errEmptyToolName
 	}
-	title, err = execTemplate("queryTitle", tmpls.QueryTitle, ctx)
+	title, err := execTemplate(titleID, titleSrc, ctx)
 	if err != nil {
-		return "", "", "", err
+		return RenderedToolDoc{}, err
 	}
-	description, err = execTemplate("queryDescription", tmpls.QueryDescription, ctx)
+	description, err := execTemplate(descID, descSrc, ctx)
 	if err != nil {
-		return "", "", "", err
+		return RenderedToolDoc{}, err
 	}
-	return name, strings.TrimSpace(title), strings.TrimSpace(description), nil
+	restDescription, err := execTemplate(restID, restSrc, ctx)
+	if err != nil {
+		return RenderedToolDoc{}, err
+	}
+	return RenderedToolDoc{
+		Name:            name,
+		Title:           strings.TrimSpace(title),
+		Description:     strings.TrimSpace(description),
+		RESTDescription: strings.TrimSpace(restDescription),
+	}, nil
 }
 
 var errEmptyToolName = errString("tool name is empty after sanitization")

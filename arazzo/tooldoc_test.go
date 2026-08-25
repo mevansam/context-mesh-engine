@@ -51,29 +51,45 @@ func TestRenderToolDoc_Defaults(t *testing.T) {
 		[]arazzo.WorkflowDoc{{ID: "pingHealth", Summary: "Check API health"}},
 		"http://localhost:8080", "",
 	)
-	name, title, desc, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{}, ctx)
+	doc, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{}, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "run_petstore_v1.1.0" {
-		t.Fatalf("name = %q", name)
+	if doc.Name != "run_petstore_v1.1.0" {
+		t.Fatalf("name = %q", doc.Name)
 	}
-	if title != "Pet Store Workflows (petstore v1.1.0)" {
-		t.Fatalf("title = %q", title)
+	if doc.Title != "Pet Store Workflows (petstore v1.1.0)" {
+		t.Fatalf("title = %q", doc.Title)
 	}
-	if want := "http://localhost:8080/api/plans/petstore/v1.1.0/{workflowId}"; !strings.Contains(desc, want) {
-		t.Fatalf("description missing %q:\n%s", want, desc)
+	if strings.Contains(doc.Description, "{{") {
+		t.Fatalf("unexpanded template in MCP description:\n%s", doc.Description)
 	}
-	if want := "GET http://localhost:8080/api/openapi/petstore"; !strings.Contains(desc, want) {
-		t.Fatalf("description missing %q:\n%s", want, desc)
+	if strings.Contains(doc.Description, "POST ") || strings.Contains(doc.Description, "/api/plans/") || strings.Contains(doc.Description, "/api/openapi/") {
+		t.Fatalf("MCP description must not mention REST:\n%s", doc.Description)
 	}
-	if strings.Contains(desc, "{{") {
-		t.Fatalf("unexpanded template in description:\n%s", desc)
+	if !strings.Contains(doc.Description, "How to call this MCP tool") {
+		t.Fatalf("MCP description missing how-to:\n%s", doc.Description)
+	}
+	if strings.Contains(strings.ToLower(doc.RESTDescription), "mcp") {
+		t.Fatalf("REST description must not mention MCP:\n%s", doc.RESTDescription)
+	}
+	if want := "POST http://localhost:8080/api/plans/petstore/v1.1.0/{workflowId}"; !strings.Contains(doc.RESTDescription, want) {
+		t.Fatalf("REST description missing %q:\n%s", want, doc.RESTDescription)
+	}
+	if want := "GET http://localhost:8080/api/openapi/petstore"; !strings.Contains(doc.RESTDescription, want) {
+		t.Fatalf("REST description missing %q:\n%s", want, doc.RESTDescription)
 	}
 }
 
 func TestRenderToolDoc_InvalidTemplate(t *testing.T) {
-	_, _, _, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{Name: "{{.Nope"}, arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", ""))
+	_, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{Name: "{{.Nope"}, arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", ""))
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+}
+
+func TestRenderToolDoc_InvalidRESTDescription(t *testing.T) {
+	_, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{RESTDescription: "{{.Nope"}, arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", ""))
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -81,18 +97,24 @@ func TestRenderToolDoc_InvalidTemplate(t *testing.T) {
 
 func TestRenderQueryDoc_CustomPrefix(t *testing.T) {
 	ctx := arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "http://example.test", "/service/v2")
-	name, title, desc, err := arazzo.RenderQueryDoc(arazzo.ToolDocTemplates{}, ctx)
+	doc, err := arazzo.RenderQueryDoc(arazzo.ToolDocTemplates{}, ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "query" {
-		t.Fatalf("name = %q", name)
+	if doc.Name != "query" {
+		t.Fatalf("name = %q", doc.Name)
 	}
-	if title != "Query plans" {
-		t.Fatalf("title = %q", title)
+	if doc.Title != "Query plans" {
+		t.Fatalf("title = %q", doc.Title)
 	}
-	if want := "POST http://example.test/service/v2/plans/query"; !strings.Contains(desc, want) {
-		t.Fatalf("description missing %q:\n%s", want, desc)
+	if strings.Contains(doc.Description, "POST ") || strings.Contains(doc.Description, "/plans/query") {
+		t.Fatalf("MCP query description must not mention REST:\n%s", doc.Description)
+	}
+	if strings.Contains(strings.ToLower(doc.RESTDescription), "mcp") {
+		t.Fatalf("REST query description must not mention MCP:\n%s", doc.RESTDescription)
+	}
+	if want := "POST http://example.test/service/v2/plans/query"; !strings.Contains(doc.RESTDescription, want) {
+		t.Fatalf("REST query description missing %q:\n%s", want, doc.RESTDescription)
 	}
 }
 

@@ -11,7 +11,7 @@ One process, one TCP port:
 | URL | Role |
 | --- | --- |
 | `http://<addr>/api/health` | Default liveness JSON: `{"status":"ok"}`. Always mounted unless `MCPOnly`. |
-| `http://<addr>/api/tools` | MCP `tools/list` result (same `tools` array as Streamable HTTP). |
+| `http://<addr>/api/tools` | MCP `tools/list` envelope (same `tools` names as Streamable HTTP; Arazzo descriptions are REST-specific). |
 | `http://<addr>/api/...` | Your `api.Controller` routes (and, if you set loaders, Arazzo plan routes). |
 | `http://<addr>/mcp` | MCP Streamable HTTP. Mounted only with `DualMCPandREST` or `MCPOnly`. |
 
@@ -43,7 +43,7 @@ Flags (`cmd/engine/main.go`):
 | `-rest-only` | false | Serve only REST (`Options.RESTOnly`; same as the default) |
 | `-dual` | false | Serve MCP and REST (`Options.DualMCPandREST`) |
 | `-specs` | empty | Directory of Arazzo YAML/JSON (recursive `FileLoader`) |
-| `-public-base-url` | `http://` + `-addr` when `-specs` is set | Origin written into MCP tool descriptions |
+| `-public-base-url` | `http://` + `-addr` when `-specs` is set | Origin written into REST tool descriptions |
 
 Check REST:
 

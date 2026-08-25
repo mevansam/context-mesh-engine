@@ -16,7 +16,7 @@ When `ArazzoLoaders` is set, `New` loads every document from every loader, then:
 | --- | --- |
 | MCP `query` | `query` — only if `QueryMatcher` is set |
 | MCP `run_*` | one per catalog entry; default name `run_{{.SafePlanID}}_v{{.SafeVersion}}` |
-| REST `tools` | `GET /api/tools` — same JSON as MCP `tools/list` |
+| REST `tools` | `GET /api/tools` — MCP `tools/list` envelope; Arazzo descriptions use REST templates |
 | REST `query` | `POST /api/plans/query` — only if `QueryMatcher` is set |
 | REST execute (latest) | `POST /api/plans/{planId}/{workflowId}` |
 | REST execute (versioned) | `POST /api/plans/{planId}/{version}/{workflowId}` |
@@ -153,7 +153,7 @@ Body / arguments:
 { "query": "natural language", "data": { } }
 ```
 
-`data` is the input outline (optional object). Used as workflow inputs when the matcher does not set `Inputs`. Override MCP display strings with `ToolDoc.QueryName`, `QueryTitle`, `QueryDescription`.
+`data` is the input outline (optional object). Used as workflow inputs when the matcher does not set `Inputs`. Override display strings with `ToolDoc.QueryName`, `QueryTitle`, `QueryDescription` (MCP) and `RESTQueryDescription` (`GET /tools`).
 
 | Matcher / catalog | REST | MCP |
 | --- | --- | --- |
@@ -283,11 +283,20 @@ Latest document: `/plans/{planId}/{workflowId}`. Versioned document: `/plans/{pl
 
 ## Tool documentation templates
 
-`Options.ToolDoc` (`arazzo.ToolDocTemplates`) fields `Name`, `Title`, and `Description` are Go `text/template` **recipes** executed against `ToolDocContext`. They are not nested under `.ToolDoc`.
+`Options.ToolDoc` (`arazzo.ToolDocTemplates`) fields are Go `text/template` **recipes** executed against `ToolDocContext`. They are not nested under `.ToolDoc`.
 
 Write `{{.Title}}` for Arazzo `info.title`. Do **not** write `{{.ToolDoc.Title}}`.
 
-`QueryName` / `QueryTitle` / `QueryDescription` are also templates (same context). Empty fields fall back to `DefaultToolDocTemplates()`. The default query description includes `{{.RESTQueryURL}}`.
+| Field | Used on |
+| --- | --- |
+| `Name`, `Title` | both MCP `tools/list` and `GET /tools` |
+| `Description` | MCP `tools/list` only (no REST URLs in the default) |
+| `RESTDescription` | `GET /tools` only (no MCP wording in the default) |
+| `QueryName`, `QueryTitle` | both, when `QueryMatcher` is set |
+| `QueryDescription` | MCP `query` only |
+| `RESTQueryDescription` | `GET /tools` `query` entry; default includes `{{.RESTQueryURL}}` |
+
+Empty fields fall back to `DefaultToolDocTemplates()`.
 
 Default name recipe: `run_{{.SafePlanID}}_v{{.SafeVersion}}`. After render, the name is sanitized to MCP runes `[A-Za-z0-9_.-]` (spaces and other runes → `_`) and truncated to 128 characters.
 
@@ -333,7 +342,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
 - Generated OpenAPI `paths` keys omit `Options.APIPrefix`. They describe execute routes, not `/plans/query`. **200** is the workflow outputs object.
-- `PublicBaseURL` must be set if you want absolute URLs in MCP descriptions.
+- `PublicBaseURL` must be set if you want absolute URLs in REST descriptions (and in custom MCP templates that use URL fields).
 
 ## Next
 

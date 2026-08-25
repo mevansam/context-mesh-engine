@@ -65,7 +65,7 @@ Targeted tests:
 
 1. `go test ./...` passes.
 2. `GET {APIPrefix}/health` (default `/api/health`) still returns JSON `{"status":"ok"}`.
-3. `GET {APIPrefix}/tools` still returns the MCP `tools/list` result.
+3. `GET {APIPrefix}/tools` still returns the MCP `tools/list` envelope (REST descriptions for Arazzo tools).
 4. An MCP client can still `Connect` to `/mcp` (`TestHandler_MCPInitializeAndPing`).
 5. You did not wrap the **root** handler in buffering middleware or set `WriteTimeout`.
 6. User-facing behavior changes are reflected in `docs/users/`; internals in `docs/contributors/`.

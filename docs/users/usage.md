@@ -55,7 +55,7 @@ Zero-value `engine.Options` after `New` (see `engine/engine.go`):
 | `ArazzoLoaders` | nil/empty | no plan tools or plan REST routes |
 | `ArazzoExecutor` | nil | catalog + OpenAPI still load; execute is 501 |
 | `QueryMatcher` | nil | MCP `query` and `POST /plans/query` are not registered |
-| `PublicBaseURL` | empty | REST URLs in MCP descriptions are path-only (`{APIPrefix}/...`) |
+| `PublicBaseURL` | empty | REST URLs in `GET /tools` descriptions are path-only (`{APIPrefix}/...`) |
 | `ToolDoc` | zero struct | `arazzo.DefaultToolDocTemplates()` |
 
 `WriteTimeout` is **never** set on the engine-owned `http.Server`. A short write timeout kills GET SSE.
@@ -87,7 +87,7 @@ Paths below use the **default** REST prefix `/api`. Replace that prefix with `Op
 | GET | `/mcp` | Standalone SSE (requires `Mcp-Session-Id` and `Accept: text/event-stream`) |
 | DELETE | `/mcp` | End the MCP session |
 | GET | `/api/health` | `{"status":"ok"}` (`api.HealthResponse`) |
-| GET | `/api/tools` | MCP `tools/list` result (`ttlMs`, `cacheScope`, `tools`). Optional `?cursor=` |
+| GET | `/api/tools` | MCP `tools/list` envelope (`ttlMs`, `cacheScope`, `tools`). Arazzo plan/query descriptions are REST-specific. Optional `?cursor=` |
 | POST | `/api/plans/query` | Natural-language match + execute (same contract as MCP `query`; loaders **and** `QueryMatcher` required) |
 | POST | `/api/plans/{planId}/{workflowId}` | Execute **latest** plan version (loaders required) |
 | POST | `/api/plans/{planId}/{version}/{workflowId}` | Execute that version (`{version}` is `v` + `info.version`) |

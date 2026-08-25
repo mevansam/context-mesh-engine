@@ -16,7 +16,7 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md). Change this document when
 | `internal/plans/openapi.go` | OAS 3.1; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | `query` + one `run_*` tool per catalog entry |
 | `internal/api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; 400/404/501 |
-| `internal/api/v1/tools.go` | `GET /tools` (MCP `tools/list` result) |
+| `internal/api/v1/tools.go` | `GET /tools` (MCP `tools/list` envelope; REST descriptions for Arazzo tools) |
 | `engine/engine.go` | `New` wires loaders → catalog → MCP + REST |
 | `testdata/arazzo/` | Fixtures |
 
@@ -80,11 +80,11 @@ POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not
 `RegisterMCP`:
 
 1. Merge templates; if `QueryEnabled()`, add `query` (`queryArgs`: `query`, optional `data`) — same contract as `POST /plans/query`
-2. For each catalog entry: `RenderToolDoc`, reject duplicate **names**, `InputSchema`, `mcp.AddTool` with captured `planID`/`version`
+2. For each catalog entry: `RenderToolDoc`, reject duplicate **names**, `InputSchema`, `mcp.AddTool` with captured `planID`/`version`. REST descriptions are returned for `GET /tools`.
 
 `InputSchema` is top-level `type: object` + `oneOf` of `{workflowId: const, inputs: workflow schema}`. Do not put overlapping workflow input schemas in a single `properties.inputs.oneOf` — JSON Schema `oneOf` fails when more than one branch matches.
 
-Query name/title/description and `run_*` name/title/description are templates (`RenderQueryDoc` / `RenderToolDoc`). REST URLs use `Options.APIPrefix`.
+Query name/title and `run_*` name/title are shared. MCP descriptions (`Description` / `QueryDescription`) and REST descriptions (`RESTDescription` / `RESTQueryDescription`) are separate templates (`RenderQueryDoc` / `RenderToolDoc`). REST URLs use `Options.APIPrefix`.
 
 ## OpenAPI generator
 
@@ -97,7 +97,7 @@ No `APIPrefix` on paths (matches `StripPrefix` on the REST mux). `info.title` fr
 
 ## Templates
 
-`ToolDoc.Name` / `Title` / `Description` are `text/template` executed with `missingkey=zero`. `{{.Title}}` is Arazzo info.title, not the MCP title recipe.
+`ToolDoc.Name` / `Title` / `Description` / `RESTDescription` are `text/template` executed with `missingkey=zero`. `{{.Title}}` is Arazzo info.title, not the MCP title recipe. MCP `tools/list` uses `Description`; `GET /tools` overlays `RESTDescription` (clone the `*mcp.Tool` so the MCP cache is not mutated).
 
 `engine.New` renders run templates (and query templates when `QueryMatcher` is set) once with a dummy context **before** load so syntax errors fail fast even if the catalog is empty. Per-entry render still happens in `RegisterMCP`.
 
@@ -118,7 +118,7 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 
 | File | Behavior |
 | --- | --- |
-| `arazzo/tooldoc_test.go` | FileLoader skip `ignore.txt`; BaseURL trailing `/`; default tool name/URLs; invalid template |
+| `arazzo/tooldoc_test.go` | FileLoader skip `ignore.txt`; BaseURL trailing `/`; MCP vs REST default descriptions; invalid template |
 | `internal/plans/catalog_test.go` | skip `no-plan-id`; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys |
 | `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; MCP `query` + `POST /plans/query`; `run_*` + REST share executor |
 

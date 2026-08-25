@@ -41,7 +41,7 @@ One process, one TCP port:
 | REST `query` | `POST /api/plans/query`        | Same as MCP `query` (omitted without `QueryMatcher`). JSON body is `{ "query": "...", "data": { } }`. Success payload is the workflow outputs object. |
 | REST execute | `POST /api/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs.                                                                                                |
 | REST OpenAPI | `GET /api/openapi/{planId}`    | Generated OAS 3.1 for those execute paths (latest or a specific version).                                                                             |
-| REST tools   | `GET /api/tools`               | Same JSON as MCP `tools/list` (`ttlMs`, `cacheScope`, `tools`).                                                                                       |
+| REST tools   | `GET /api/tools`               | MCP `tools/list` envelope (`ttlMs`, `cacheScope`, `tools`); Arazzo descriptions are REST-specific.                                                    |
 
 
 `query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_`* and `POST /api/plans/{planId}/...` are for when the plan and version are already known.

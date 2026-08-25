@@ -21,7 +21,7 @@ The sample fixtures (`x-planId: petstore`, versions `1.0.0` and `1.1.0`) registe
 
 Serves:
 
-- `GET /api/tools` (MCP `tools/list` result)
+- `GET /api/tools` (MCP `tools/list` envelope; Arazzo descriptions are REST-specific)
 - `POST /api/plans/query` (dummy matcher → latest petstore `pingHealth`)
 - `POST /api/plans/petstore/{workflowId}` (latest = 1.1.0)
 - `POST /api/plans/petstore/v1.0.0/{workflowId}`

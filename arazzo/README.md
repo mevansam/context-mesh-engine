@@ -8,7 +8,7 @@ Public package `github.com/mevansam/context-mesh-engine/arazzo`.
 | `NewFileLoader` | Recursive `.yaml` / `.yml` / `.json` |
 | `Executor`, `ExecutionRequest`, `ExecutionResponse` | Backend HTTP for workflow steps (aliases of libopenapi) |
 | `QueryMatcher`, `QueryRequest`, `QueryMatch`, `PlanCatalog` | Pluggable plan selection for MCP/REST `query` |
-| `ToolDocTemplates`, `ToolDocContext` | `text/template` recipes for MCP tool name/title/description |
+| `ToolDocTemplates`, `ToolDocContext`, `RenderedToolDoc` | `text/template` recipes for shared name/title plus MCP vs REST descriptions |
 
 Do not import `internal/plans`. Wire loaders through `engine.Options.ArazzoLoaders`, executors through `ArazzoExecutor`, matchers through `QueryMatcher`.
 

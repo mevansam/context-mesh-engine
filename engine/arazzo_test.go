@@ -81,6 +81,17 @@ func TestArazzo_QueryTemplatesFailNewOnlyWithMatcher(t *testing.T) {
 	}
 }
 
+func TestArazzo_InvalidRESTDescriptionFailNew(t *testing.T) {
+	_, err := engine.New(engine.Options{
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders: []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		ToolDoc:       arazzo.ToolDocTemplates{RESTDescription: "{{.Nope"},
+	})
+	if err == nil {
+		t.Fatal("expected REST description template error")
+	}
+}
+
 func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 	e := newArazzoEngine(t, nil)
 	ts := httptest.NewServer(e.Handler())
@@ -182,8 +193,13 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 	got := map[string]bool{}
 	for _, tl := range tools.Tools {
 		got[tl.Name] = true
-		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/api/plans/") {
-			t.Fatalf("tool %s description missing REST URL:\n%s", tl.Name, tl.Description)
+		if strings.HasPrefix(tl.Name, "run_") {
+			if strings.Contains(tl.Description, "POST ") || strings.Contains(tl.Description, "/api/plans/") {
+				t.Fatalf("MCP tool %s description must not mention REST:\n%s", tl.Name, tl.Description)
+			}
+			if !strings.Contains(tl.Description, "How to call this MCP tool") {
+				t.Fatalf("MCP tool %s description missing how-to:\n%s", tl.Name, tl.Description)
+			}
 		}
 	}
 	if got["query"] || !got["run_petstore_v1.0.0"] || !got["run_petstore_v1.1.0"] {
@@ -208,6 +224,24 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 	for i, tl := range tools.Tools {
 		if restBody.Tools[i].Name != tl.Name {
 			t.Fatalf("tools[%d]: REST %q MCP %q", i, restBody.Tools[i].Name, tl.Name)
+		}
+		if strings.HasPrefix(tl.Name, "run_") {
+			if !strings.Contains(restBody.Tools[i].Description, "POST http://example.test/api/plans/") {
+				t.Fatalf("REST tool %s description missing REST URL:\n%s", tl.Name, restBody.Tools[i].Description)
+			}
+			if strings.Contains(strings.ToLower(restBody.Tools[i].Description), "mcp") {
+				t.Fatalf("REST tool %s description must not mention MCP:\n%s", tl.Name, restBody.Tools[i].Description)
+			}
+		}
+	}
+
+	again, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range again.Tools {
+		if strings.HasPrefix(tl.Name, "run_") && (strings.Contains(tl.Description, "POST ") || strings.Contains(tl.Description, "/api/plans/")) {
+			t.Fatalf("MCP tool %s description mutated after GET /tools:\n%s", tl.Name, tl.Description)
 		}
 	}
 
@@ -306,11 +340,35 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tl := range tools.Tools {
+		if tl.Name == "query" && (strings.Contains(tl.Description, "POST ") || strings.Contains(tl.Description, "/plans/query")) {
+			t.Fatalf("MCP query description must not mention REST:\n%s", tl.Description)
+		}
+		if strings.HasPrefix(tl.Name, "run_") && (strings.Contains(tl.Description, "POST ") || strings.Contains(tl.Description, "/plans/")) {
+			t.Fatalf("MCP tool %s description must not mention REST:\n%s", tl.Name, tl.Description)
+		}
+	}
+
+	rest, err := http.Get(ts.URL + "/service/v2/tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rest.Body.Close()
+	if rest.StatusCode != http.StatusOK {
+		t.Fatalf("GET /service/v2/tools status = %d", rest.StatusCode)
+	}
+	var restBody mcp.ListToolsResult
+	if err := json.NewDecoder(rest.Body).Decode(&restBody); err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range restBody.Tools {
+		if strings.Contains(strings.ToLower(tl.Description), "mcp") {
+			t.Fatalf("REST tool %s description must not mention MCP:\n%s", tl.Name, tl.Description)
+		}
 		if tl.Name == "query" && !strings.Contains(tl.Description, "POST http://example.test/service/v2/plans/query") {
-			t.Fatalf("query description missing custom REST URL:\n%s", tl.Description)
+			t.Fatalf("REST query description missing custom URL:\n%s", tl.Description)
 		}
 		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/service/v2/plans/") {
-			t.Fatalf("tool %s description missing custom REST URL:\n%s", tl.Name, tl.Description)
+			t.Fatalf("REST tool %s description missing custom URL:\n%s", tl.Name, tl.Description)
 		}
 	}
 }

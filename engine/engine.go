@@ -105,13 +105,15 @@ type Options struct {
 	// Match, the engine checks that the plan is loaded in this process.
 	QueryMatcher arazzo.QueryMatcher
 
-	// PublicBaseURL is the origin used in MCP tool descriptions
-	// (for example http://localhost:8080). Addr is not substituted.
-	// If empty, REST URLs in descriptions are path-only.
+	// PublicBaseURL is the origin used in REST tool descriptions on
+	// GET {APIPrefix}/tools (for example http://localhost:8080). Addr
+	// is not substituted. If empty, REST URLs in those descriptions
+	// are path-only. Custom MCP templates may still reference URL fields.
 	PublicBaseURL string
 
-	// ToolDoc are Go text/templates for generated MCP tool name, title,
-	// and description. Empty fields use [arazzo.DefaultToolDocTemplates].
+	// ToolDoc are Go text/templates for generated tool name, title,
+	// MCP description, and REST description. Empty fields use
+	// [arazzo.DefaultToolDocTemplates].
 	ToolDoc arazzo.ToolDocTemplates
 }
 
@@ -128,14 +130,14 @@ type Engine struct {
 
 // New constructs an Engine with a shared MCP server and the default
 // health and tools controllers registered under [Options.APIPrefix].
-// GET {APIPrefix}/tools returns the same JSON as MCP tools/list.
-// When [Options.ArazzoLoaders] is set, plans are loaded and MCP run_*
-// tools plus REST plan routes are registered. MCP query and
-// POST {APIPrefix}/plans/query are added only when [Options.QueryMatcher]
-// is set. [Options.DualMCPandREST], [Options.MCPOnly], and
-// [Options.RESTOnly] control which HTTP surfaces [Engine.Handler]
-// mounts; all false serves REST only. Load or template errors fail
-// construction.
+// GET {APIPrefix}/tools returns the MCP tools/list envelope with REST
+// descriptions for Arazzo plan/query tools. When [Options.ArazzoLoaders]
+// is set, plans are loaded and MCP run_* tools plus REST plan routes
+// are registered. MCP query and POST {APIPrefix}/plans/query are added
+// only when [Options.QueryMatcher] is set. [Options.DualMCPandREST],
+// [Options.MCPOnly], and [Options.RESTOnly] control which HTTP surfaces
+// [Engine.Handler] mounts; all false serves REST only. Load or template
+// errors fail construction.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
 	if err := validateServeMode(opts); err != nil {
@@ -153,17 +155,18 @@ func New(opts Options) (*Engine, error) {
 
 	router := apiv1.New()
 	router.Register(&apiv1.HealthController{})
-	router.Register(apiv1.NewToolsController(gw.Server()))
+	toolsCtrl := apiv1.NewToolsController(gw.Server())
+	router.Register(toolsCtrl)
 
 	if len(opts.ArazzoLoaders) > 0 {
 		docCtx := arazzo.NewToolDocContext(
 			"plan", "1.0.0", "t", "", "", nil, opts.PublicBaseURL, opts.APIPrefix,
 		)
-		if _, _, _, err := arazzo.RenderToolDoc(opts.ToolDoc, docCtx); err != nil {
+		if _, err := arazzo.RenderToolDoc(opts.ToolDoc, docCtx); err != nil {
 			return nil, fmt.Errorf("tool doc templates: %w", err)
 		}
 		if opts.QueryMatcher != nil {
-			if _, _, _, err := arazzo.RenderQueryDoc(opts.ToolDoc, docCtx); err != nil {
+			if _, err := arazzo.RenderQueryDoc(opts.ToolDoc, docCtx); err != nil {
 				return nil, fmt.Errorf("query tool doc templates: %w", err)
 			}
 		}
@@ -172,9 +175,11 @@ func New(opts Options) (*Engine, error) {
 			return nil, err
 		}
 		runner := plans.NewRunner(catalog, opts.ArazzoExecutor, opts.QueryMatcher)
-		if err := plans.RegisterMCP(gw.Server(), catalog, runner, opts.ToolDoc, opts.PublicBaseURL, opts.APIPrefix); err != nil {
+		restDescs, err := plans.RegisterMCP(gw.Server(), catalog, runner, opts.ToolDoc, opts.PublicBaseURL, opts.APIPrefix)
+		if err != nil {
 			return nil, err
 		}
+		toolsCtrl.SetRESTDescriptions(restDescs)
 		router.Register(apiv1.NewPlansController(catalog, runner))
 	}
 

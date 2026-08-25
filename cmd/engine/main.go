@@ -22,7 +22,7 @@ func main() {
 	addr := flag.String("addr", engine.DefaultAddr, "HTTP listen address")
 	apiPrefix := flag.String("api-prefix", engine.DefaultAPIPrefix, "REST path prefix (health, plans, OpenAPI)")
 	specs := flag.String("specs", "", "directory of Arazzo YAML/JSON plans (recursive)")
-	publicBase := flag.String("public-base-url", "", "origin for MCP tool REST URLs (default http://<addr>)")
+	publicBase := flag.String("public-base-url", "", "origin for REST URLs in GET /tools descriptions (default http://<addr>)")
 	mcpOnly := flag.Bool("mcp-only", false, "serve only MCP Streamable HTTP at /mcp")
 	restOnly := flag.Bool("rest-only", false, "serve only REST under the API prefix")
 	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")

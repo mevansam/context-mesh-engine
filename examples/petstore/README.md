@@ -261,7 +261,7 @@ curl -sS -X POST http://localhost:8080/mcp \
 - One catalog (`x-planId` + `info.version`) → MCP `run_*` and REST `POST /plans/{planId}/{workflowId}`.
 - You supply loaders + an `Executor`. This demo’s executor is HTTP: OpenAPI operations on local Petstore, AsyncAPI operations on the local adapter.
 - Generated `GET /api/openapi/petstore` describes the same execute routes (paths without the `/api` prefix).
-- `GET /api/tools` is the REST form of MCP `tools/list`.
+- `GET /api/tools` is the REST form of MCP `tools/list` (same names/schemas; Arazzo descriptions are REST-specific).
 - `query` is published only when `Options.QueryMatcher` is set. Petstore leaves it unset; [arazzo-fs](../arazzo-fs/README.md) ships a dummy matcher.
 
 Arazzo file: `mcp-server/plans/petstore.arazzo.yaml`. AsyncAPI file: `async-order-server/pet-asyncapi.yaml`.
