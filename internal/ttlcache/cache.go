@@ -85,10 +85,10 @@ func (c *Cache[K, V]) Get(ctx context.Context, key K) (V, error) {
 	c.mu.Unlock()
 
 	defer func() {
+		f.wg.Done()
 		c.mu.Lock()
 		delete(c.inflight, key)
 		c.mu.Unlock()
-		f.wg.Done()
 	}()
 
 	val, err := c.load(ctx, key)
