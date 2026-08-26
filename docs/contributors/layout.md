@@ -104,7 +104,7 @@ context-mesh-engine/
 | `TestHandler_MCPGETRequiresSession` | GET `/mcp` without session is 400 (handler is mounted) |
 | `TestHandler_RESTNotMCP` | POST `/api/health` is REST 405, not MCP |
 | `TestArazzo_*` | plans, OpenAPI, 501, MCP `query`/`run_*`, `POST /plans/query` |
-| `internal/plans` tests | skip missing `x-planId`, duplicate versions, latest `1.1.0` |
+| `internal/plans` tests | skip missing `x-planId`, reject `v`-prefixed / non-semver `info.version`, duplicate versions, latest `1.1.0` |
 
 ## What not to add here
 

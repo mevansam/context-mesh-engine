@@ -36,7 +36,7 @@ Each Arazzo file must have:
 ```yaml
 info:
   title: ...
-  version: 1.0.0          # required; skipped if empty
+  version: 1.0.0          # required; skipped if empty; must be semver without a leading v
   x-planId: petstore      # required Info extension; skipped if missing
 ```
 
@@ -53,6 +53,7 @@ Skipped (log a warning, do not fail `New`):
 - Arazzo structural validation fails (`libopenapi/arazzo.Validate`)
 - source resolution fails (OpenAPI/Arazzo `sourceDescriptions`)
 - two documents share the same `(x-planId, info.version)`
+- `info.version` is not a semantic version, or starts with `v`
 - two rendered MCP tool **names** collide
 - `ToolDoc` templates fail to parse or execute
 

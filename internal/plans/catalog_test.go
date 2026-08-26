@@ -68,6 +68,28 @@ func TestLoad_DuplicatePlanVersion(t *testing.T) {
 	}
 }
 
+func TestLoad_InvalidInfoVersion(t *testing.T) {
+	load := func(version string) error {
+		_, err := Load(context.Background(), []arazzo.Loader{errLoader{srcs: []arazzo.Source{{
+			URI:  "plan.yaml",
+			Data: []byte("arazzo: 1.0.1\ninfo:\n  title: t\n  version: \"" + version + "\"\n  x-planId: p\nworkflows:\n  - workflowId: ping\n    steps:\n      - stepId: s\n        operationId: op\n        successCriteria:\n          - condition: $statusCode == 200\n"),
+		}}}}, discardLogger())
+		return err
+	}
+	if err := load("v1.0.0"); err == nil || !strings.Contains(err.Error(), `info.version "v1.0.0"`) {
+		t.Fatalf("prefixed: %v", err)
+	}
+	if err := load("beta"); err == nil || !strings.Contains(err.Error(), `info.version "beta"`) {
+		t.Fatalf("non-semver: %v", err)
+	}
+	if err := checkPlanVersion("1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkPlanVersion("1.0.0-beta.1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPickLatest(t *testing.T) {
 	if got := pickLatest([]string{"1.0.0", "1.1.0", "1.0.1"}); got != "1.1.0" {
 		t.Fatalf("semver latest = %q", got)

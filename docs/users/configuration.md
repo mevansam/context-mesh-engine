@@ -56,7 +56,7 @@ Zero-value `Options` is valid: REST only at `/api`, listen address `localhost:80
 
 - More than one of `DualMCPandREST`, `MCPOnly`, and `RESTOnly` is true.
 - `APIPrefix` normalizes to `/` or `/mcp`.
-- `ArazzoLoaders` is non-empty and templates fail to parse, specs fail to load, `(planId, version)` is duplicated, or rendered MCP tool names collide.
+- `ArazzoLoaders` is non-empty and templates fail to parse, specs fail to load, `info.version` is not semver or starts with `v`, `(planId, version)` is duplicated, or rendered MCP tool names collide.
 
 ## Options reference
 

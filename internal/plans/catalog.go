@@ -91,6 +91,9 @@ func (c *Catalog) addSource(src arazzo.Source, logger *slog.Logger) error {
 		logger.Warn("skipping arazzo document without x-planId or version", "uri", src.URI)
 		return nil
 	}
+	if err := checkPlanVersion(doc.Info.Version); err != nil {
+		return fmt.Errorf("%s: %w", src.URI, err)
+	}
 	sources, err := resolveSources(doc, src)
 	if err != nil {
 		return fmt.Errorf("%s: resolve sources: %w", src.URI, err)
@@ -220,6 +223,13 @@ func semverCanon(v string) (string, bool) {
 		return "v" + v, true
 	}
 	return "", false
+}
+
+func checkPlanVersion(version string) error {
+	if strings.HasPrefix(version, "v") || !semver.IsValid("v"+version) {
+		return fmt.Errorf("info.version %q must be a semantic version without a leading \"v\"", version)
+	}
+	return nil
 }
 
 // Get returns the entry for planId + raw info.version.

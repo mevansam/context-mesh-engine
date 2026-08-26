@@ -33,9 +33,10 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 
 1. `libopenapi.NewArazzoDocument`
 2. Skip if `info` nil, `x-planId` empty, or `info.version` empty (warn via `slog`)
-3. `ResolveSources` (attaches OpenAPI docs onto the Arazzo model)
-4. `Validate`; **errors** fail load; **warnings** are allowed
-5. Duplicate `(planId, version)` → error
+3. `info.version` must be a semantic version **without** a leading `v` (`golang.org/x/mod/semver` on `"v"+version`). Invalid → error
+4. `ResolveSources` (attaches OpenAPI docs onto the Arazzo model)
+5. `Validate`; **errors** fail load; **warnings** are allowed
+6. Duplicate `(planId, version)` → error
 
 `x-planId` is read from `info.Extensions` (`yaml.ScalarNode` only).
 
@@ -138,7 +139,7 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
-| `internal/plans/catalog_test.go` | skip `no-plan-id`; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys |
+| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys |
 | `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
 
 Fixtures live under `testdata/arazzo/`. `FileLoader` must be pointed at **`plans/`**, not `testdata/arazzo/` (otherwise `sources/openapi.yaml` is parsed as Arazzo and fails). Latest petstore version in tests is `1.1.0`.
