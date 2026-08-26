@@ -1,6 +1,6 @@
 # Arazzo plans (contributors)
 
-SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/adapters.md](../users/adapters.md) (how to implement loaders, executors, matchers, tool help). Change this document when catalog, runner, templates, or generated OpenAPI behavior changes.
+SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/adapters.md](../users/adapters.md) (how to implement loaders, executors, matchers, policy, tool help). Change this document when catalog, runner, templates, policy, or generated OpenAPI behavior changes.
 
 ## Layout
 
@@ -9,15 +9,20 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `arazzo/loader.go` | `Loader`, `Source`, `Executor` aliases |
 | `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
 | `arazzo/fileloader.go` | Recursive `.yaml/.yml/.json`; `BaseURL` **must** end with `/` |
+| `arazzo/policy.go` | `PolicyLoader`, `PolicyBundle`, `PolicyHintsKey` |
+| `arazzo/filepolicy.go` | `{planId}/{version}/inbound.rego` + `outbound.rego` |
 | `arazzo/tooldoc.go` | Recipes vs `ToolDocContext`; `SanitizeToolName` |
 | `arazzo/toolhelp.go` | `ToolHelpLookup`; overlay; default lookup |
-| `internal/plans/help.go` | TTL cache; MCP `tools/list` middleware; REST overlay |
+| `internal/plans/help.go` | TTL cache (`internal/ttlcache`); MCP `tools/list` middleware; REST overlay |
+| `internal/ttlcache/` | Generic singleflight TTL cache |
 | `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest, `View()` |
-| `internal/plans/runner.go` | `NewEngine` per `Run`; returns workflow outputs |
+| `internal/plans/runner.go` | `NewEngine` per `Run`; inbound then workflow then outbound |
+| `internal/plans/policy.go` | Compile `data.plan.inbound` / `data.plan.outbound`; cache |
+| `internal/plans/redact.go` | RFC 6901 output redaction |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const |
 | `internal/plans/openapi.go` | OAS 3.1; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | `query` + one `run_*` tool per catalog entry |
-| `internal/api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; 400/404/501 |
+| `internal/api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; 400/403/404/500/501 |
 | `internal/api/v1/tools.go` | `GET /tools` (MCP `tools/list` envelope; REST descriptions for Arazzo tools) |
 | `engine/engine.go` | `New` wires loaders → catalog → MCP + REST |
 | `testdata/arazzo/` | Fixtures |
@@ -52,11 +57,14 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 
 1. Catalog `Get(planID, rawVersion)` — not found → `ErrNotFound`
 2. Workflow id must exist on that entry — else `ErrNotFound`
-3. Nil executor → `ErrNoExecutor` (`executor not configured`)
-4. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
-5. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.
+3. If `PolicyCache` is set, load/compile the bundle for `(planId, version)` (TTL cache, on demand). Load error without a cached module bundle → `ErrPolicyLoad`.
+4. If inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On allow, copy inputs, drop caller `policyHints`, set `$inputs.policyHints` from `hints` when present.
+5. Nil executor → `ErrNoExecutor` (`executor not configured`)
+6. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
+7. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.
+8. If outbound compiled: eval `data.plan.outbound` on `{inputs, outputs}`. Deny → `ErrPolicyDenied` (no outputs returned). Else replace `outputs` or apply `redact`/`mask`.
 
-Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurrency-safe). Cache `*high.Arazzo` and `[]*ResolvedSource` on `Entry` only.
+Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurrency-safe). Cache `*high.Arazzo` and `[]*ResolvedSource` on `Entry` only. Do **not** parse `.rego` in `FileLoader` / `catalog.addSource`.
 
 `Runner.Query`:
 
@@ -71,7 +79,7 @@ Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurr
 
 `Catalog.View()` is `arazzo.PlanCatalog`. It does not snapshot the catalog; `Get`/`Latest`/`Plans` copy metadata only when called. Matcher must not use a catalog miss as “no match”; the engine always verifies after `Match`.
 
-HTTP (`plans.go`): `POST /plans/query` is registered only when `Runner.QueryEnabled()`. It calls `Runner.Query`. Execute: `ErrNoExecutor` → 501; `ErrNotFound` → 404; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. HTTP **200** body is the outputs object.
+HTTP (`plans.go`): `POST /plans/query` is registered only when `Runner.QueryEnabled()`. It calls `Runner.Query`. Execute: `ErrNoExecutor` → 501; `ErrNotFound` → 404; `ErrPolicyDenied` → 403; `ErrPolicyLoad` → 500; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. HTTP **200** body is the outputs object.
 
 MCP (`mcp.go`): `query` is added only when `QueryEnabled()`. It calls the same `Runner.Query`. Runner `error` on `query` or `run_*` becomes a tool error. Nil error + outputs map → structured content.
 
@@ -112,10 +120,11 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 3. New libopenapi Engine per run.
 4. Nil executor: catalog + OpenAPI work; execute is 501 / MCP tool error.
 5. Nil `QueryMatcher`: do not register MCP `query` or `POST /plans/query`; after Match, missing loaded plan is 404.
-6. Plan REST is under `Options.APIPrefix` only (default `/api`). Do not `StripPrefix` `/mcp`.
-7. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
-8. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
-9. Help `Lookup` is on `tools/list` / `GET /tools` only. Lookup errors must not fail the list.
+6. Nil `PolicyLoader`: skip inbound/outbound. Policy is on-demand, not at `New`. Fail closed on load/compile errors.
+7. Plan REST is under `Options.APIPrefix` only (default `/api`). Do not `StripPrefix` `/mcp`.
+8. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
+9. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
+10. Help `Lookup` is on `tools/list` / `GET /tools` only. Lookup errors must not fail the list.
 
 ## Tests to update when you change behavior
 
@@ -124,9 +133,13 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `arazzo/tooldoc_test.go` | FileLoader skip `ignore.txt`; BaseURL trailing `/`; MCP vs REST default descriptions; invalid/empty-name templates; MergeTemplates |
 | `arazzo/toolhelp_test.go` | Default lookup; REST falls back to Description; distinct RESTDescription; query overlay |
 | `internal/plans/help_test.go` | Cache TTL / always-refresh; stale-on-error; singleflight; REST surface; middleware skips non-list |
+| `internal/ttlcache/cache_test.go` | Generic TTL / stale-on-error / singleflight |
+| `internal/plans/policy_test.go` | Inbound deny skips executor; outbound deny hides outputs; redact/replace; fail closed; `http.send` userStatus |
+| `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
+| `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
 | `internal/plans/catalog_test.go` | skip `no-plan-id`; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys |
-| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
+| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
 
 Fixtures live under `testdata/arazzo/`. `FileLoader` must be pointed at **`plans/`**, not `testdata/arazzo/` (otherwise `sources/openapi.yaml` is parsed as Arazzo and fails). Latest petstore version in tests is `1.1.0`.
 

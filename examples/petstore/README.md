@@ -12,7 +12,7 @@ Three processes:
 
 1. **`petstore-openapi-server`** (`localhost:8090`) — Swagger Petstore 3 in Docker. OpenAPI base: `http://localhost:8090/api/v3`. UI: `http://localhost:8090/`.
 2. **`async-order-server`** (`localhost:8091`) — HTTP adapter for the official AsyncAPI 3 [pet-asyncapi.yaml](https://github.com/OAI/Arazzo-Specification/blob/main/examples/1.1.0/pet-asyncapi.yaml). `POST /place-order` calls local Petstore `POST /store/order`.
-3. **`mcp-server`** (`localhost:8080`) — `context-mesh-engine` with an Arazzo plan based on the [1.1 spec example](https://spec.openapis.org/arazzo/latest.html), plus `x-planId: petstore`. Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`.
+3. **`mcp-server`** (`localhost:8080`) — `context-mesh-engine` with an Arazzo plan based on the [1.1 spec example](https://spec.openapis.org/arazzo/latest.html), plus `x-planId: petstore`. Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. Optional OPA at `mcp-server/policies/petstore/0.0.1/` gates those workflows by Petstore `userStatus`.
 
 `mcp-server` and `async-order-server` default to local Docker (`-petstore local` → `http://localhost:8090/api/v3`). Use `-petstore hosted` for [petstore3.swagger.io](https://petstore3.swagger.io/api/v3), or `-petstore-url` for any origin. Both Go processes must use the same target.
 
@@ -106,28 +106,59 @@ curl -s http://localhost:8080/api/tools
 curl -s http://localhost:8080/api/openapi/petstore
 ```
 
-Demo login: `username=user1`, `password=abc123`.
+## Seed Petstore users
+
+Inbound policy calls `GET {petstore}/user/{username}` and reads `userStatus` ([User](https://petstore3.swagger.io/#/user/createUser)):
+
+| Username | Password | `userStatus` | Allowed workflows |
+| --- | --- | --- | --- |
+| `browser` | `abc123` | `1` | `retrievePet` only (`petStatus` forced to `available`) |
+| `buyer` | `abc123` | `2` | `retrievePet`, `purchasePet`, `checkOrderStatus` |
+
+Missing user, lookup failure, or any status other than `2` is treated like `1`. Seed local Docker (or hosted) before execute:
+
+```bash
+curl -s -X POST http://localhost:8090/api/v3/user \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"browser","password":"abc123","userStatus":1}'
+
+curl -s -X POST http://localhost:8090/api/v3/user \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"buyer","password":"abc123","userStatus":2}'
+```
+
+Hosted origin: `https://petstore3.swagger.io/api/v3/user`.
 
 ## REST: retrieve a pet
+
+A `browser` login can only retrieve. Inbound policy sets `policyHints.petStatus` to `available` even if you pass another `status`.
 
 ```bash
 curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
   -H 'Content-Type: application/json' \
-  -d '{"username":"user1","password":"abc123","status":"available"}'
+  -d '{"username":"browser","password":"abc123","status":"sold"}'
 ```
 
-Versioned URL: `POST /api/plans/petstore/v1.0.1/retrievePet`.
+`buyer` may pass `status` through as `policyHints.petStatus`:
+
+```bash
+curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"buyer","password":"abc123","status":"available"}'
+```
+
+Versioned URL: `POST /api/plans/petstore/v0.0.1/retrievePet`.
 
 Pick a `petId` from the response (or `pet.id`). Direct Petstore: `GET http://localhost:8090/api/v3/pet/1`.
 
 ## REST: purchase that pet (async order)
 
-Requires the async adapter. `orderCorrelationId` is any unique string (AsyncAPI `orderRequestId`).
+Requires the async adapter and a **buyer** (`userStatus` 2). A `browser` call returns **403**. `orderCorrelationId` is any unique string (AsyncAPI `orderRequestId`).
 
 ```bash
 curl -s -X POST http://localhost:8080/api/plans/petstore/purchasePet \
   -H 'Content-Type: application/json' \
-  -d '{"username":"user1","password":"abc123","petId":1,"orderCorrelationId":"demo-order-1"}'
+  -d '{"username":"buyer","password":"abc123","petId":1,"orderCorrelationId":"demo-order-1"}'
 ```
 
 The engine: login → `POST http://localhost:8091/place-order` → poll `GET /confirm-order`. The adapter: `POST http://localhost:8090/api/v3/store/order` **with a generated `id`** (local Petstore stores `id: 0` if you omit it). Save `orderId`.
@@ -137,7 +168,7 @@ The engine: login → `POST http://localhost:8091/place-order` → poll `GET /co
 ```bash
 curl -s -X POST http://localhost:8080/api/plans/petstore/checkOrderStatus \
   -H 'Content-Type: application/json' \
-  -d '{"username":"user1","password":"abc123","orderId":1}'
+  -d '{"username":"buyer","password":"abc123","orderId":1}'
 ```
 
 Replace `orderId` with the id from `purchasePet`. `status` is `placed`, `approved`, or `delivered`.
@@ -157,7 +188,7 @@ Then:
 ```bash
 curl -s -X POST http://localhost:8080/api/plans/petstore/checkOrderStatus \
   -H 'Content-Type: application/json' \
-  -d '{"username":"user1","password":"abc123","orderId":900001}'
+  -d '{"username":"buyer","password":"abc123","orderId":900001}'
 ```
 
 Direct GET (no engine):
@@ -180,22 +211,22 @@ The plan registers:
 
 | Tool | Use |
 | --- | --- |
-| `run_petstore_v1.0.1` | Run one workflow; `workflowId` is `retrievePet`, `purchasePet`, or `checkOrderStatus` |
+| `run_petstore_v0.0.1` | Run one workflow; `workflowId` is `retrievePet`, `purchasePet`, or `checkOrderStatus` |
 
 This example does not set `QueryMatcher`, so `query` is not registered.
 
 Example prompts:
 
-- “Using the petstore MCP tools, retrieve an available pet. Login as user1 / abc123.”
-- “Purchase pet id 1 with orderCorrelationId demo-order-1, same login.”
-- “Check order status for orderId \<id from purchase\>.”
+- “Using the petstore MCP tools, retrieve an available pet. Login as browser / abc123.”
+- “Purchase pet id 1 with orderCorrelationId demo-order-1, login as buyer / abc123.”
+- “Check order status for orderId \<id from purchase\>, same buyer login.”
 
-The agent should call `run_petstore_v1.0.1` with:
+The agent should call `run_petstore_v0.0.1` with:
 
 ```json
 {
   "workflowId": "retrievePet",
-  "inputs": { "username": "user1", "password": "abc123", "status": "available" }
+  "inputs": { "username": "browser", "password": "abc123", "status": "available" }
 }
 ```
 
@@ -203,7 +234,7 @@ The agent should call `run_petstore_v1.0.1` with:
 {
   "workflowId": "purchasePet",
   "inputs": {
-    "username": "user1",
+    "username": "buyer",
     "password": "abc123",
     "petId": 1,
     "orderCorrelationId": "demo-order-1"
@@ -214,7 +245,7 @@ The agent should call `run_petstore_v1.0.1` with:
 ```json
 {
   "workflowId": "checkOrderStatus",
-  "inputs": { "username": "user1", "password": "abc123", "orderId": 900001 }
+  "inputs": { "username": "buyer", "password": "abc123", "orderId": 900001 }
 }
 ```
 
@@ -245,7 +276,7 @@ curl -sS -X POST http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-Replace `<session>` with the `Mcp-Session-Id` value. The `data:` line lists `run_petstore_v1.0.1`. To print names only:
+Replace `<session>` with the `Mcp-Session-Id` value. The `data:` line lists `run_petstore_v0.0.1`. To print names only:
 
 ```bash
 curl -sS -X POST http://localhost:8080/mcp \
@@ -259,7 +290,7 @@ curl -sS -X POST http://localhost:8080/mcp \
 ## What this shows about the engine
 
 - One catalog (`x-planId` + `info.version`) → MCP `run_*` and REST `POST /plans/{planId}/{workflowId}`.
-- You supply loaders + an `Executor`. This demo’s executor is HTTP: OpenAPI operations on local Petstore, AsyncAPI operations on the local adapter.
+- You supply loaders + an `Executor` + optional `PolicyLoader`. This demo’s executor is HTTP: OpenAPI operations on local Petstore, AsyncAPI operations on the local adapter. Inbound OPA looks up `userStatus` before the workflow runs.
 - Generated `GET /api/openapi/petstore` describes the same execute routes (paths without the `/api` prefix).
 - `GET /api/tools` is the REST form of MCP `tools/list` (same names/schemas; Arazzo descriptions are REST-specific).
 - `query` is published only when `Options.QueryMatcher` is set. Petstore leaves it unset; [arazzo-fs](../arazzo-fs/README.md) ships a dummy matcher.

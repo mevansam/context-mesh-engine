@@ -1,4 +1,3 @@
-// Copyright 2026 Fidelity Investments. All rights reserved.
 // Use of this source code is governed by the Apache 2.0 license
 // that can be found in the LICENSE file.
 
@@ -41,6 +40,10 @@ func main() {
 			arazzo.NewFileLoader(plansDir()),
 		},
 		ArazzoExecutor: newHTTPExec(*asyncURL, petstoreBase),
+		PolicyLoader: &arazzo.FilePolicyLoader{
+			Dir:  policiesDir(),
+			Data: map[string]any{"petstoreBase": petstoreBase},
+		},
 		PublicBaseURL:  "http://" + *addr,
 		DualMCPandREST: *dual,
 	})
@@ -67,4 +70,12 @@ func plansDir() string {
 		log.Fatal("cannot resolve path of main.go")
 	}
 	return filepath.Join(filepath.Dir(file), "plans")
+}
+
+func policiesDir() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatal("cannot resolve path of main.go")
+	}
+	return filepath.Join(filepath.Dir(file), "policies")
 }

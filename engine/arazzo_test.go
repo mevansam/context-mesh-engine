@@ -1,4 +1,3 @@
-// Copyright 2026 Fidelity Investments. All rights reserved.
 // Use of this source code is governed by the Apache 2.0 license
 // that can be found in the LICENSE file.
 
@@ -752,6 +751,41 @@ func TestArazzo_RESTNotFoundAndBadJSON(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("query without matcher status = %d, want 404 (route not registered)", resp.StatusCode)
+	}
+}
+
+type denyAllPolicy struct{}
+
+func (denyAllPolicy) Load(context.Context, arazzo.PolicyRequest) (*arazzo.PolicyBundle, error) {
+	return &arazzo.PolicyBundle{Inbound: []byte(`
+package plan.inbound
+import rego.v1
+default allow := false
+`)}, nil
+}
+
+func TestArazzo_PolicyDeniedForbidden(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:  []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		ArazzoExecutor: &countingExec{},
+		PolicyLoader:   denyAllPolicy{},
+		DualMCPandREST: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Post(ts.URL+"/api/plans/petstore/pingHealth", "application/json", strings.NewReader(`{"name":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 403 body = %s", resp.StatusCode, b)
 	}
 }
 

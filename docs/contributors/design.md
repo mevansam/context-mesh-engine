@@ -95,7 +95,7 @@ The REST prefix (`Options.APIPrefix`, default `/api`) is mounted as `StripPrefix
 
 ## Lifecycle
 
-1. `engine.New` applies defaults, constructs `mcpgw.Gateway` and `apiv1.Router`, registers health. If `ArazzoLoaders` is non-empty: validate tool-doc templates, `plans.Load`, `plans.RegisterMCP` (help cache + `tools/list` middleware), register `PlansController`. Any of those errors fail `New`. Help `Lookup` is not called at `New`.
+1. `engine.New` applies defaults, constructs `mcpgw.Gateway` and `apiv1.Router`, registers health. If `ArazzoLoaders` is non-empty: validate tool-doc templates, `plans.Load`, optional `PolicyCache` from `PolicyLoader`, `plans.RegisterMCP` (help cache + `tools/list` middleware), register `PlansController`. Any of those errors fail `New`. Help `Lookup` and policy `Load` are not called at `New`.
 2. Caller may `mcp.AddTool` on `Engine.MCP()` and `AddController`.
 3. `Handler()` calls `httpserver.NewMux` once.
 4. `ListenAndServe` binds TCP, serves, and on context cancel calls `Shutdown` (10s) then `Close` if shutdown fails. In-flight GET SSE ends when request contexts cancel.

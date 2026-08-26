@@ -30,7 +30,7 @@ sourceDescriptions:
 workflows:
   - workflowId: retrievePet
     summary: Find a pet by status
-    description: Logs the user in and returns details of a pet with the given status.
+    description: Logs the user in and returns details of a pet. Availability status comes from inbound policy hints (`$inputs.policyHints.petStatus`).
     inputs:
       type: object
       required: [username, password, status]
@@ -42,6 +42,10 @@ workflows:
         status:
           type: string
           enum: [available, pending, sold]
+        policyHints:
+          type: object
+          description: Injected by inbound policy. Do not send; caller values are ignored.
+          additionalProperties: true
     steps:
       - stepId: loginStep
         description: User login
@@ -63,7 +67,7 @@ workflows:
         parameters:
           - name: status
             in: query
-            value: $inputs.status
+            value: $inputs.policyHints.petStatus
           - name: Authorization
             in: header
             value: $steps.loginStep.outputs.sessionToken

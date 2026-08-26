@@ -1,4 +1,3 @@
-// Copyright 2026 Fidelity Investments. All rights reserved.
 // Use of this source code is governed by the Apache 2.0 license
 // that can be found in the LICENSE file.
 
@@ -127,6 +126,16 @@ type Options struct {
 	// If zero, [arazzo.DefaultToolHelpCacheTTL] (5m) is used. A negative
 	// duration disables caching (every list calls Lookup).
 	ToolHelpCacheTTL time.Duration
+
+	// PolicyLoader returns optional OPA inbound/outbound modules for a
+	// plan version. Lookups run on execute, not during [New]. Nil skips
+	// all policy checks. Do not load .rego files through [Loader].
+	PolicyLoader arazzo.PolicyLoader
+
+	// PolicyCacheTTL is how long a compiled policy bundle is reused.
+	// If zero, [arazzo.DefaultPolicyCacheTTL] (5m) is used. A negative
+	// duration disables caching (every Run loads and compiles).
+	PolicyCacheTTL time.Duration
 }
 
 // Engine is a thin facade over internal/mcpgw, internal/httpserver,
@@ -147,7 +156,8 @@ type Engine struct {
 // [Options.ArazzoLoaders] is set, plans are loaded and MCP run_* tools
 // plus REST plan routes are registered. MCP query and
 // POST {APIPrefix}/plans/query are added only when [Options.QueryMatcher]
-// is set. [Options.DualMCPandREST], [Options.MCPOnly], and
+// is set. [Options.PolicyLoader] is consulted on execute, not here.
+// [Options.DualMCPandREST], [Options.MCPOnly], and
 // [Options.RESTOnly] control which HTTP surfaces [Engine.Handler]
 // mounts; all false serves REST only. Load or template errors fail
 // construction. Help registry I/O is deferred until tools/list.
@@ -188,6 +198,9 @@ func New(opts Options) (*Engine, error) {
 			return nil, err
 		}
 		runner := plans.NewRunner(catalog, opts.ArazzoExecutor, opts.QueryMatcher)
+		if opts.PolicyLoader != nil {
+			runner.SetPolicy(plans.NewPolicyCache(opts.PolicyLoader, opts.PolicyCacheTTL, opts.Logger))
+		}
 		help, err := plans.RegisterMCP(gw.Server(), catalog, runner, plans.RegisterMCPConfig{
 			Templates:     opts.ToolDoc,
 			HelpLookup:    opts.ToolHelpLookup,
@@ -236,6 +249,9 @@ func applyDefaults(opts Options) Options {
 	}
 	if opts.ToolHelpCacheTTL == 0 {
 		opts.ToolHelpCacheTTL = arazzo.DefaultToolHelpCacheTTL
+	}
+	if opts.PolicyCacheTTL == 0 {
+		opts.PolicyCacheTTL = arazzo.DefaultPolicyCacheTTL
 	}
 	return opts
 }

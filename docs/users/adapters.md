@@ -7,11 +7,12 @@ The engine is a host. You supply the pieces that talk to **your** catalogs, back
 | [`Loader`](#loader) | `ArazzoLoaders` | For plans | Produce Arazzo document bytes |
 | [`Executor`](#executor) | `ArazzoExecutor` | For execute | Perform one backend HTTP call per workflow step |
 | [`QueryMatcher`](#querymatcher) | `QueryMatcher` | For `query` | Select a plan from a (usually global) registry |
+| [`PolicyLoader`](#policyloader) | `PolicyLoader` | No | Optional OPA inbound/outbound modules per plan version |
 | [`ToolHelpLookup`](#toolhelplookup) | `ToolHelpLookup` | No | Per-plan / query title and description templates at list time |
 | [`ToolDocTemplates`](#tooldoctemplates) | `ToolDoc` | No | Global name/title/description recipes |
 | [`Controller`](#rest-controllers) | `AddController` | No | Extra REST routes under `APIPrefix` |
 
-Nil `ArazzoLoaders`: no plan tools or plan REST. Nil `ArazzoExecutor`: catalog and OpenAPI still work; execute is **501**. Nil `QueryMatcher`: MCP `query` and `POST /plans/query` are **not** registered. Nil `ToolHelpLookup`: built-in / `ToolDoc` recipes.
+Nil `ArazzoLoaders`: no plan tools or plan REST. Nil `ArazzoExecutor`: catalog and OpenAPI still work; execute is **501**. Nil `QueryMatcher`: MCP `query` and `POST /plans/query` are **not** registered. Nil `PolicyLoader`: skip inbound/outbound checks. Nil `ToolHelpLookup`: built-in / `ToolDoc` recipes.
 
 Do not import `internal/`. All types below live in `github.com/mevansam/context-mesh-engine/arazzo` or `.../api`.
 
@@ -39,7 +40,7 @@ type Source struct {
 arazzo.NewFileLoader("/path/to/plans")
 ```
 
-Walks **recursively** for `.yaml`, `.yml`, and `.json`. Point it at the **plans directory**, not a tree that also contains OpenAPI files you do not want parsed as Arazzo.
+Walks **recursively** for `.yaml`, `.yml`, and `.json`. Point it at the **plans directory**, not a tree that also contains OpenAPI files you do not want parsed as Arazzo. It does **not** load `.rego` files; use [`PolicyLoader`](#policyloader).
 
 `Source.BaseURL` is `file://` + the Arazzo file’s directory **with a trailing slash**. Relative `sourceDescriptions[].url` values resolve against that directory (`../sources/openapi.yaml` is the intended layout). Without the trailing slash, `../` climbs one extra level (RFC 3986).
 
@@ -337,6 +338,65 @@ Replace the map with HTTP, SQL, or an agent-memory store. Keep `Lookup` cheap: l
 
 ---
 
+## PolicyLoader
+
+Optional OPA modules for a `(planId, version)`. Loaded **on execute** (MCP `run_*`, REST, `query`), not in `engine.New`. A bundle may include inbound, outbound, or both.
+
+```go
+type PolicyLoader interface {
+    Load(ctx context.Context, req PolicyRequest) (*PolicyBundle, error)
+}
+
+type PolicyRequest struct {
+    PlanID  string
+    Version string
+}
+
+type PolicyBundle struct {
+    Inbound  []byte // package plan.inbound; empty = no inbound
+    Outbound []byte // package plan.outbound; empty = no outbound
+    Data     []byte // optional JSON object for OPA document data
+}
+```
+
+Nil `*PolicyBundle` → skip both phases for that key. Nil `Options.PolicyLoader` → skip policy for every plan.
+
+Do **not** return `.rego` files from [`Loader`](#loader). Keep Arazzo specs and policy modules in separate trees.
+
+### Built-in filesystem loader
+
+```go
+&arazzo.FilePolicyLoader{
+    Dir:  "/etc/policies",
+    Data: map[string]any{"petstoreBase": "http://localhost:8090/api/v3"},
+}
+```
+
+Layout: `{Dir}/{planId}/{version}/inbound.rego` and/or `outbound.rego`, optional `data.json`. `Data` overlay keys win over `data.json`. `planId` and `version` must be single path segments (no `..` or slashes). Missing directory or modules → nil bundle, not an error.
+
+Successful compiles are cached for `Options.PolicyCacheTTL` (default **5m**). Zero in `Options` means that default. A **negative** duration disables caching. Load/compile errors fail the request (**500**) unless a previously compiled bundle with modules is still in cache. Deny is **403** and does not return workflow outputs.
+
+### Inbound and outbound
+
+Query `data.plan.inbound` before the workflow runs, and `data.plan.outbound` after success. Decisions are objects:
+
+```json
+{ "allow": true, "hints": { "petStatus": "available" } }
+```
+
+```json
+{ "allow": true, "redact": ["/pet/photoUrls"], "mask": "***" }
+```
+
+- Default **deny**: missing or non-boolean `allow` is deny. Use `default allow := false` in Rego.
+- On inbound allow, `hints` (if present) is written to workflow input `$inputs.policyHints`. Caller-supplied `policyHints` is discarded.
+- If there is no inbound module, `policyHints` is not injected.
+- Outbound deny → **403**; outputs are not returned (the workflow has already run).
+- Outbound `outputs` object, if present, **replaces** workflow outputs and ignores `redact`.
+- Otherwise `redact` is RFC 6901 JSON Pointers into outputs. Missing pointers are skipped; malformed pointers deny. Default `mask` is JSON `null`.
+
+---
+
 ## ToolDocContext
 
 Data bag passed to `ToolDoc` and help templates.
@@ -421,6 +481,8 @@ e, err := engine.New(engine.Options{
     QueryMatcher:     registryMatcher{/* vector index */},
     ToolHelpLookup:   helpRegistry{/* CMS or DB */},
     ToolHelpCacheTTL: 5 * time.Minute,
+    PolicyLoader:     arazzo.NewFilePolicyLoader("/etc/policies"),
+    PolicyCacheTTL:   5 * time.Minute,
 })
 if err != nil {
     log.Fatal(err)

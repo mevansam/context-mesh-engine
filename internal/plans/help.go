@@ -1,4 +1,3 @@
-// Copyright 2026 Fidelity Investments. All rights reserved.
 // Use of this source code is governed by the Apache 2.0 license
 // that can be found in the LICENSE file.
 
@@ -7,10 +6,12 @@ package plans
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
+	"github.com/mevansam/context-mesh-engine/internal/ttlcache"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -35,31 +36,22 @@ func (t helpTarget) key() string {
 	return t.planID + "\x00" + t.version
 }
 
-func (t helpTarget) req() arazzo.ToolHelpRequest {
-	return arazzo.ToolHelpRequest{Kind: t.kind, PlanID: t.planID, Version: t.version}
-}
-
-type cacheEntry struct {
-	help  arazzo.ToolHelp
-	until time.Time
-	have  bool
-}
-
-type inflight struct {
-	wg sync.WaitGroup
+func helpRequest(key string) arazzo.ToolHelpRequest {
+	if key == "query" {
+		return arazzo.ToolHelpRequest{Kind: arazzo.ToolHelpKindQuery}
+	}
+	planID, version, _ := strings.Cut(key, "\x00")
+	return arazzo.ToolHelpRequest{Kind: arazzo.ToolHelpKindPlan, PlanID: planID, Version: version}
 }
 
 // HelpCache looks up title/description templates on tools/list and GET /tools.
 type HelpCache struct {
 	tmpls  arazzo.ToolDocTemplates
-	lookup arazzo.ToolHelpLookup
-	ttl    time.Duration
 	logger *slog.Logger
 
-	mu       sync.Mutex
-	targets  map[string]helpTarget
-	entries  map[string]cacheEntry
-	inflight map[string]*inflight
+	mu      sync.Mutex
+	targets map[string]helpTarget
+	cache   *ttlcache.Cache[string, arazzo.ToolHelp]
 }
 
 func newHelpCache(tmpls arazzo.ToolDocTemplates, lookup arazzo.ToolHelpLookup, ttl time.Duration, logger *slog.Logger) *HelpCache {
@@ -69,18 +61,22 @@ func newHelpCache(tmpls arazzo.ToolDocTemplates, lookup arazzo.ToolHelpLookup, t
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if ttl < 0 {
-		ttl = 0
+	c := &HelpCache{
+		tmpls:   arazzo.MergeTemplates(tmpls),
+		logger:  logger,
+		targets: map[string]helpTarget{},
 	}
-	return &HelpCache{
-		tmpls:    arazzo.MergeTemplates(tmpls),
-		lookup:   lookup,
-		ttl:      ttl,
-		logger:   logger,
-		targets:  map[string]helpTarget{},
-		entries:  map[string]cacheEntry{},
-		inflight: map[string]*inflight{},
-	}
+	c.cache = ttlcache.New(ttl, func(ctx context.Context, key string) (arazzo.ToolHelp, error) {
+		got, err := lookup.Lookup(ctx, helpRequest(key))
+		if err != nil {
+			return arazzo.ToolHelp{}, err
+		}
+		if got == nil {
+			return arazzo.ToolHelp{}, nil
+		}
+		return *got, nil
+	})
+	return c
 }
 
 func (c *HelpCache) add(name string, tgt helpTarget) {
@@ -143,65 +139,11 @@ func (c *HelpCache) apply(ctx context.Context, res *mcp.ListToolsResult, surface
 	}
 }
 
-func (c *HelpCache) fresh(e cacheEntry) bool {
-	if !e.have || c.ttl <= 0 {
-		return false
-	}
-	return time.Now().Before(e.until)
-}
-
 func (c *HelpCache) get(ctx context.Context, tgt helpTarget) arazzo.ToolHelp {
-	key := tgt.key()
-
-	c.mu.Lock()
-	if e, ok := c.entries[key]; ok && c.fresh(e) {
-		c.mu.Unlock()
-		return e.help
-	}
-	if f, ok := c.inflight[key]; ok {
-		c.mu.Unlock()
-		f.wg.Wait()
-		c.mu.Lock()
-		e := c.entries[key]
-		c.mu.Unlock()
-		if e.have {
-			return e.help
-		}
-		return arazzo.ToolHelp{}
-	}
-	f := &inflight{}
-	f.wg.Add(1)
-	c.inflight[key] = f
-	stale, haveStale := c.entries[key]
-	c.mu.Unlock()
-
-	defer func() {
-		c.mu.Lock()
-		delete(c.inflight, key)
-		c.mu.Unlock()
-		f.wg.Done()
-	}()
-
-	var help arazzo.ToolHelp
-	got, err := c.lookup.Lookup(ctx, tgt.req())
+	help, err := c.cache.Get(ctx, tgt.key())
 	if err != nil {
 		c.logger.Warn("tool help lookup failed",
 			"kind", tgt.kind, "planId", tgt.planID, "version", tgt.version, "err", err)
-		if haveStale && stale.have {
-			return stale.help
-		}
-		return arazzo.ToolHelp{}
 	}
-	if got != nil {
-		help = *got
-	}
-
-	c.mu.Lock()
-	e := cacheEntry{help: help, have: true}
-	if c.ttl > 0 {
-		e.until = time.Now().Add(c.ttl)
-	}
-	c.entries[key] = e
-	c.mu.Unlock()
 	return help
 }

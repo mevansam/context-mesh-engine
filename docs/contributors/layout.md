@@ -17,7 +17,7 @@ context-mesh-engine/
     petstore/                    Petstore e2e: mcp-server + async-order-server
   engine/                        Public facade: New, Handler, ListenAndServe
   api/                           Public facade: Controller, JSON helpers, HealthResponse
-  arazzo/                        Public Loader, FileLoader, Executor, QueryMatcher, ToolDoc, ToolHelpLookup
+  arazzo/                        Public Loader, FileLoader, PolicyLoader, Executor, QueryMatcher, ToolDoc, ToolHelpLookup
   testdata/arazzo/
     plans/                       Arazzo fixtures (FileLoader root; not testdata/arazzo/)
     sources/openapi.yaml         OpenAPI referenced as ../sources/openapi.yaml
@@ -29,7 +29,8 @@ context-mesh-engine/
     api/v1/health.go             GET /health
     api/v1/tools.go              GET /tools (MCP envelope; REST descriptions for Arazzo tools)
     api/v1/plans.go              POST /plans, GET /openapi
-    plans/                       Catalog, runner, MCP tools, OAS generator
+    plans/                       Catalog, runner, MCP tools, OAS generator, OPA eval
+    ttlcache/                    Generic singleflight TTL cache (help + policy)
 ```
 
 ## Import rules
@@ -59,6 +60,8 @@ context-mesh-engine/
 | `api/health.go` | `HealthResponse` |
 | `arazzo/loader.go` | `Loader`, `Source`, `Executor` / request / response aliases |
 | `arazzo/fileloader.go` | Recursive filesystem loader; `BaseURL` trailing slash |
+| `arazzo/policy.go` | `PolicyLoader`, `PolicyBundle`, `PolicyHintsKey` |
+| `arazzo/filepolicy.go` | Filesystem policy layout `{planId}/{version}/*.rego` |
 | `arazzo/tooldoc.go` | Templates + `ToolDocContext` |
 | `arazzo/toolhelp.go` | `ToolHelpLookup` + overlay |
 | `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
@@ -75,11 +78,14 @@ context-mesh-engine/
 | `api/v1/tools.go` | `GET /tools` (MCP envelope; REST descriptions for Arazzo tools) |
 | `api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; error mapping |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
-| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; workflow outputs |
+| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; workflow outputs |
+| `plans/policy.go` | Compile/eval OPA; TTL cache via `internal/ttlcache` |
+| `plans/redact.go` | RFC 6901 redaction of workflow outputs |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
 | `plans/openapi.go` | OAS 3.1 JSON (paths **without** `APIPrefix`) |
 | `plans/mcp.go` | `query` + `run_*` tools |
-| `plans/help.go` | Help TTL cache + `tools/list` overlay |
+| `plans/help.go` | Help TTL cache + `tools/list` overlay (`internal/ttlcache`) |
+| `ttlcache/cache.go` | Generic singleflight TTL cache |
 
 ## Tests as the contract
 

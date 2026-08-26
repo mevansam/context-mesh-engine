@@ -1,4 +1,3 @@
-// Copyright 2026 Fidelity Investments. All rights reserved.
 // Use of this source code is governed by the Apache 2.0 license
 // that can be found in the LICENSE file.
 
@@ -32,11 +31,19 @@ type Runner struct {
 	catalog  *Catalog
 	executor libarazzo.Executor
 	matcher  arazzo.QueryMatcher
+	policy   *PolicyCache
 }
 
 // NewRunner wires a catalog to a (possibly nil) executor and query matcher.
 func NewRunner(catalog *Catalog, executor libarazzo.Executor, matcher arazzo.QueryMatcher) *Runner {
 	return &Runner{catalog: catalog, executor: executor, matcher: matcher}
+}
+
+// SetPolicy attaches an on-demand OPA cache. Nil disables inbound/outbound checks.
+func (r *Runner) SetPolicy(p *PolicyCache) {
+	if r != nil {
+		r.policy = p
+	}
 }
 
 // Catalog returns the loaded plans.
@@ -66,11 +73,28 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 	if !found {
 		return nil, fmt.Errorf("%w: workflow %s", ErrNotFound, workflowID)
 	}
+
+	runInputs := inputs
+	var compiled compiledPolicy
+	if r.policy != nil {
+		var err error
+		compiled, err = r.policy.get(ctx, planID, version)
+		if err != nil {
+			return nil, err
+		}
+		if compiled.inbound != nil {
+			runInputs, err = applyInbound(ctx, compiled.inbound, planID, version, workflowID, inputs)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if r.executor == nil {
 		return nil, ErrNoExecutor
 	}
 	eng := libarazzo.NewEngine(e.Doc, r.executor, e.Sources)
-	res, err := eng.RunWorkflow(ctx, workflowID, inputs)
+	res, err := eng.RunWorkflow(ctx, workflowID, runInputs)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +104,14 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		}
 		return nil, fmt.Errorf("workflow %s failed", workflowID)
 	}
-	return nativeOutputs(res.Outputs), nil
+	out := nativeOutputs(res.Outputs)
+	if compiled.outbound != nil {
+		out, err = applyOutbound(ctx, compiled.outbound, planID, version, workflowID, runInputs, out)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // nativeOutputs converts libopenapi output values to JSON-friendly Go types.

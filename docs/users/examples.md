@@ -117,13 +117,14 @@ Three processes:
 | --- | --- |
 | [`Loader`](adapters.md#loader) | `FileLoader` on `mcp-server/plans/` |
 | [`Executor`](adapters.md#executor) | HTTP client: OpenAPI operations against Petstore 3, AsyncAPI operations against the local adapter |
-| [`QueryMatcher`](adapters.md#querymatcher) | **unset** — `query` is not registered; callers use `run_petstore_v1.0.1` or REST execute |
+| [`PolicyLoader`](adapters.md#policyloader) | `FilePolicyLoader` on `mcp-server/policies/` (`petstore/0.0.1`); `userStatus` 1 → `retrievePet` only, 2 → retrieve/purchase/check order |
+| [`QueryMatcher`](adapters.md#querymatcher) | **unset** — `query` is not registered; callers use `run_petstore_v0.0.1` or REST execute |
 
 Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. Generated `GET /api/openapi/petstore` describes those execute paths. `GET /api/tools` is the REST form of MCP `tools/list` (same names/schemas; REST-specific Arazzo descriptions).
 
 **When to copy:** you are implementing an HTTP `Executor`, wiring `sourceDescriptions` to live origins, or showing an agent a real `run_*` tool. For natural-language `query`, start from [arazzo-fs](#arazzo-fs) and keep this executor.
 
-Default Petstore target is local Docker (`-petstore local`). `-petstore hosted` uses [petstore3.swagger.io](https://petstore3.swagger.io/) (often flaky). Runbook, login (`user1` / `abc123`), and MCP agent prompts: the [petstore README](../../examples/petstore/README.md).
+Default Petstore target is local Docker (`-petstore local`). `-petstore hosted` uses [petstore3.swagger.io](https://petstore3.swagger.io/) (often flaky). Seed `userStatus` (1 vs 2), login, and MCP agent prompts: the [petstore README](../../examples/petstore/README.md).
 
 ```bash
 ./examples/petstore/petstore-openapi-server/run.sh   # Docker Petstore on :8090
@@ -135,7 +136,7 @@ go run ./examples/petstore/mcp-server -dual           # also /mcp
 ```bash
 curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
   -H 'Content-Type: application/json' \
-  -d '{"username":"user1","password":"abc123","status":"available"}'
+  -d '{"username":"browser","password":"abc123","status":"available"}'
 ```
 
 ---
@@ -146,6 +147,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
 | --- | --- |
 | Every `Options` field | [Configuration](configuration.md#options-reference) |
 | Implementing `ToolHelpLookup` | [Adapters — ToolHelpLookup](adapters.md#toolhelplookup) |
+| Implementing `PolicyLoader` | [Adapters — PolicyLoader](adapters.md#policyloader) |
 | Custom REST `Controller` | [Adapters — REST controllers](adapters.md#rest-controllers) |
 | MCP client headers | [Configuration — MCP client](configuration.md#mcp-client) |
 

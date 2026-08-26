@@ -125,6 +125,13 @@ How documents are loaded, executed, and exposed: [Arazzo plans](arazzo.md).
 
 Names stay on `ToolDoc.Name` / `QueryName`. They are never supplied by `ToolHelpLookup`.
 
+### Policy
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `PolicyLoader` | `arazzo.PolicyLoader` | `nil` | Optional OPA inbound/outbound modules per plan version. Looked up on execute, not during `New`. Nil skips all policy checks. See [`PolicyLoader`](adapters.md#policyloader). Do not load `.rego` through `ArazzoLoaders`. |
+| `PolicyCacheTTL` | `time.Duration` | `5m` (`arazzo.DefaultPolicyCacheTTL`) | How long a compiled bundle is reused. Zero in `Options` means that default. A **negative** duration disables caching (every `Run` loads and compiles). |
+
 ## Start the server
 
 ### Engine-owned listener

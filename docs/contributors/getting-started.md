@@ -13,8 +13,8 @@ See [layout.md](layout.md) for the full map.
 | `internal/httpserver` | root mux, `http.Server`, shutdown |
 | `internal/mcpgw` | shared `mcp.Server` + Streamable HTTP handler options |
 | `internal/api`, `internal/api/v1` | JSON helpers, REST router, health, plans HTTP |
-| `internal/plans` | catalog, runner, MCP tool registration, OAS JSON |
-| `arazzo/` | public `Loader` / `Executor` / templates |
+| `internal/plans` | catalog, runner, MCP tool registration, OAS JSON, OPA |
+| `arazzo/` | public `Loader` / `PolicyLoader` / `Executor` / templates |
 | `engine/`, `api/` | thin public facades only |
 | `docs/users/` vs `docs/contributors/` | keep the two audiences separate |
 
@@ -56,8 +56,9 @@ Targeted tests:
 | --- | --- |
 | `go test ./engine -run TestHandler_` | mux contract: health, MCP handshake, SSE GET 400, REST ≠ MCP |
 | `go test ./engine -run TestArazzo_` | plan MCP tools, REST execute, OpenAPI, query matcher, 501, shared runner |
-| `go test ./internal/plans` | catalog skip/duplicate/latest, runner, schema, OAS JSON |
-| `go test ./arazzo` | FileLoader, template render |
+| `go test ./internal/plans` | catalog skip/duplicate/latest, runner, schema, OAS JSON, OPA, help cache |
+| `go test ./internal/ttlcache` | generic TTL cache |
+| `go test ./arazzo` | FileLoader, FilePolicyLoader, template render |
 | `go test ./examples/petstore/mcp-server` | petstore Arazzo plan loads |
 | `go test ./examples/petstore/async-order-server` | async adapter place/confirm |
 

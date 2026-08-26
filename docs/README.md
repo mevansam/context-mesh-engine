@@ -8,7 +8,7 @@ docs/
   users/                    application authors (import this module)
     getting-started.md      install, sample binary, first embed
     configuration.md        Options, serve modes, ListenAndServe vs Handler, routes
-    adapters.md             Loader, Executor, QueryMatcher, ToolHelpLookup, Controller
+    adapters.md             Loader, Executor, QueryMatcher, PolicyLoader, ToolHelpLookup, Controller
     arazzo.md               spec rules, MCP/REST contracts, OpenAPI
     examples.md             what each example demonstrates
   contributors/             people changing this repository
@@ -28,7 +28,7 @@ Do not import `internal/`.
 
 1. [Getting started](users/getting-started.md) — requirements, sample binary, first library snippet.
 2. [Configuration](users/configuration.md) — every `Options` field, serve modes, starting the server, routes.
-3. [Adapters](users/adapters.md) — implement loaders, executors, query matchers, tool help, REST controllers.
+3. [Adapters](users/adapters.md) — implement loaders, executors, query matchers, policy, tool help, REST controllers.
 4. [Arazzo plans](users/arazzo.md) — spec requirements, MCP `query` / `run_*`, REST execute, generated OpenAPI.
 5. [Examples](users/examples.md) — what each program demonstrates; run details in `examples/*/README.md`.
 

@@ -1,10 +1,9 @@
-// Copyright 2026 Fidelity Investments. All rights reserved.
 // Use of this source code is governed by the Apache 2.0 license
 // that can be found in the LICENSE file.
 
 // Package arazzo is the public plugin surface for loading Arazzo specs,
-// executing workflow steps, matching queries to plans, and documenting
-// generated MCP tools.
+// executing workflow steps, matching queries to plans, documenting
+// generated MCP tools, and loading optional OPA policy bundles.
 package arazzo
 
 import (

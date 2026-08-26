@@ -1,4 +1,3 @@
-// Copyright 2026 Fidelity Investments. All rights reserved.
 // Use of this source code is governed by the Apache 2.0 license
 // that can be found in the LICENSE file.
 
@@ -146,6 +145,10 @@ func writeRunError(w http.ResponseWriter, err error) {
 		iapi.WriteError(w, http.StatusNotImplemented, err.Error())
 	case errors.Is(err, plans.ErrNotFound):
 		iapi.WriteError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, plans.ErrPolicyDenied):
+		iapi.WriteError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, plans.ErrPolicyLoad):
+		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
 	default:
 		iapi.WriteError(w, http.StatusBadRequest, err.Error())
 	}

@@ -102,6 +102,6 @@ Runnable copies: [minimal](examples.md#minimal) (`ListenAndServe`) and [embed-ha
 ## Reading order
 
 1. **[Configuration](configuration.md)** — every `Options` field, serve modes, `ListenAndServe` vs `Handler()`, routes.
-2. **[Adapters](adapters.md)** — implement `Loader`, `Executor`, `QueryMatcher`, `ToolHelpLookup`, REST controllers.
+2. **[Adapters](adapters.md)** — implement `Loader`, `Executor`, `QueryMatcher`, `PolicyLoader`, `ToolHelpLookup`, REST controllers.
 3. **[Arazzo plans](arazzo.md)** — spec requirements, MCP `run_*` / `query`, REST execute, generated OpenAPI.
 4. **[Examples](examples.md)** — what each program demonstrates and when to copy it.

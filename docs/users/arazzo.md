@@ -45,7 +45,7 @@ Skipped (log a warning, do not fail `New`):
 - no `info`
 - empty `x-planId`
 - empty `info.version`
-- non-`.yaml` / `.yml` / `.json` files (`FileLoader` never opens them)
+- non-`.yaml` / `.yml` / `.json` files (`FileLoader` never opens them, including `.rego`)
 
 `New` fails when:
 
@@ -70,6 +70,7 @@ e, err := engine.New(engine.Options{
     },
     ArazzoExecutor: myExecutor{}, // nil: OpenAPI works; execute is 501
     QueryMatcher:   myMatcher{},  // nil: query tool and POST /plans/query are omitted
+    PolicyLoader:   arazzo.NewFilePolicyLoader("/path/to/policies"), // nil: skip OPA
     PublicBaseURL:  "http://localhost:8080",
     DualMCPandREST: true,         // also mount /mcp; default is REST only
 })
@@ -142,7 +143,9 @@ Generated OpenAPI `200` schemas use those output names as object properties.
 | --- | --- |
 | 200 | Workflow succeeded; body is outputs |
 | 400 | Invalid JSON body, workflow failed, or other runner error |
+| 403 | Inbound or outbound OPA policy denied |
 | 404 | Unknown `planId`, version, or `workflowId` |
+| 500 | Policy bundle load/compile failed (fail closed) |
 | 501 | `ArazzoExecutor` is nil |
 
 Body on error: `{"error":"<message>"}`.
@@ -199,6 +202,15 @@ MCP and REST **share** tool names and titles. **Descriptions** are transport-spe
 
 Help lookups run on `tools/list` / `GET /tools`, not at `New`. Lookup errors do not fail the list. Cache TTL defaults to 5 minutes; a negative duration always refreshes.
 
+## OPA policy
+
+Optional inbound/outbound [OPA](https://www.openpolicyagent.org/) modules run on every execute path (`run_*`, REST, `query`). Wire [`PolicyLoader`](adapters.md#policyloader); do not put `.rego` files on `ArazzoLoaders`.
+
+- **Inbound** (`data.plan.inbound`) runs before the workflow. Allow may set `$inputs.policyHints`. Deny is **403** and the workflow does not run.
+- **Outbound** (`data.plan.outbound`) runs after success. Deny is **403** and outputs are not returned. `redact` / `outputs` may reshape the response.
+
+A missing bundle for that `(planId, version)` skips both phases. Load/compile errors fail closed (**500**) unless a compiled bundle is still cached.
+
 ## Sample binary
 
 ```bash
@@ -211,6 +223,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 
 - Set `ArazzoLoaders`; otherwise plan routes and `run_*` tools do not exist.
 - Point `FileLoader` at the plans dir only; OpenAPI sources stay beside it (`../sources/...`).
+- Optional [`PolicyLoader`](adapters.md#policyloader) for inbound/outbound OPA; keep `.rego` out of the Arazzo loader tree.
 - Implement [`Executor`](adapters.md#executor); nil is 501 on execute, OpenAPI still works.
 - Implement [`QueryMatcher`](adapters.md#querymatcher) to publish MCP `query` / `POST /plans/query`; nil omits both.
 - MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
