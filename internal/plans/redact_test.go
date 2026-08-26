@@ -52,8 +52,30 @@ func TestApplyRedact_Malformed(t *testing.T) {
 }
 
 func TestCloneJSONMap_Empty(t *testing.T) {
-	got, err := cloneJSONMap(nil)
-	if err != nil || !reflect.DeepEqual(got, map[string]any{}) {
-		t.Fatalf("got %#v %v", got, err)
+	got := cloneJSONMap(nil)
+	if !reflect.DeepEqual(got, map[string]any{}) {
+		t.Fatalf("got %#v", got)
+	}
+}
+
+func TestApplyRedact_PreservesInt64(t *testing.T) {
+	const id int64 = 9056269108963012608
+	in := map[string]any{
+		"orderId": id,
+		"nested":  map[string]any{"n": id},
+		"secret":  "x",
+	}
+	out, err := applyRedact(in, []string{"/secret"}, "***")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["orderId"] != id {
+		t.Fatalf("orderId = %#v (%T)", out["orderId"], out["orderId"])
+	}
+	if out["nested"].(map[string]any)["n"] != id {
+		t.Fatalf("nested = %#v", out["nested"])
+	}
+	if in["secret"] != "x" {
+		t.Fatal("original mutated")
 	}
 }

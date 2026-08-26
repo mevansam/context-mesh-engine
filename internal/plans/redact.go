@@ -4,37 +4,51 @@
 package plans
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 )
 
-func cloneJSONMap(in map[string]any) (map[string]any, error) {
+func cloneJSONMap(in map[string]any) map[string]any {
 	if in == nil {
-		return map[string]any{}, nil
+		return map[string]any{}
 	}
-	b, err := json.Marshal(in)
-	if err != nil {
-		return nil, err
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = cloneJSONValue(v)
 	}
-	var out map[string]any
-	if err := json.Unmarshal(b, &out); err != nil {
-		return nil, err
+	return out
+}
+
+func cloneJSONValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		if t == nil {
+			return map[string]any(nil)
+		}
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[k] = cloneJSONValue(val)
+		}
+		return out
+	case []any:
+		if t == nil {
+			return []any(nil)
+		}
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = cloneJSONValue(item)
+		}
+		return out
+	default:
+		return v
 	}
-	if out == nil {
-		out = map[string]any{}
-	}
-	return out, nil
 }
 
 // applyRedact sets each RFC 6901 pointer in doc to mask. Missing pointers
 // are skipped. Malformed pointers or a pointer to the document root fail.
 func applyRedact(doc map[string]any, pointers []string, mask any) (map[string]any, error) {
-	out, err := cloneJSONMap(doc)
-	if err != nil {
-		return nil, err
-	}
+	out := cloneJSONMap(doc)
 	var root any = out
 	for _, p := range pointers {
 		next, err := redactAt(root, p, mask)
