@@ -30,11 +30,12 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 }
 
 // ReadJSON decodes a JSON request body into v.
-func ReadJSON(r *http.Request, v any) error {
+// w is passed to [http.MaxBytesReader] so an oversized body can close the connection.
+func ReadJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	if r.Body == nil {
 		return fmt.Errorf("empty body")
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxJSONBody))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return err

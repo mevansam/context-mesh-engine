@@ -41,7 +41,7 @@ func (c *PlansController) postQuery(w http.ResponseWriter, r *http.Request) {
 		Data  map[string]any `json:"data"`
 	}
 	if r.Body != nil {
-		dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 		dec.UseNumber()
 		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 			iapi.WriteError(w, http.StatusBadRequest, "invalid json body")
@@ -83,7 +83,7 @@ func (c *PlansController) postVersioned(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *PlansController) execute(w http.ResponseWriter, r *http.Request, planID, version, workflowID string) {
-	inputs, err := decodeJSONObject(r)
+	inputs, err := decodeJSONObject(w, r)
 	if err != nil {
 		iapi.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
@@ -96,11 +96,11 @@ func (c *PlansController) execute(w http.ResponseWriter, r *http.Request, planID
 	iapi.WriteJSON(w, http.StatusOK, res)
 }
 
-func decodeJSONObject(r *http.Request) (map[string]any, error) {
+func decodeJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
-	inputs, err := iapi.DecodeMap(http.MaxBytesReader(nil, r.Body, 1<<20))
+	inputs, err := iapi.DecodeMap(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, nil

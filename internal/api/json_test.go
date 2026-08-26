@@ -5,6 +5,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -63,14 +64,14 @@ func TestCanonicalJSON_FloatSliceAndString(t *testing.T) {
 func TestReadJSON_OKAndUnknownField(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"error":"x"}`))
 	var body ErrorBody
-	if err := ReadJSON(req, &body); err != nil {
+	if err := ReadJSON(httptest.NewRecorder(), req, &body); err != nil {
 		t.Fatal(err)
 	}
 	if body.Error != "x" {
 		t.Fatalf("error = %q", body.Error)
 	}
 	req = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"nope":1}`))
-	if err := ReadJSON(req, &body); err == nil {
+	if err := ReadJSON(httptest.NewRecorder(), req, &body); err == nil {
 		t.Fatal("expected unknown field error")
 	}
 }
@@ -89,8 +90,21 @@ func TestReadJSON_EmptyBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req.Body = nil
 	var got map[string]any
-	if err := ReadJSON(req, &got); err == nil {
+	if err := ReadJSON(httptest.NewRecorder(), req, &got); err == nil {
 		t.Fatal("expected empty body error")
+	}
+}
+
+func TestReadJSON_TooLarge(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"x":"`+strings.Repeat("a", maxJSONBody)+`"}`))
+	var got map[string]any
+	err := ReadJSON(httptest.NewRecorder(), req, &got)
+	if err == nil {
+		t.Fatal("expected too-large error")
+	}
+	var maxErr *http.MaxBytesError
+	if !errors.As(err, &maxErr) {
+		t.Fatalf("err = %v (%T)", err, err)
 	}
 }
 

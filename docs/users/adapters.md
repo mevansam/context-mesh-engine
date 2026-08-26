@@ -432,10 +432,10 @@ type Controller interface {
 
 func WriteJSON(w http.ResponseWriter, status int, v any)
 func WriteError(w http.ResponseWriter, status int, msg string)
-func ReadJSON(r *http.Request, v any) error
+func ReadJSON(w http.ResponseWriter, r *http.Request, v any) error
 ```
 
-`ReadJSON` rejects unknown JSON fields and caps the body at **1 MiB**. Plan execute POST does **not** use `ReadJSON` (unknown fields allowed; same 1 MiB cap).
+`ReadJSON` rejects unknown JSON fields and caps the body at **1 MiB**. The `ResponseWriter` is passed to `http.MaxBytesReader` so an oversized body can close the connection. Plan execute POST does **not** use `ReadJSON` (unknown fields allowed; same 1 MiB cap).
 
 The mux passed to `Register` is already stripped of `Options.APIPrefix`. Pattern `GET /items` is `GET {APIPrefix}/items`.
 
@@ -453,7 +453,7 @@ func (c *ItemsController) list(w http.ResponseWriter, r *http.Request) {
 
 func (c *ItemsController) create(w http.ResponseWriter, r *http.Request) {
     var body map[string]any
-    if err := api.ReadJSON(r, &body); err != nil {
+    if err := api.ReadJSON(w, r, &body); err != nil {
         api.WriteError(w, http.StatusBadRequest, err.Error())
         return
     }

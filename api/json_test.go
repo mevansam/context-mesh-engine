@@ -36,7 +36,7 @@ func TestWriteJSON(t *testing.T) {
 func TestReadJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"status":"ok"}`))
 	var got api.HealthResponse
-	if err := api.ReadJSON(req, &got); err != nil {
+	if err := api.ReadJSON(httptest.NewRecorder(), req, &got); err != nil {
 		t.Fatal(err)
 	}
 	if got.Status != "ok" {
@@ -47,7 +47,7 @@ func TestReadJSON(t *testing.T) {
 func TestReadJSONUnknownField(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"nope":1}`))
 	var got api.HealthResponse
-	if err := api.ReadJSON(req, &got); err == nil {
+	if err := api.ReadJSON(httptest.NewRecorder(), req, &got); err == nil {
 		t.Fatal("expected error for unknown field")
 	}
 }

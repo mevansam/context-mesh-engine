@@ -23,6 +23,7 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 }
 
 // ReadJSON decodes a JSON request body into v.
-func ReadJSON(r *http.Request, v any) error {
-	return iapi.ReadJSON(r, v)
+// w is passed to [http.MaxBytesReader] so an oversized body can close the connection.
+func ReadJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	return iapi.ReadJSON(w, r, v)
 }
