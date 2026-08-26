@@ -20,7 +20,7 @@ See [layout.md](layout.md) for the full map.
 
 ## Toolchain
 
-- Go version in **this** `go.mod`: language **`go 1.25`**, `toolchain go1.25.7`. Prefer that over CI or sibling `go.mod` if they disagree.
+- Go version in **this** `go.mod` (currently **1.25.7**). Prefer that over CI or sibling `go.mod` if they disagree.
 - `gofmt`
 
 `go.mod` contains:

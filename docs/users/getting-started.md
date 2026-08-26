@@ -17,7 +17,7 @@ The engine does **not** register a `ping` MCP tool. `cmd/engine` and the [minima
 
 ## Requirements
 
-- Go **1.25** or newer (`go 1.25` in this repository’s `go.mod`).
+- Go **1.25.7** or newer (`go.mod` in this repository).
 - Module `github.com/mevansam/context-mesh-engine`.
 - Transitive dependencies: [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) and [libopenapi](https://github.com/pb33f/libopenapi).
 
