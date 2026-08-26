@@ -12,8 +12,11 @@ import (
 const DefaultPolicyCacheTTL = 5 * time.Minute
 
 // PolicyHintsKey is the reserved workflow input that inbound policy may set.
-// Caller-supplied values at this key are discarded; the policy is the source
-// of truth. Workflows read hints as $inputs.policyHints.
+// Caller-supplied values at this key (and dotted keys with this prefix) are
+// discarded; the policy is the source of truth. The nested object is stored
+// at this key. Leaves are also stored as dotted keys so Arazzo expressions
+// like $inputs.policyHints.petStatus work with stock libopenapi ($inputs
+// names are a single key, not a nested path).
 const PolicyHintsKey = "policyHints"
 
 // PolicyRequest is the key for [PolicyLoader.Load].

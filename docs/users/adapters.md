@@ -389,7 +389,7 @@ Query `data.plan.inbound` before the workflow runs, and `data.plan.outbound` aft
 ```
 
 - Default **deny**: missing or non-boolean `allow` is deny. Use `default allow := false` in Rego.
-- On inbound allow, `hints` (if present) is written to workflow input `$inputs.policyHints`. Caller-supplied `policyHints` is discarded.
+- On inbound allow, `hints` (if present) is written to workflow input `$inputs.policyHints` (nested object). Leaves are also copied as dotted keys (`policyHints.petStatus`) because Arazzo `$inputs.a.b` is a single input name in libopenapi, not a nested path. Caller-supplied `policyHints` and `policyHints.*` keys are discarded.
 - If there is no inbound module, `policyHints` is not injected.
 - Outbound deny → **403**; outputs are not returned (the workflow has already run).
 - Outbound `outputs` object, if present, **replaces** workflow outputs and ignores `redact`.

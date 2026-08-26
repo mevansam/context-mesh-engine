@@ -86,9 +86,42 @@ hints := {"mode": "read", "petStatus": "available"} if allow
 }
 
 func TestPolicy_NoInboundDoesNotInjectHints(t *testing.T) {
-	in := stripPolicyHints(map[string]any{"a": 1, arazzo.PolicyHintsKey: "x"})
+	in := stripPolicyHints(map[string]any{
+		"a":                                  1,
+		arazzo.PolicyHintsKey:                "x",
+		arazzo.PolicyHintsKey + ".petStatus": "forged",
+	})
 	if _, ok := in[arazzo.PolicyHintsKey]; ok || in["a"] != 1 {
 		t.Fatalf("%#v", in)
+	}
+	if _, ok := in[arazzo.PolicyHintsKey+".petStatus"]; ok {
+		t.Fatalf("dotted caller hint kept: %#v", in)
+	}
+}
+
+func TestPolicy_InboundFlattensHintsForArazzoInputs(t *testing.T) {
+	ctx := context.Background()
+	cp, err := compileBundle(ctx, &arazzo.PolicyBundle{Inbound: []byte(`
+package plan.inbound
+import rego.v1
+default allow := false
+allow if true
+hints := {"mode": "read", "nested": {"petStatus": "available"}}
+`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := applyInbound(ctx, cp.inbound, "p", "1", "wf", map[string]any{
+		arazzo.PolicyHintsKey + ".mode": "forged",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in[arazzo.PolicyHintsKey+".mode"] != "read" {
+		t.Fatalf("mode = %#v", in)
+	}
+	if in[arazzo.PolicyHintsKey+".nested.petStatus"] != "available" {
+		t.Fatalf("nested flatten = %#v", in)
 	}
 }
 
@@ -304,6 +337,9 @@ hints := {"mode": "buy", "petStatus": object.get(input.inputs, "status", "availa
 	if hints["petStatus"] != "available" {
 		t.Fatalf("alice hints = %#v", hints)
 	}
+	if in[arazzo.PolicyHintsKey+".petStatus"] != "available" {
+		t.Fatalf("alice flattened hints = %#v", in)
+	}
 	in, err = applyInbound(ctx, cp.inbound, "petstore", "0.0.1", "purchasePet", map[string]any{"username": "bob", "status": "pending"})
 	if err != nil {
 		t.Fatal(err)
@@ -311,6 +347,9 @@ hints := {"mode": "buy", "petStatus": object.get(input.inputs, "status", "availa
 	hints = in[arazzo.PolicyHintsKey].(map[string]any)
 	if hints["mode"] != "buy" || hints["petStatus"] != "pending" {
 		t.Fatalf("bob hints = %#v", hints)
+	}
+	if in[arazzo.PolicyHintsKey+".mode"] != "buy" || in[arazzo.PolicyHintsKey+".petStatus"] != "pending" {
+		t.Fatalf("bob flattened hints = %#v", in)
 	}
 	if hits.Load() == 0 {
 		t.Fatal("expected http.send")

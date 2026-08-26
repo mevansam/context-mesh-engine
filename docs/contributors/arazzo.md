@@ -59,7 +59,7 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 1. Catalog `Get(planID, rawVersion)` — not found → `ErrNotFound`
 2. Workflow id must exist on that entry — else `ErrNotFound`
 3. If `PolicyCache` is set, load/compile the bundle for `(planId, version)` (TTL cache, on demand). Load error without a cached module bundle → `ErrPolicyLoad`.
-4. If inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On allow, copy inputs, drop caller `policyHints`, set `$inputs.policyHints` from `hints` when present.
+4. If inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On allow, copy inputs, drop caller `policyHints` and `policyHints.*` keys, set `$inputs.policyHints` from `hints` when present, and flatten leaves to dotted keys (`policyHints.petStatus`) so stock libopenapi `$inputs` lookup (single key, not nested walk) can resolve `$inputs.policyHints.petStatus`.
 5. Nil executor → `ErrNoExecutor` (`executor not configured`)
 6. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
 7. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.

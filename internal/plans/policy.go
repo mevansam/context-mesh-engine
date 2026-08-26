@@ -233,6 +233,9 @@ func applyInbound(ctx context.Context, q *rego.PreparedEvalQuery, planID, versio
 			return nil, policyDenied("inbound", "hints is not an object")
 		}
 		out[arazzo.PolicyHintsKey] = h
+		// Stock libopenapi treats $inputs.a.b as the single key "a.b", not a nested
+		// walk. Flatten so $inputs.policyHints.petStatus resolves.
+		flattenPolicyHints(out, arazzo.PolicyHintsKey, h)
 	}
 	return out, nil
 }
@@ -279,13 +282,24 @@ func applyOutbound(ctx context.Context, q *rego.PreparedEvalQuery, planID, versi
 
 func stripPolicyHints(inputs map[string]any) map[string]any {
 	out := map[string]any{}
+	prefix := arazzo.PolicyHintsKey + "."
 	for k, v := range inputs {
-		if k == arazzo.PolicyHintsKey {
+		if k == arazzo.PolicyHintsKey || strings.HasPrefix(k, prefix) {
 			continue
 		}
 		out[k] = v
 	}
 	return out
+}
+
+func flattenPolicyHints(dst map[string]any, prefix string, obj map[string]any) {
+	for k, v := range obj {
+		key := prefix + "." + k
+		dst[key] = v
+		if nested, ok := v.(map[string]any); ok {
+			flattenPolicyHints(dst, key, nested)
+		}
+	}
 }
 
 func redactPointers(v any) ([]string, error) {

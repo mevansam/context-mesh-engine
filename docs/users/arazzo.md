@@ -207,7 +207,7 @@ Help lookups run on `tools/list` / `GET /tools`, not at `New`. Lookup errors do 
 
 Optional inbound/outbound [OPA](https://www.openpolicyagent.org/) modules run on every execute path (`run_*`, REST, `query`). Wire [`PolicyLoader`](adapters.md#policyloader); do not put `.rego` files on `ArazzoLoaders`.
 
-- **Inbound** (`data.plan.inbound`) runs before the workflow. Allow may set `$inputs.policyHints`. Deny is **403** and the workflow does not run.
+- **Inbound** (`data.plan.inbound`) runs before the workflow. Allow may set `$inputs.policyHints` (nested object plus dotted keys for Arazzo `$inputs.policyHints.*`). Deny is **403** and the workflow does not run.
 - **Outbound** (`data.plan.outbound`) runs after success. Deny is **403** and outputs are not returned. `redact` / `outputs` may reshape the response.
 
 A missing bundle for that `(planId, version)` skips both phases. Load/compile errors fail closed (**500**) unless a compiled bundle is still cached.
