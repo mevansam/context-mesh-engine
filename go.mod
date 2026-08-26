@@ -1,6 +1,8 @@
 module github.com/mevansam/context-mesh-engine
 
-go 1.25.7
+go 1.25
+
+toolchain go1.25.7
 
 require (
 	github.com/google/jsonschema-go v0.4.3

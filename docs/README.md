@@ -58,6 +58,6 @@ SDK users should not need Path B to ship an app.
 
 Root mux: Go 1.22+ `net/http.ServeMux`. Do not put Gin/chi on the **root** listener.
 
-Module: `github.com/mevansam/context-mesh-engine` (`go 1.25.7` in `go.mod`).
+Module: `github.com/mevansam/context-mesh-engine` (`go 1.25`, `toolchain go1.25.7`).
 
 Upstream libraries (not vendored): [`go-sdk`](https://github.com/modelcontextprotocol/go-sdk), [`libopenapi`](https://github.com/pb33f/libopenapi) Arazzo engine.
