@@ -200,10 +200,13 @@ OpenAPI operations used by the plan:
 
 **Inputs (required):** `username`, `password`, `status` (`available` \| `pending` \| `sold`). `policyHints` is declared so the schema documents the injected object; callers must not send it (the engine strips it).
 
+**Steps**
+
 ```mermaid
 flowchart TB
   IN["inputs: username, password, status"]
   POL["inbound OPA: userStatus → allow + hints"]
+  DENY["403"]
   L["loginStep: GET /user/login"]
   G["getPetStep: GET /pet/findByStatus?status=policyHints.petStatus"]
   EMPTY{"body[0] is null?"}
@@ -211,11 +214,38 @@ flowchart TB
   OUT["outputs: petId, pet"]
 
   IN --> POL
-  POL --> L
+  POL -->|deny| DENY
+  POL -->|allow| L
   L -->|"sessionToken = $response.body"| G
   G --> EMPTY
   EMPTY -->|yes onSuccess noPetsAvailable| END
   EMPTY -->|no| OUT
+```
+
+**Call sequence**
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant H as mcp-server
+  participant P as Petstore :8090
+
+  C->>H: POST /api/plans/petstore/retrievePet
+  H->>P: GET /user/{username} inbound OPA
+  alt deny
+    H-->>C: 403
+  else allow
+    H->>P: GET /user/login
+    P-->>H: sessionToken
+    H->>P: GET /pet/findByStatus status=policyHints.petStatus
+    P-->>H: pet array
+    alt body[0] is null
+      H-->>C: workflow end no pet
+    else pet found
+      Note over H: outbound redact /pet/photoUrls if mode is read
+      H-->>C: petId, pet
+    end
+  end
 ```
 
 Step bindings ([plan](mcp-server/plans/petstore.arazzo.yaml)):
@@ -233,6 +263,29 @@ For a `browser` (`userStatus` 1), inbound sets `petStatus` to `available` even i
 
 **Inputs (required):** `username`, `password`, `petId`, `orderCorrelationId` (any unique string; AsyncAPI `orderRequestId`).
 
+**Steps**
+
+```mermaid
+flowchart TB
+  IN["inputs: username, password, petId, orderCorrelationId"]
+  POL["inbound OPA: userStatus must be 2"]
+  DENY["403"]
+  L["loginStep: GET /user/login"]
+  PL["purchasePetStep: POST /place-order"]
+  CF{"confirm-order 200?"}
+  OUT["outputs: orderId"]
+
+  IN --> POL
+  POL -->|deny| DENY
+  POL -->|allow| L
+  L -->|"sessionToken"| PL
+  PL --> CF
+  CF -->|404 retry up to 6s| CF
+  CF -->|200| OUT
+```
+
+**Call sequence**
+
 ```mermaid
 sequenceDiagram
   participant C as Client
@@ -241,24 +294,29 @@ sequenceDiagram
   participant A as async-order-server :8091
 
   C->>H: POST /api/plans/petstore/purchasePet
-  H->>H: inbound OPA GET /user/{username}
-  H->>P: GET /user/login
-  H->>A: POST /place-order<br/>header orderCorrelationId<br/>body {petId}
-  A->>P: POST /store/order {id, petId, status: placed}
-  P-->>A: order
-  A-->>H: 200 accepted
-  loop GET confirm-order until 200 or timeout
-    H->>A: GET /confirm-order (same correlation header)
-    alt not in map
-      A-->>H: 404
-    else stored
-      A-->>H: 200 {payload: {orderId}}
+  H->>P: GET /user/{username} inbound OPA
+  alt deny
+    H-->>C: 403
+  else allow
+    H->>P: GET /user/login
+    P-->>H: sessionToken
+    H->>A: POST /place-order header orderCorrelationId body petId
+    A->>P: POST /store/order id petId status placed
+    P-->>A: order
+    A-->>H: 200 accepted
+    loop GET confirm-order until 200 or timeout
+      H->>A: GET /confirm-order same correlation header
+      alt not in map
+        A-->>H: 404
+      else stored
+        A-->>H: 200 payload.orderId
+      end
     end
+    H-->>C: orderId
   end
-  H-->>C: {orderId}
 ```
 
-Steps:
+Step bindings:
 
 1. **`loginStep`** — same as retrieve.
 2. **`purchasePetStep`** — `operationPath: $sourceDescriptions.asyncOrderApiDescription.placeOrder`. Header `orderCorrelationId` from `$inputs.orderCorrelationId`. JSON body `{ petId: $inputs.petId }`. The executor treats source name `asyncOrderApiDescription` as the adapter origin (`-async-order-url`, default `http://localhost:8091`).
@@ -274,11 +332,43 @@ Local Docker Petstore does not allocate order ids (omit `id` and you get `0`). T
 
 **Inputs (required):** `username`, `password`, `orderId`.
 
+**Steps**
+
 ```mermaid
-flowchart LR
-  IN["inputs"] --> L["loginStep"]
-  L --> G["getOrderStep: getOrderById"]
-  G --> OUT["outputs: orderId, petId, status, complete"]
+flowchart TB
+  IN["inputs: username, password, orderId"]
+  POL["inbound OPA: userStatus must be 2"]
+  DENY["403"]
+  L["loginStep: GET /user/login"]
+  G["getOrderStep: GET /store/order/{orderId}"]
+  OUT["outputs: orderId, petId, status, complete"]
+
+  IN --> POL
+  POL -->|deny| DENY
+  POL -->|allow| L
+  L -->|"sessionToken"| G
+  G --> OUT
+```
+
+**Call sequence**
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant H as mcp-server
+  participant P as Petstore :8090
+
+  C->>H: POST /api/plans/petstore/checkOrderStatus
+  H->>P: GET /user/{username} inbound OPA
+  alt deny
+    H-->>C: 403
+  else allow
+    H->>P: GET /user/login
+    P-->>H: sessionToken
+    H->>P: GET /store/order/{orderId}
+    P-->>H: order
+    H-->>C: orderId, petId, status, complete
+  end
 ```
 
 `status` is whatever Petstore stored (`placed`, `approved`, `delivered`). Petstore has **no PUT** for orders; status is set at `POST /store/order`. After `purchasePet`, `checkOrderStatus` reads that row back.
