@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
-	"github.com/mevansam/context-mesh-engine/examples/petstore/jwtx"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/petstore-auth-server/jwtx"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
@@ -25,6 +25,11 @@ const (
 	defaultPetstoreBase = petstoreLocalBase
 	defaultAsyncBase    = "http://localhost:8091"
 	confirmWait         = 6 * time.Second
+
+	// downstreamHMACSecret is Options.SecretsProvider name this Executor
+	// uses to mint a new Petstore JWT. Must match MapSecrets in main.go.
+	// Not listed in Options.SecretInputs, so it is not a workflow $input.
+	downstreamHMACSecret = "downstream-hmac"
 )
 
 // resolvePetstoreBase maps -petstore local|hosted to an origin.
@@ -43,6 +48,10 @@ func resolvePetstoreBase(kind, urlOverride string) (string, error) {
 	}
 }
 
+// httpExec is Options.ArazzoExecutor (libopenapi arazzo.Executor).
+// The engine does not call Petstore; it invokes Execute once per Arazzo step
+// with resolved parameters. This type maps operationId / operationPath to HTTP
+// and chooses Petstore vs the async-order adapter.
 type httpExec struct {
 	client    *http.Client
 	petstore  []string
@@ -65,6 +74,9 @@ func newHTTPExec(asyncBase, petstoreBase string, secrets arazzo.SecretsProvider)
 	}
 }
 
+// Execute performs one backend HTTP call. Return a response (not a Go error)
+// for HTTP 4xx/5xx the plan should observe ($statusCode). Transport failures
+// are Go errors and fail the step outside success criteria.
 func (e *httpExec) Execute(ctx context.Context, req *arazzo.ExecutionRequest) (*arazzo.ExecutionResponse, error) {
 	method, path, err := resolveHTTP(req)
 	if err != nil {
@@ -167,6 +179,8 @@ func (e *httpExec) do(ctx context.Context, base, method, path string, req *arazz
 		return nil, err
 	}
 	httpReq.Header = header
+	// Do not forward the caller's Authorization. Mint a host JWT from
+	// SecretsProvider + PolicyRequestContext (end-user username).
 	if tok := e.downstreamBearer(ctx); tok != "" && httpReq.Header.Get("Authorization") == "" {
 		httpReq.Header.Set("Authorization", tok)
 	}
@@ -190,11 +204,13 @@ func (e *httpExec) do(ctx context.Context, base, method, path string, req *arazz
 	}, nil
 }
 
+// downstreamBearer signs a JWT for Petstore. The engine already ran
+// RequestPreprocessor; username comes from ctx, not from $inputs.
 func (e *httpExec) downstreamBearer(ctx context.Context) string {
 	if e == nil || e.secrets == nil {
 		return ""
 	}
-	key, err := e.secrets.Get(ctx, "downstream-hmac")
+	key, err := e.secrets.Get(ctx, downstreamHMACSecret)
 	if err != nil || key == "" {
 		return ""
 	}

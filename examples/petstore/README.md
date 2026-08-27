@@ -145,7 +145,7 @@ Inbound OPA **must not** call Petstore. `userStatus` is already on the user JWT 
 
 The host `Executor` mints a **new** HS256 JWT (`SecretsProvider` key `downstream-hmac`) for Petstore HTTP. That signing key is **not** listed in `SecretInputs`, so it never appears in `$inputs`. This demo verifies inbound tokens with the **same shared HMAC**, not an issuer public key — see [Demo verification vs production](#demo-verification-vs-production).
 
-Demo client: `client_id=petstore-mcp`, `client_secret=mcp-secret`. Users: `browser` / `abc123` (`userStatus` 1), `buyer` / `abc123` (`userStatus` 2). Package: [`jwtx/`](jwtx/). Auth-server: [`petstore-auth-server/README.md`](petstore-auth-server/README.md). How those tokens are wired into `engine.Options`: [OAuth and the engine SDK](#oauth-and-the-engine-sdk).
+Demo client: `client_id=petstore-mcp`, `client_secret=mcp-secret`. Users: `browser` / `abc123` (`userStatus` 1), `buyer` / `abc123` (`userStatus` 2). Package: [`petstore-auth-server/jwtx/`](petstore-auth-server/jwtx/). Auth-server: [`petstore-auth-server/README.md`](petstore-auth-server/README.md). How those tokens are wired into `engine.Options`: [OAuth and the engine SDK](#oauth-and-the-engine-sdk).
 
 ## Quick start
 
@@ -557,26 +557,10 @@ Nil `ArazzoLoaders`: no plan tools or plan REST. Nil `ArazzoExecutor`: catalog a
 
 ### Host process: `engine.New`
 
-[`mcp-server/main.go`](mcp-server/main.go) is the pattern to copy:
+[`mcp-server/main.go`](mcp-server/main.go) (`hostOptions`) is the pattern to copy. Each `engine.Options` field is commented there with what the engine does if you omit it.
 
 ```go
-e, err := engine.New(engine.Options{
-    Addr: *addr,
-    ArazzoLoaders: []arazzo.Loader{
-        arazzo.NewFileLoader(plansDir()),
-    },
-    ArazzoExecutor: newHTTPExec(*asyncURL, petstoreBase, secrets),
-    PolicyLoader: &arazzo.FilePolicyLoader{
-        Dir:  policiesDir(),
-        Data: map[string]any{"petstoreBase": petstoreBase},
-    },
-    RequestPreprocessor: &dualJWTPreprocessor{secret: secret},
-    SecretsProvider:     secrets,
-    PublicBaseURL:       "http://" + *addr,
-    DualMCPandREST:      *dual,
-    MCPHandlerWrap:      bearer,
-    RESTHandlerWrap:     func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
-})
+e, err := engine.New(hostOptions(*addr, *asyncURL, petstoreBase, *jwtSecret, *dual))
 ```
 
 `plansDir()` / `policiesDir()` use `runtime.Caller` so `go run` and `go test` resolve `plans/` and `policies/` next to `main.go`, independent of cwd.
@@ -665,7 +649,7 @@ The engine stores the preprocessor result on `context.Context` (`arazzo.WithPoli
 
 #### Demo verification vs production
 
-[`jwtx/jwt.go`](jwtx/jwt.go) is a **demo** crypto helper, not a production verifier. Auth-server and mcp-server share `-jwt-secret` and sign/verify **HS256** (symmetric HMAC). `parseHS256` returns that secret as the key. There is no issuer public key, JWKS, RS256, or ES256.
+[`petstore-auth-server/jwtx/jwt.go`](petstore-auth-server/jwtx/jwt.go) is a **demo** crypto helper, not a production verifier. Auth-server and mcp-server share `-jwt-secret` and sign/verify **HS256** (symmetric HMAC). `parseHS256` returns that secret as the key. There is no issuer public key, JWKS, RS256, or ES256.
 
 `iss` (`petstore-auth`) and `aud` (`petstore-mcp`) are **written** on sign. They are **not** checked on parse (`jwt.WithIssuer` / `jwt.WithAudience` are unused). `ParseWithClaims` still enforces `exp`. After HMAC succeeds, the host only checks `token_use` (`client` vs `user`) and that the user token has `username`.
 
@@ -723,7 +707,7 @@ sequenceDiagram
 
 | You implement (this example) | The engine does |
 | --- | --- |
-| HS256 parse/sign ([`jwtx/`](jwtx/)) | Mount wraps on MCP and REST children |
+| HS256 parse/sign ([`petstore-auth-server/jwtx/`](petstore-auth-server/jwtx/)) | Mount wraps on MCP and REST children |
 | `jwtVerifier.verifyClient` for `RequireBearerToken` | `RequestSourceFromHTTP` / `RequestSourceFromMCP` (`TokenInfo` → `ClientAuth`) |
 | `dualJWTPreprocessor` | `Runner.EnrichContext` → `ErrUnauthorized` (**401**) |
 | `httpExec.downstreamBearer` | Strip caller `secrets`; inject only `SecretInputs` names |

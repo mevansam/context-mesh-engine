@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mevansam/context-mesh-engine/examples/petstore/jwtx"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/petstore-auth-server/jwtx"
 )
 
 const (

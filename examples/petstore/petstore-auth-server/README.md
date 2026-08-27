@@ -1,6 +1,6 @@
 # petstore-auth-server
 
-Demo OAuth token endpoint for the petstore host. It is **not** a full authorization server. It issues HS256 JWTs that `mcp-server` verifies.
+Demo OAuth token endpoint for the petstore host. It is **not** a full authorization server. It issues HS256 JWTs that `mcp-server` verifies using the same claim types in [`jwtx/`](jwtx/).
 
 | Grant | Purpose | JWT `token_use` |
 | --- | --- | --- |

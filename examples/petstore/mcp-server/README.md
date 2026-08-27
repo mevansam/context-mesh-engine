@@ -1,13 +1,19 @@
 # mcp-server
 
-`context-mesh-engine` host for the petstore Arazzo plan. Plans are loaded from `plans/` next to `main.go` (compile-time path via `runtime.Caller`, not the working directory). OPA modules are loaded from `policies/` the same way (`FilePolicyLoader`); they are **not** passed to `FileLoader`.
+`context-mesh-engine` host. The engine owns catalog, MCP `run_*`, REST `/plans`, and OPA order. This directory is the **adapters** you pass to `engine.New`.
+
+| File | SDK seam | What it changes |
+| --- | --- | --- |
+| [`main.go`](main.go) | `engine.Options` | Loader, executor, policy, preprocessor, secrets, handler wraps |
+| [`auth.go`](auth.go) | `MCPHandlerWrap`, `RESTHandlerWrap`, `RequestPreprocessor` | Client JWT on MCP + `POST /plans/`; end-user JWT → OPA `input.auth` |
+| [`executor.go`](executor.go) | `ArazzoExecutor`, `SecretsProvider` | HTTP to Petstore / async adapter; **new** downstream JWT |
+| `plans/` | `ArazzoLoaders` | Arazzo document (`x-planId: petstore`) |
+| `policies/` | `PolicyLoader` | Inbound/outbound Rego (not passed to `FileLoader`) |
+
+Field-by-field notes: comments on `hostOptions` in `main.go`. How to run all processes: **[../README.md](../README.md)**.
 
 Plan: `plans/petstore.arazzo.yaml` (`x-planId: petstore`, version `0.0.1`). Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. First step is `getUserByName` (`$inputs.policyHints.username` from the end-user JWT).
 
-Inbound policy (`policies/petstore/0.0.1/inbound.rego`) reads `input.auth.endUser` (preprocessor). It does **not** `http.send`. `userStatus` **1** (or missing) may only run `retrievePet`; **2** may also `purchasePet` and `checkOrderStatus`. `findByStatus` uses `$inputs.policyHints.petStatus`.
+Inbound (`policies/petstore/0.0.1/inbound.rego`) reads `input.auth.endUser`. It does **not** `http.send`. `userStatus` **1** may only `retrievePet`; **2** may also purchase/check order.
 
-Auth: `Authorization: Bearer` is the **client** JWT (`MCPHandlerWrap` / REST wrap on `POST /plans/`). `X-End-User-Token` is the **end-user** JWT (`RequestPreprocessor`). The `Executor` mints a **new** downstream JWT from `SecretsProvider` (`downstream-hmac`). Tokens come from [../petstore-auth-server](../petstore-auth-server/).
-
-Talks to Petstore 3: `-petstore local` (default, Docker `http://localhost:8090/api/v3`) or `-petstore hosted` (`https://petstore3.swagger.io/api/v3`). Override with `-petstore-url`. Share `-jwt-secret` with the auth-server. Local Docker: [../petstore-openapi-server/README.md](../petstore-openapi-server/README.md).
-
-How to run all processes, seed users, mint tokens, curl the workflows, and use an MCP agent: **[../README.md](../README.md)**.
+Tokens: [`../petstore-auth-server`](../petstore-auth-server/). Share `-jwt-secret`. Petstore: `-petstore local` (default) or `-hosted`. Override `-petstore-url`.
