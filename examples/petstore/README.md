@@ -31,6 +31,7 @@ Default Petstore target is **local Docker**. Pass `-petstore hosted` for [petsto
   - [Executor](#executor)
   - [PolicyLoader](#policyloader)
   - [OAuth and the engine SDK](#oauth-and-the-engine-sdk)
+    - [Demo verification vs production](#demo-verification-vs-production)
   - [HTTP surfaces](#http-surfaces)
   - [AsyncAPI as OpenAPI HTTP](#asyncapi-as-openapi-http)
   - [Checklist for your own host](#checklist-for-your-own-host)
@@ -142,7 +143,7 @@ Two JWTs on every execute (REST `POST /plans/…` and MCP `/mcp`):
 
 Inbound OPA **must not** call Petstore. `userStatus` is already on the user JWT because the auth-server ran [loginUser](https://petstore3.swagger.io/#/user/loginUser) then [getUserByName](https://petstore3.swagger.io/#/user/getUserByName) at token issue.
 
-The host `Executor` mints a **new** HS256 JWT (`SecretsProvider` key `downstream-hmac`) for Petstore HTTP. That signing key is **not** listed in `SecretInputs`, so it never appears in `$inputs`.
+The host `Executor` mints a **new** HS256 JWT (`SecretsProvider` key `downstream-hmac`) for Petstore HTTP. That signing key is **not** listed in `SecretInputs`, so it never appears in `$inputs`. This demo verifies inbound tokens with the **same shared HMAC**, not an issuer public key — see [Demo verification vs production](#demo-verification-vs-production).
 
 Demo client: `client_id=petstore-mcp`, `client_secret=mcp-secret`. Users: `browser` / `abc123` (`userStatus` 1), `buyer` / `abc123` (`userStatus` 2). Package: [`jwtx/`](jwtx/). Auth-server: [`petstore-auth-server/README.md`](petstore-auth-server/README.md). How those tokens are wired into `engine.Options`: [OAuth and the engine SDK](#oauth-and-the-engine-sdk).
 
@@ -661,6 +662,24 @@ From [`mcp-server/main.go`](mcp-server/main.go) and [`mcp-server/auth.go`](mcp-s
 4. **`PolicyLoader`** — inbound reads `input.auth.endUser`, not `http.send`. Invalid preprocessor is **401**; inbound deny is **403**.
 
 The engine stores the preprocessor result on `context.Context` (`arazzo.WithPolicyRequest`). Inbound/outbound OPA read it as `input.auth` / `input.headers`. The `Executor` reads the same context to set `sub`/`username` on the **new** downstream JWT. It does not forward the caller’s bearer.
+
+#### Demo verification vs production
+
+[`jwtx/jwt.go`](jwtx/jwt.go) is a **demo** crypto helper, not a production verifier. Auth-server and mcp-server share `-jwt-secret` and sign/verify **HS256** (symmetric HMAC). `parseHS256` returns that secret as the key. There is no issuer public key, JWKS, RS256, or ES256.
+
+`iss` (`petstore-auth`) and `aud` (`petstore-mcp`) are **written** on sign. They are **not** checked on parse (`jwt.WithIssuer` / `jwt.WithAudience` are unused). `ParseWithClaims` still enforces `exp`. After HMAC succeeds, the host only checks `token_use` (`client` vs `user`) and that the user token has `username`.
+
+| | This demo | Production host |
+| --- | --- | --- |
+| Algorithm | HS256, one shared secret | RS256 or ES256 (asymmetric) |
+| Verify with | HMAC key both processes know | Issuer **public** key / JWKS (`jwks_uri` from discovery) |
+| `iss` / `aud` | Set, not validated | Must match your IdP issuer and this API’s audience |
+| Key location | `-jwt-secret` / `MapSecrets` | Private key stays on the IdP; host fetches JWKS (cache + rotation) |
+| Downstream call | Same HMAC, new JWT (`IssuerEngine`) | Separate credential: token exchange, IdP client-credentials for the domain API, or mTLS — **not** the inbound access token |
+
+The **SDK seams do not change**. `RequireBearerToken` still takes a `TokenVerifier`; `RequestPreprocessor` still verifies extra JWTs; `SecretsProvider` still supplies whatever the `Executor` needs to mint or fetch a downstream credential. You replace `jwtx.ParseClient` / `ParseUser` (and downstream signing) with JWKS-backed verification and an explicit `iss`/`aud` check. Do not give the plan host the IdP’s private key. Do not share an HMAC between IdP and host in production.
+
+Petstore 3 in this demo does not validate that downstream JWT; the header is there to show the executor pattern. A real domain API would verify it the same way (JWKS / `iss` / `aud`).
 
 #### Request path (execute)
 
