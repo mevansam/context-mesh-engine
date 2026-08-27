@@ -10,6 +10,8 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
 | `arazzo/fileloader.go` | Recursive `.yaml/.yml/.json`; `BaseURL` **must** end with `/` |
 | `arazzo/policy.go` | `PolicyLoader`, `PolicyBundle`, `PolicyHintsKey` |
+| `arazzo/request.go` | `RequestPreprocessor`, `PolicyRequestContext`, `RequestSource` |
+| `arazzo/secrets.go` | `SecretsProvider`, `MapSecrets`, `SecretInputs` flattening keys |
 | `arazzo/filepolicy.go` | `{planId}/{version}/inbound.rego` + `outbound.rego` |
 | `arazzo/tooldoc.go` | Recipes vs `ToolDocContext`; `SanitizeToolName` |
 | `arazzo/toolhelp.go` | `ToolHelpLookup`; overlay; default lookup |
@@ -59,11 +61,12 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 1. Catalog `Get(planID, rawVersion)` — not found → `ErrNotFound`
 2. Workflow id must exist on that entry — else `ErrNotFound`
 3. If `PolicyCache` is set, load/compile the bundle for `(planId, version)` (TTL cache, on demand). Load error without a cached module bundle → `ErrPolicyLoad`.
-4. If inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On allow, copy inputs, drop caller `policyHints` and `policyHints.*` keys, set `$inputs.policyHints` from `hints` when present, and flatten leaves to dotted keys (`policyHints.petStatus`) so stock libopenapi `$inputs` lookup (single key, not nested walk) can resolve `$inputs.policyHints.petStatus`.
-5. Nil executor → `ErrNoExecutor` (`executor not configured`)
-6. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
-7. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.
-8. If outbound compiled: eval `data.plan.outbound` on `{inputs, outputs}`. Deny → `ErrPolicyDenied` (no outputs returned). Else replace `outputs` or apply `redact`/`mask`.
+4. If inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On allow, copy inputs, drop caller `policyHints` and `policyHints.*` keys, set `$inputs.policyHints` from `hints` when present, and flatten leaves to dotted keys (`policyHints.petStatus`) so stock libopenapi `$inputs` lookup (single key, not nested walk) can resolve `$inputs.policyHints.petStatus`. `input.headers` / `input.auth` come from `PolicyRequestContext` (preprocessor), not from Rego `http.send`.
+5. If `SecretsProvider` is set, strip caller `secrets` / `secrets.*`, then flatten `Options.SecretInputs` names onto `$inputs.secrets.<name>`.
+6. Nil executor → `ErrNoExecutor` (`executor not configured`)
+7. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
+8. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.
+9. If outbound compiled: eval `data.plan.outbound` on `{inputs, outputs}`. Deny → `ErrPolicyDenied` (no outputs returned). Else replace `outputs` or apply `redact`/`mask`.
 
 Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurrency-safe). Cache `*high.Arazzo` and `[]*ResolvedSource` on `Entry` only. Do **not** parse `.rego` in `FileLoader` / `catalog.addSource`.
 
@@ -135,7 +138,7 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `arazzo/toolhelp_test.go` | Default lookup; REST falls back to Description; distinct RESTDescription; query overlay |
 | `internal/plans/help_test.go` | Cache TTL / always-refresh; stale-on-error; singleflight; REST surface; middleware skips non-list |
 | `internal/ttlcache/cache_test.go` | Generic TTL / stale-on-error / singleflight |
-| `internal/plans/policy_test.go` | Inbound deny skips executor; outbound deny hides outputs; redact/replace; fail closed; `http.send` userStatus |
+| `internal/plans/policy_test.go` | Inbound deny skips executor; outbound deny hides outputs; redact/replace; fail closed; `input.auth` / flatten hints |
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |

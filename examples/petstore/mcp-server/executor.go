@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/jwtx"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
@@ -46,9 +47,10 @@ type httpExec struct {
 	client    *http.Client
 	petstore  []string
 	asyncBase string
+	secrets   arazzo.SecretsProvider
 }
 
-func newHTTPExec(asyncBase, petstoreBase string) *httpExec {
+func newHTTPExec(asyncBase, petstoreBase string, secrets arazzo.SecretsProvider) *httpExec {
 	if asyncBase == "" {
 		asyncBase = defaultAsyncBase
 	}
@@ -59,6 +61,7 @@ func newHTTPExec(asyncBase, petstoreBase string) *httpExec {
 		client:    &http.Client{Timeout: 20 * time.Second},
 		petstore:  []string{strings.TrimRight(petstoreBase, "/")},
 		asyncBase: strings.TrimRight(asyncBase, "/"),
+		secrets:   secrets,
 	}
 }
 
@@ -164,6 +167,9 @@ func (e *httpExec) do(ctx context.Context, base, method, path string, req *arazz
 		return nil, err
 	}
 	httpReq.Header = header
+	if tok := e.downstreamBearer(ctx); tok != "" && httpReq.Header.Get("Authorization") == "" {
+		httpReq.Header.Set("Authorization", tok)
+	}
 
 	resp, err := e.client.Do(httpReq)
 	if err != nil {
@@ -182,6 +188,27 @@ func (e *httpExec) do(ctx context.Context, base, method, path string, req *arazz
 		URL:        u.String(),
 		Method:     httpReq.Method,
 	}, nil
+}
+
+func (e *httpExec) downstreamBearer(ctx context.Context) string {
+	if e == nil || e.secrets == nil {
+		return ""
+	}
+	key, err := e.secrets.Get(ctx, "downstream-hmac")
+	if err != nil || key == "" {
+		return ""
+	}
+	username := ""
+	if pc := arazzo.PolicyRequestFromContext(ctx); pc != nil && pc.Auth != nil {
+		if eu, ok := pc.Auth["endUser"].(map[string]any); ok {
+			username, _ = eu["username"].(string)
+		}
+	}
+	tok, err := jwtx.SignDownstream([]byte(key), username, 5*time.Minute)
+	if err != nil {
+		return ""
+	}
+	return "Bearer " + tok
 }
 
 func isAsyncSource(req *arazzo.ExecutionRequest) bool {

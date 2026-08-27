@@ -136,6 +136,26 @@ type Options struct {
 	// If zero, [arazzo.DefaultPolicyCacheTTL] (5m) is used. A negative
 	// duration disables caching (every Run loads and compiles).
 	PolicyCacheTTL time.Duration
+
+	// RequestPreprocessor builds input.headers / input.auth for OPA from
+	// HTTP or MCP headers. Looked up on execute. Nil skips enrichment.
+	RequestPreprocessor arazzo.RequestPreprocessor
+
+	// SecretsProvider fetches named secrets for the host Executor and for
+	// optional $inputs.secrets.* injection. Nil skips injection.
+	SecretsProvider arazzo.SecretsProvider
+
+	// SecretInputs are secret names to copy onto workflow inputs (flattened
+	// as secrets.<name>). Empty means do not inject secrets into $inputs.
+	SecretInputs []string
+
+	// MCPHandlerWrap wraps the Streamable HTTP handler only (not REST).
+	// Use auth.RequireBearerToken here. Nil means no wrap.
+	MCPHandlerWrap func(http.Handler) http.Handler
+
+	// RESTHandlerWrap wraps the REST mux after StripPrefix of APIPrefix
+	// and before APITimeout. Nil means no wrap. Paths are /health, /plans/...
+	RESTHandlerWrap func(http.Handler) http.Handler
 }
 
 // Engine is a thin facade over internal/mcpgw, internal/httpserver,
@@ -201,6 +221,8 @@ func New(opts Options) (*Engine, error) {
 		if opts.PolicyLoader != nil {
 			runner.SetPolicy(plans.NewPolicyCache(opts.PolicyLoader, opts.PolicyCacheTTL, opts.Logger))
 		}
+		runner.SetPreprocessor(opts.RequestPreprocessor)
+		runner.SetSecrets(opts.SecretsProvider, opts.SecretInputs)
 		help, err := plans.RegisterMCP(gw.Server(), catalog, runner, plans.RegisterMCPConfig{
 			Templates:     opts.ToolDoc,
 			HelpLookup:    opts.ToolHelpLookup,
@@ -332,9 +354,11 @@ func (e *Engine) Handler() http.Handler {
 		}
 		if e.serveMCP() {
 			opts.MCPHandler = e.mcp.Handler()
+			opts.WrapMCP = e.opts.MCPHandlerWrap
 		}
 		if e.serveREST() {
 			opts.APIHandler = e.router.Handler()
+			opts.WrapREST = e.opts.RESTHandlerWrap
 		}
 		e.handler = httpserver.NewMux(opts)
 	})

@@ -8,6 +8,8 @@ The engine is a host. You supply the pieces that talk to **your** catalogs, back
 | [`Executor`](#executor) | `ArazzoExecutor` | For execute | Perform one backend HTTP call per workflow step |
 | [`QueryMatcher`](#querymatcher) | `QueryMatcher` | For `query` | Select a plan from a (usually global) registry |
 | [`PolicyLoader`](#policyloader) | `PolicyLoader` | No | Optional OPA inbound/outbound modules per plan version |
+| [`RequestPreprocessor`](#requestpreprocessor) | `RequestPreprocessor` | No | Headers + extra JWTs → OPA `input.headers` / `input.auth` |
+| [`SecretsProvider`](#secretsprovider) | `SecretsProvider` | No | Named secrets for Executor JWT minting and optional `$inputs.secrets.*` |
 | [`ToolHelpLookup`](#toolhelplookup) | `ToolHelpLookup` | No | Per-plan / query title and description templates at list time |
 | [`ToolDocTemplates`](#tooldoctemplates) | `ToolDoc` | No | Global name/title/description recipes |
 | [`Controller`](#rest-controllers) | `AddController` | No | Extra REST routes under `APIPrefix` |
@@ -390,10 +392,39 @@ Query `data.plan.inbound` before the workflow runs, and `data.plan.outbound` aft
 
 - Default **deny**: missing or non-boolean `allow` is deny. Use `default allow := false` in Rego.
 - On inbound allow, `hints` (if present) is written to workflow input `$inputs.policyHints` (nested object). Leaves are also copied as dotted keys (`policyHints.petStatus`) because Arazzo `$inputs.a.b` is a single input name in libopenapi, not a nested path. Caller-supplied `policyHints` and `policyHints.*` keys are discarded.
+- If [`RequestPreprocessor`](#requestpreprocessor) ran, OPA also receives `input.headers` (allowlisted) and `input.auth` (client + end-user claims). These are not workflow `$inputs`.
 - If there is no inbound module, `policyHints` is not injected.
 - Outbound deny → **403**; outputs are not returned (the workflow has already run).
 - Outbound `outputs` object, if present, **replaces** workflow outputs and ignores `redact`.
 - Otherwise `redact` is RFC 6901 JSON Pointers into outputs. Missing pointers are skipped; malformed pointers deny. Default `mask` is JSON `null`.
+
+---
+
+## RequestPreprocessor
+
+Optional. Runs on REST execute/`query` and MCP `run_*`/`query` **before** inbound OPA. Verify extra JWTs (`x-*` headers), call a remote user-info service, and return a JSON-friendly `Auth` object plus allowlisted `Headers`.
+
+```go
+type RequestPreprocessor interface {
+    Process(ctx context.Context, src RequestSource) (*PolicyRequestContext, error)
+}
+```
+
+`RequestSource.ClientAuth` is filled when `auth.RequireBearerToken` already verified the calling-application bearer token. Error from `Process` is **401**.
+
+Do not put `Authorization` or raw user JWTs in `Headers`. Petstore: [`mcp-server/auth.go`](../../examples/petstore/mcp-server/auth.go).
+
+---
+
+## SecretsProvider
+
+```go
+type SecretsProvider interface {
+    Get(ctx context.Context, name string) (string, error)
+}
+```
+
+`arazzo.MapSecrets` is an in-memory map. The host `Executor` uses this to mint a **downstream** JWT for domain APIs (point 6). Names in `Options.SecretInputs` are flattened onto `$inputs.secrets.<name>` for Arazzo expressions. Caller-supplied `secrets` keys are stripped. Keep HMAC signing keys out of `SecretInputs` unless the plan must see them.
 
 ---
 

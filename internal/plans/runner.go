@@ -24,14 +24,20 @@ var (
 	ErrQueryNotImplemented = errors.New("query is not implemented")
 	// ErrEmptyQuery is returned when the query string is empty.
 	ErrEmptyQuery = errors.New("query is required")
+	// ErrUnauthorized is returned when request preprocessing rejects the call
+	// (missing or invalid end-user token, etc.).
+	ErrUnauthorized = errors.New("unauthorized")
 )
 
 // Runner executes workflows via a new libopenapi Engine per call.
 type Runner struct {
-	catalog  *Catalog
-	executor libarazzo.Executor
-	matcher  arazzo.QueryMatcher
-	policy   *PolicyCache
+	catalog      *Catalog
+	executor     libarazzo.Executor
+	matcher      arazzo.QueryMatcher
+	policy       *PolicyCache
+	preprocessor arazzo.RequestPreprocessor
+	secrets      arazzo.SecretsProvider
+	secretInputs []string
 }
 
 // NewRunner wires a catalog to a (possibly nil) executor and query matcher.
@@ -44,6 +50,36 @@ func (r *Runner) SetPolicy(p *PolicyCache) {
 	if r != nil {
 		r.policy = p
 	}
+}
+
+// SetPreprocessor attaches header/JWT enrichment. Nil skips it.
+func (r *Runner) SetPreprocessor(p arazzo.RequestPreprocessor) {
+	if r != nil {
+		r.preprocessor = p
+	}
+}
+
+// SetSecrets attaches a secrets backend. names are copied onto $inputs.secrets.*.
+func (r *Runner) SetSecrets(p arazzo.SecretsProvider, names []string) {
+	if r != nil {
+		r.secrets = p
+		r.secretInputs = append([]string(nil), names...)
+	}
+}
+
+// EnrichContext runs [arazzo.RequestPreprocessor] and stores the result on ctx.
+func (r *Runner) EnrichContext(ctx context.Context, src arazzo.RequestSource) (context.Context, error) {
+	if r == nil || r.preprocessor == nil {
+		return ctx, nil
+	}
+	pc, err := r.preprocessor.Process(ctx, src)
+	if err != nil {
+		return ctx, fmt.Errorf("%w: %w", ErrUnauthorized, err)
+	}
+	if pc != nil {
+		ctx = arazzo.WithPolicyRequest(ctx, pc)
+	}
+	return ctx, nil
 }
 
 // Catalog returns the loaded plans.
@@ -74,7 +110,14 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		return nil, fmt.Errorf("%w: workflow %s", ErrNotFound, workflowID)
 	}
 
-	runInputs := inputs
+	runInputs := stripSecrets(stripPolicyHints(inputs))
+	if r.secrets != nil && len(r.secretInputs) > 0 {
+		var err error
+		runInputs, err = injectSecrets(ctx, runInputs, r.secrets, r.secretInputs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var compiled compiledPolicy
 	if r.policy != nil {
 		var err error
@@ -83,7 +126,7 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 			return nil, err
 		}
 		if compiled.inbound != nil {
-			runInputs, err = applyInbound(ctx, compiled.inbound, planID, version, workflowID, inputs)
+			runInputs, err = applyInbound(ctx, compiled.inbound, planID, version, workflowID, runInputs)
 			if err != nil {
 				return nil, err
 			}

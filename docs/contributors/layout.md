@@ -61,6 +61,8 @@ context-mesh-engine/
 | `arazzo/loader.go` | `Loader`, `Source`, `Executor` / request / response aliases |
 | `arazzo/fileloader.go` | Recursive filesystem loader; `BaseURL` trailing slash |
 | `arazzo/policy.go` | `PolicyLoader`, `PolicyBundle`, `PolicyHintsKey` |
+| `arazzo/request.go` | `RequestPreprocessor`, `PolicyRequestContext` |
+| `arazzo/secrets.go` | `SecretsProvider`, `MapSecrets` |
 | `arazzo/filepolicy.go` | Filesystem policy layout `{planId}/{version}/*.rego` |
 | `arazzo/tooldoc.go` | Templates + `ToolDocContext` |
 | `arazzo/toolhelp.go` | `ToolHelpLookup` + overlay |
@@ -78,8 +80,9 @@ context-mesh-engine/
 | `api/v1/tools.go` | `GET /tools` (MCP envelope; REST descriptions for Arazzo tools) |
 | `api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; error mapping |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
-| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; workflow outputs |
-| `plans/policy.go` | Compile/eval OPA; TTL cache via `internal/ttlcache` |
+| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; secrets inject; preprocessor enrich |
+| `plans/policy.go` | Compile/eval OPA; TTL cache via `internal/ttlcache`; `input.auth` / `input.headers` |
+| `plans/request.go` | HTTP/MCP → `RequestSource` |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
 | `plans/openapi.go` | OAS 3.1 JSON (paths **without** `APIPrefix`) |

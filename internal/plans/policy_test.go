@@ -99,6 +99,32 @@ func TestPolicy_NoInboundDoesNotInjectHints(t *testing.T) {
 	}
 }
 
+func TestPolicy_InboundSeesAuthAndHeaders(t *testing.T) {
+	ctx := arazzo.WithPolicyRequest(context.Background(), &arazzo.PolicyRequestContext{
+		Headers: map[string]string{"x-request-id": "r1"},
+		Auth: map[string]any{
+			"endUser": map[string]any{"username": "buyer", "userStatus": 2},
+		},
+	})
+	cp, err := compileBundle(ctx, &arazzo.PolicyBundle{Inbound: []byte(`
+package plan.inbound
+import rego.v1
+default allow := false
+allow if object.get(object.get(input.auth, "endUser", {}), "userStatus", 0) == 2
+hints := {"username": object.get(object.get(input.auth, "endUser", {}), "username", "")} if allow
+`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := applyInbound(ctx, cp.inbound, "p", "1", "purchasePet", map[string]any{"status": "sold"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in[arazzo.PolicyHintsKey+".username"] != "buyer" {
+		t.Fatalf("%#v", in)
+	}
+}
+
 func TestPolicy_InboundFlattensHintsForArazzoInputs(t *testing.T) {
 	ctx := context.Background()
 	cp, err := compileBundle(ctx, &arazzo.PolicyBundle{Inbound: []byte(`
@@ -362,5 +388,60 @@ func TestDecisionAllow(t *testing.T) {
 	}
 	if !decisionAllow(map[string]any{"allow": true}) {
 		t.Fatal("expected allow")
+	}
+}
+
+type stubPreprocessor struct {
+	pc  *arazzo.PolicyRequestContext
+	err error
+}
+
+func (s stubPreprocessor) Process(context.Context, arazzo.RequestSource) (*arazzo.PolicyRequestContext, error) {
+	return s.pc, s.err
+}
+
+func TestEnrichContext_Unauthorized(t *testing.T) {
+	r := NewRunner(nil, nil, nil)
+	r.SetPreprocessor(stubPreprocessor{err: errors.New("missing token")})
+	_, err := r.EnrichContext(context.Background(), arazzo.RequestSource{})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestEnrichContext_StoresAuth(t *testing.T) {
+	r := NewRunner(nil, nil, nil)
+	r.SetPreprocessor(stubPreprocessor{pc: &arazzo.PolicyRequestContext{
+		Auth: map[string]any{"endUser": map[string]any{"username": "buyer"}},
+	}})
+	ctx, err := r.EnrichContext(context.Background(), arazzo.RequestSource{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc := arazzo.PolicyRequestFromContext(ctx)
+	if pc == nil || pc.Auth["endUser"].(map[string]any)["username"] != "buyer" {
+		t.Fatalf("%#v", pc)
+	}
+}
+
+func TestInjectSecrets_StripsCallerAndFlattens(t *testing.T) {
+	in := stripSecrets(map[string]any{
+		"status":       "available",
+		"secrets":      "forged",
+		"secrets.hmac": "forged",
+	})
+	if _, ok := in["secrets"]; ok || in["status"] != "available" {
+		t.Fatalf("%#v", in)
+	}
+	out, err := injectSecrets(context.Background(), in, arazzo.MapSecrets{"hmac": "k"}, []string{"hmac"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out[arazzo.SecretsKey+".hmac"] != "k" {
+		t.Fatalf("%#v", out)
+	}
+	bag, ok := out[arazzo.SecretsKey].(map[string]any)
+	if !ok || bag["hmac"] != "k" {
+		t.Fatalf("bag = %#v", out[arazzo.SecretsKey])
 	}
 }

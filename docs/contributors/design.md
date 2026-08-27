@@ -160,7 +160,7 @@ Follow [arazzo.md](arazzo.md). Do not call `RunWorkflow` on a shared `arazzo.Eng
 
 ## Out of scope
 
-- OAuth / `auth.RequireBearerToken` (wrap MCP only if added later)
+- A shipping TokenVerifier or IdP (hosts implement `MCPHandlerWrap` / `RequestPreprocessor`)
 - Legacy SSE transport
 - A shipping HTTP `Executor` (apps provide one)
 - Semantic matching / vector search (apps implement `arazzo.QueryMatcher`; nil omits query)

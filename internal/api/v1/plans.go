@@ -51,7 +51,12 @@ func (c *PlansController) postQuery(w http.ResponseWriter, r *http.Request) {
 			body.Data = iapi.CanonicalJSON(body.Data).(map[string]any)
 		}
 	}
-	res, err := c.runner.Query(r.Context(), body.Query, body.Data)
+	ctx, err := c.runner.EnrichContext(r.Context(), plans.RequestSourceFromHTTP(r))
+	if err != nil {
+		writeRunError(w, err)
+		return
+	}
+	res, err := c.runner.Query(ctx, body.Query, body.Data)
 	if err != nil {
 		writeRunError(w, err)
 		return
@@ -88,7 +93,12 @@ func (c *PlansController) execute(w http.ResponseWriter, r *http.Request, planID
 		iapi.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	res, err := c.runner.Run(r.Context(), planID, version, workflowID, inputs)
+	ctx, err := c.runner.EnrichContext(r.Context(), plans.RequestSourceFromHTTP(r))
+	if err != nil {
+		writeRunError(w, err)
+		return
+	}
+	res, err := c.runner.Run(ctx, planID, version, workflowID, inputs)
 	if err != nil {
 		writeRunError(w, err)
 		return
@@ -145,6 +155,8 @@ func writeRunError(w http.ResponseWriter, err error) {
 		iapi.WriteError(w, http.StatusNotImplemented, err.Error())
 	case errors.Is(err, plans.ErrNotFound):
 		iapi.WriteError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, plans.ErrUnauthorized):
+		iapi.WriteError(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, plans.ErrPolicyDenied):
 		iapi.WriteError(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, plans.ErrPolicyLoad):

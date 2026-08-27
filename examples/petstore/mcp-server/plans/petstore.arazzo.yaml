@@ -5,7 +5,8 @@
 # - arazzo: 1.0.1 (validator accepts 1.0.x, not 1.1.0)
 # - info.x-planId (required by context-mesh-engine)
 # - three workflows instead of one mixed retrieve+purchase workflow
-# - operationId is the OpenAPI id (loginUser), not $sourceDescriptions...loginUser
+# - getUserByName (not loginUser): identity is the end-user JWT; executor mints
+#   a downstream JWT for Petstore. Auth-server used loginUser to issue that JWT.
 # - AsyncAPI send/receive are bound as OpenAPI HTTP on asyncOrderApiDescription
 #   (see sources/async-order.openapi.yaml). Official AsyncAPI 3 doc:
 #   async-order-server/pet-asyncapi.yaml
@@ -15,9 +16,9 @@ info:
   title: A pet purchasing workflow
   summary: Search, select, purchase, and check pet store orders
   description: |
-    Login, find a pet by availability status, purchase it, and check the
-    resulting order. Use these workflows only; they are the supported
-    interface for this plan.
+    Fetch the authenticated user (getUserByName), find a pet by availability
+    status, purchase it, and check the resulting order. Username and
+    userStatus come from the end-user JWT, not from loginUser.
   version: 0.0.1
   x-planId: petstore
 sourceDescriptions:
@@ -30,15 +31,11 @@ sourceDescriptions:
 workflows:
   - workflowId: retrievePet
     summary: Find a pet by status
-    description: Logs the user in and returns details of a pet. Availability status comes from inbound policy hints (`$inputs.policyHints.petStatus`).
+    description: Loads the user (getUserByName) and returns details of a pet. Availability status comes from inbound policy hints (`$inputs.policyHints.petStatus`). Username is `$inputs.policyHints.username` from the end-user JWT.
     inputs:
       type: object
-      required: [username, password, status]
+      required: [status]
       properties:
-        username:
-          type: string
-        password:
-          type: string
         status:
           type: string
           enum: [available, pending, sold]
@@ -47,20 +44,19 @@ workflows:
           description: Injected by inbound policy. Do not send; caller values are ignored.
           additionalProperties: true
     steps:
-      - stepId: loginStep
-        description: User login
-        operationId: loginUser
+      - stepId: getUserStep
+        description: Fetch the end user by name from JWT claims
+        operationId: getUserByName
         parameters:
           - name: username
-            in: query
-            value: $inputs.username
-          - name: password
-            in: query
-            value: $inputs.password
+            in: path
+            value: $inputs.policyHints.username
         successCriteria:
           - condition: $statusCode == 200
         outputs:
-          sessionToken: $response.body
+          firstName: $response.body#/firstName
+          lastName: $response.body#/lastName
+          email: $response.body#/email
       - stepId: getPetStep
         description: Find pets by status
         operationPath: "{$sourceDescriptions.petStoreDescription.url}#/paths/~1pet~1findByStatus/get"
@@ -68,9 +64,6 @@ workflows:
           - name: status
             in: query
             value: $inputs.policyHints.petStatus
-          - name: Authorization
-            in: header
-            value: $steps.loginStep.outputs.sessionToken
         successCriteria:
           - condition: $statusCode == 200
         onSuccess:
@@ -82,39 +75,39 @@ workflows:
           petId: $response.body#/0/id
           pet: $response.body#/0
     outputs:
+      requestor: $steps.getUserStep.outputs
       petId: $steps.getPetStep.outputs.petId
       pet: $steps.getPetStep.outputs.pet
 
   - workflowId: purchasePet
     summary: Purchase a pet
-    description: Logs the user in and places an order for the given pet. Returns the order identifier when the purchase is confirmed.
+    description: Loads the user and places an order for the given pet. Returns the order identifier when the purchase is confirmed.
     inputs:
       type: object
-      required: [username, password, petId, orderCorrelationId]
+      required: [petId, orderCorrelationId]
       properties:
-        username:
-          type: string
-        password:
-          type: string
         petId:
           type: integer
         orderCorrelationId:
           type: string
+        policyHints:
+          type: object
+          description: Injected by inbound policy. Do not send; caller values are ignored.
+          additionalProperties: true
     steps:
-      - stepId: loginStep
-        description: User login
-        operationId: loginUser
+      - stepId: getUserStep
+        description: Fetch the end user by name from JWT claims
+        operationId: getUserByName
         parameters:
           - name: username
-            in: query
-            value: $inputs.username
-          - name: password
-            in: query
-            value: $inputs.password
+            in: path
+            value: $inputs.policyHints.username
         successCriteria:
           - condition: $statusCode == 200
         outputs:
-          sessionToken: $response.body
+          firstName: $response.body#/firstName
+          lastName: $response.body#/lastName
+          email: $response.body#/email
       - stepId: purchasePetStep
         description: Place the order
         operationPath: $sourceDescriptions.asyncOrderApiDescription.placeOrder
@@ -122,9 +115,6 @@ workflows:
           - name: orderCorrelationId
             in: header
             value: $inputs.orderCorrelationId
-          - name: Authorization
-            in: header
-            value: $steps.loginStep.outputs.sessionToken
         requestBody:
           contentType: application/json
           payload:
@@ -143,36 +133,36 @@ workflows:
         outputs:
           orderId: $response.body#/payload/orderId
     outputs:
+      requestor: $steps.getUserStep.outputs
       orderId: $steps.confirmPetPurchaseStep.outputs.orderId
 
   - workflowId: checkOrderStatus
     summary: Check an order
-    description: Logs the user in and returns the status of an existing order.
+    description: Loads the user and returns the status of an existing order.
     inputs:
       type: object
-      required: [username, password, orderId]
+      required: [orderId]
       properties:
-        username:
-          type: string
-        password:
-          type: string
         orderId:
           type: integer
+        policyHints:
+          type: object
+          description: Injected by inbound policy. Do not send; caller values are ignored.
+          additionalProperties: true
     steps:
-      - stepId: loginStep
-        description: User login
-        operationId: loginUser
+      - stepId: getUserStep
+        description: Fetch the end user by name from JWT claims
+        operationId: getUserByName
         parameters:
           - name: username
-            in: query
-            value: $inputs.username
-          - name: password
-            in: query
-            value: $inputs.password
+            in: path
+            value: $inputs.policyHints.username
         successCriteria:
           - condition: $statusCode == 200
         outputs:
-          sessionToken: $response.body
+          firstName: $response.body#/firstName
+          lastName: $response.body#/lastName
+          email: $response.body#/email
       - stepId: getOrderStep
         description: Fetch order by id
         operationId: getOrderById
@@ -180,9 +170,6 @@ workflows:
           - name: orderId
             in: path
             value: $inputs.orderId
-          - name: Authorization
-            in: header
-            value: $steps.loginStep.outputs.sessionToken
         successCriteria:
           - condition: $statusCode == 200
         outputs:
@@ -191,6 +178,7 @@ workflows:
           status: $response.body#/status
           complete: $response.body#/complete
     outputs:
+      requestor: $steps.getUserStep.outputs
       orderId: $steps.getOrderStep.outputs.orderId
       petId: $steps.getOrderStep.outputs.petId
       status: $steps.getOrderStep.outputs.status

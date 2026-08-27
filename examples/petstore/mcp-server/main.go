@@ -8,6 +8,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/mevansam/context-mesh-engine/engine"
+	"github.com/modelcontextprotocol/go-sdk/auth"
 )
 
 func main() {
@@ -23,6 +25,7 @@ func main() {
 	asyncURL := flag.String("async-order-url", defaultAsyncBase, "async-order-server origin")
 	petstore := flag.String("petstore", "local", "Petstore 3 target: local (Docker on :8090) or hosted (petstore3.swagger.io)")
 	petstoreURL := flag.String("petstore-url", "", "override Petstore 3 OpenAPI origin")
+	jwtSecret := flag.String("jwt-secret", "petstore-demo-hs256", "HS256 secret shared with petstore-auth-server")
 	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
 	flag.Parse()
 
@@ -34,18 +37,29 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	secret := []byte(*jwtSecret)
+	verifier := &jwtVerifier{secret: secret}
+	bearer := auth.RequireBearerToken(verifier.verifyClient, &auth.RequireBearerTokenOptions{
+		AllowMissingExpiration: false,
+	})
+	secrets := arazzo.MapSecrets{"downstream-hmac": *jwtSecret}
+
 	e, err := engine.New(engine.Options{
 		Addr: *addr,
 		ArazzoLoaders: []arazzo.Loader{
 			arazzo.NewFileLoader(plansDir()),
 		},
-		ArazzoExecutor: newHTTPExec(*asyncURL, petstoreBase),
+		ArazzoExecutor: newHTTPExec(*asyncURL, petstoreBase, secrets),
 		PolicyLoader: &arazzo.FilePolicyLoader{
 			Dir:  policiesDir(),
 			Data: map[string]any{"petstoreBase": petstoreBase},
 		},
-		PublicBaseURL:  "http://" + *addr,
-		DualMCPandREST: *dual,
+		RequestPreprocessor: &dualJWTPreprocessor{secret: secret},
+		SecretsProvider:     secrets,
+		PublicBaseURL:       "http://" + *addr,
+		DualMCPandREST:      *dual,
+		MCPHandlerWrap:      bearer,
+		RESTHandlerWrap:     func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
 	})
 	if err != nil {
 		log.Fatal(err)

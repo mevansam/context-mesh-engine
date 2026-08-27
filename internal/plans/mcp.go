@@ -53,7 +53,11 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, cfg Regis
 			Name:        qdoc.Name,
 			Title:       qdoc.Title,
 			Description: qdoc.Description,
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, in queryArgs) (*mcp.CallToolResult, any, error) {
+		}, func(ctx context.Context, req *mcp.CallToolRequest, in queryArgs) (*mcp.CallToolResult, any, error) {
+			ctx, err := runner.EnrichContext(ctx, RequestSourceFromMCP(req))
+			if err != nil {
+				return nil, nil, err
+			}
 			res, err := runner.Query(ctx, in.Query, in.Data)
 			if err != nil {
 				return nil, nil, err
@@ -97,7 +101,11 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, cfg Regis
 			Description:  doc.Description,
 			InputSchema:  schema,
 			OutputSchema: &jsonschema.Schema{Type: "object"},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, in runArgs) (*mcp.CallToolResult, any, error) {
+		}, func(ctx context.Context, req *mcp.CallToolRequest, in runArgs) (*mcp.CallToolResult, any, error) {
+			ctx, err := runner.EnrichContext(ctx, RequestSourceFromMCP(req))
+			if err != nil {
+				return nil, nil, err
+			}
 			res, err := runner.Run(ctx, planID, version, in.WorkflowID, in.Inputs)
 			if err != nil {
 				return nil, nil, err

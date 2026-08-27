@@ -7,6 +7,18 @@ info:
 servers:
   - url: http://localhost:8090/api/v3
 paths:
+  /user/{username}:
+    get:
+      operationId: getUserByName
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: user
   /user/login:
     get:
       operationId: loginUser

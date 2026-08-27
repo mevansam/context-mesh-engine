@@ -131,6 +131,11 @@ Names stay on `ToolDoc.Name` / `QueryName`. They are never supplied by `ToolHelp
 | --- | --- | --- | --- |
 | `PolicyLoader` | `arazzo.PolicyLoader` | `nil` | Optional OPA inbound/outbound modules per plan version. Looked up on execute, not during `New`. Nil skips all policy checks. See [`PolicyLoader`](adapters.md#policyloader). Do not load `.rego` through `ArazzoLoaders`. |
 | `PolicyCacheTTL` | `time.Duration` | `5m` (`arazzo.DefaultPolicyCacheTTL`) | How long a compiled bundle is reused. Zero in `Options` means that default. A **negative** duration disables caching (every `Run` loads and compiles). |
+| `RequestPreprocessor` | `arazzo.RequestPreprocessor` | `nil` | Builds OPA `input.headers` / `input.auth` from HTTP or MCP headers (end-user JWTs, remote claim enrichment). Nil skips. |
+| `SecretsProvider` | `arazzo.SecretsProvider` | `nil` | Named secrets for the host Executor (downstream JWT) and optional `$inputs.secrets.*`. |
+| `SecretInputs` | `[]string` | `nil` | Secret names to flatten onto workflow inputs. Empty means do not inject into `$inputs`. |
+| `MCPHandlerWrap` | `func(http.Handler) http.Handler` | `nil` | Wraps Streamable HTTP only. Use `auth.RequireBearerToken` for the calling-application JWT. |
+| `RESTHandlerWrap` | `func(http.Handler) http.Handler` | `nil` | Wraps REST after `APIPrefix` strip, before `APITimeout`. Paths are `/health`, `/plans/...`. |
 
 ## Start the server
 
@@ -250,7 +255,13 @@ Custom HTTP clients talking to `/mcp` must send:
 
 ## Auth
 
-This SDK does not implement authentication. To require a bearer token, wrap **only** the MCP handler before mount, as in the [go-sdk auth example](https://github.com/modelcontextprotocol/go-sdk/blob/main/examples/auth/server/main.go). Do not put that middleware on the REST mux unless you intend it.
+Calling-application OAuth (one `Authorization: Bearer` JWT) is `Options.MCPHandlerWrap` / `Options.RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/examples/server/auth-middleware/main.go). Wrap **child** handlers only, never the root mux.
+
+End-user JWTs on `x-*` headers, claim extraction, and remote enrichment are [`RequestPreprocessor`](adapters.md). OPA sees `input.auth` and allowlisted `input.headers`, not raw `Authorization`. Invalid preprocessor → **401**. Inbound deny → **403**.
+
+The host `Executor` may mint a **new** downstream JWT from [`SecretsProvider`](adapters.md). Do not put signing keys in `$inputs` unless they are listed in `SecretInputs`.
+
+Petstore walkthrough: [examples/petstore](../../examples/petstore/README.md).
 
 ## Checklist
 

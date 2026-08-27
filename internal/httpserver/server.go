@@ -19,6 +19,8 @@ type MuxOptions struct {
 	MCPHandler http.Handler
 	APIHandler http.Handler
 	APITimeout time.Duration
+	WrapMCP    func(http.Handler) http.Handler
+	WrapREST   func(http.Handler) http.Handler
 }
 
 // NewMux mounts MCP and REST as siblings. A nil MCPHandler or APIHandler
@@ -28,12 +30,19 @@ func NewMux(opts MuxOptions) http.Handler {
 	mux := http.NewServeMux()
 
 	if opts.MCPHandler != nil {
-		mux.Handle(opts.MCPPath, opts.MCPHandler)
-		mux.Handle(opts.MCPPath+"/", opts.MCPHandler)
+		h := opts.MCPHandler
+		if opts.WrapMCP != nil {
+			h = opts.WrapMCP(h)
+		}
+		mux.Handle(opts.MCPPath, h)
+		mux.Handle(opts.MCPPath+"/", h)
 	}
 
 	if opts.APIHandler != nil {
 		api := opts.APIHandler
+		if opts.WrapREST != nil {
+			api = opts.WrapREST(api)
+		}
 		if opts.APITimeout > 0 {
 			api = http.TimeoutHandler(api, opts.APITimeout, "request timeout\n")
 		}

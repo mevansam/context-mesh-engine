@@ -3,6 +3,7 @@ module github.com/mevansam/context-mesh-engine
 go 1.25.7
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/open-policy-agent/opa v1.19.1

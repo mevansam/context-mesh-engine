@@ -13,7 +13,7 @@ Flags, curl walkthroughs, and implementation notes live in each example’s **lo
 | [minimal](#minimal) | Own nothing but the engine: `New` + `ListenAndServe` | none (sample `ping` MCP tool only) |
 | [embed-handler](#embed-handler) | Drop the engine mux onto an `http.Server` you already own | none (sample `ping` MCP tool only) |
 | [arazzo-fs](#arazzo-fs) | Load plans from disk and exercise `run_*`, REST execute, and `query` without real backends | `FileLoader`, stub `Executor`, dummy `QueryMatcher` |
-| [petstore](#petstore) | Run a real multi-step Arazzo plan against live HTTP APIs | `FileLoader`, HTTP `Executor` (no `QueryMatcher`) |
+| [petstore](#petstore) | Run a real multi-step Arazzo plan against live HTTP APIs | `FileLoader`, HTTP `Executor`, `RequestPreprocessor`, `SecretsProvider`, OAuth wraps (no `QueryMatcher`) |
 
 `cmd/engine` (`go run ./cmd/engine`) is a **product-shaped** binary (flags, SIGINT shutdown, sample `ping` tool), not an SDK usage example. It can load `-specs` but does not set an executor or matcher. See [Getting started](getting-started.md#run-the-sample-binary).
 
@@ -105,30 +105,34 @@ Plan contracts: [Arazzo plans](arazzo.md). Live backends: [petstore](#petstore).
 
 **Demonstrates:** an end-to-end governed plan over **real HTTP**: login, find a pet, place an order (via an AsyncAPI-shaped adapter), and check order status. This is the example that shows what an `Executor` looks like in production, not a stub.
 
-Three processes:
+Three processes plus a demo IdP:
 
 | Process | Listen | Role |
 | --- | --- | --- |
 | `petstore-openapi-server` | `localhost:8090` | Official Petstore 3 in Docker |
+| `petstore-auth-server` | `localhost:8092` | Issues client + end-user JWTs (`loginUser` + `getUserByName`) |
 | `async-order-server` | `localhost:8091` | HTTP adapter for the spec’s AsyncAPI order flow; calls Petstore `POST /store/order` |
 | `mcp-server` | `localhost:8080` | `context-mesh-engine` with `x-planId: petstore` |
 
 | Piece | What this example does |
 | --- | --- |
 | [`Loader`](adapters.md#loader) | `FileLoader` on `mcp-server/plans/` |
-| [`Executor`](adapters.md#executor) | HTTP client: OpenAPI operations against Petstore 3, AsyncAPI operations against the local adapter |
-| [`PolicyLoader`](adapters.md#policyloader) | `FilePolicyLoader` on `mcp-server/policies/` (`petstore/0.0.1`); `userStatus` 1 → `retrievePet` only, 2 → retrieve/purchase/check order |
+| [`Executor`](adapters.md#executor) | HTTP client; mints a downstream JWT from `SecretsProvider` |
+| [`PolicyLoader`](adapters.md#policyloader) | `FilePolicyLoader`; `userStatus` from end-user JWT (`input.auth.endUser`), not `http.send` |
+| [`RequestPreprocessor`](adapters.md#requestpreprocessor) | Verifies `X-End-User-Token`; copies client `TokenInfo` |
+| [`SecretsProvider`](adapters.md#secretsprovider) | `MapSecrets{"downstream-hmac": ...}` |
 | [`QueryMatcher`](adapters.md#querymatcher) | **unset** — `query` is not registered; callers use `run_petstore_v0.0.1` or REST execute |
 
 Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. Generated `GET /api/openapi/petstore` describes those execute paths. `GET /api/tools` is the REST form of MCP `tools/list` (same names/schemas; REST-specific Arazzo descriptions).
 
 **When to copy:** you are implementing an HTTP `Executor`, wiring `sourceDescriptions` to live origins, or showing an agent a real `run_*` tool. For natural-language `query`, start from [arazzo-fs](#arazzo-fs) and keep this executor.
 
-Default Petstore target is local Docker (`-petstore local`). `-petstore hosted` uses [petstore3.swagger.io](https://petstore3.swagger.io/) (often flaky). Seed `userStatus` (1 vs 2), login, and MCP agent prompts: the [petstore README](../../examples/petstore/README.md).
+Default Petstore target is local Docker (`-petstore local`). `-petstore hosted` uses [petstore3.swagger.io](https://petstore3.swagger.io/) (often flaky). Seed users, mint JWTs, and MCP agent prompts: the [petstore README](../../examples/petstore/README.md).
 
 ```bash
 ./examples/petstore/petstore-openapi-server/run.sh   # Docker Petstore on :8090
 go run ./examples/petstore/async-order-server
+go run ./examples/petstore/petstore-auth-server
 go run ./examples/petstore/mcp-server                 # REST only
 go run ./examples/petstore/mcp-server -dual           # also /mcp
 ```
@@ -136,8 +140,12 @@ go run ./examples/petstore/mcp-server -dual           # also /mcp
 ```bash
 curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
   -H 'Content-Type: application/json' \
-  -d '{"username":"browser","password":"abc123","status":"available"}'
+  -H "Authorization: Bearer $CLIENT" \
+  -H "X-End-User-Token: $USER" \
+  -d '{"status":"available"}'
 ```
+
+Mint `$CLIENT` / `$USER` from `petstore-auth-server` (`POST /oauth/token`). See the [petstore README](../../examples/petstore/README.md).
 
 ---
 

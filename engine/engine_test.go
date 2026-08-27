@@ -417,6 +417,32 @@ func TestEngine_AddController(t *testing.T) {
 	}
 }
 
+func TestHandler_RESTWrapRunsOnHealth(t *testing.T) {
+	seen := false
+	e, err := engine.New(engine.Options{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		RESTHandlerWrap: func(h http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen = true
+				h.ServeHTTP(w, r)
+			})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+	resp, err := http.Get(ts.URL + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if !seen {
+		t.Fatal("RESTHandlerWrap not invoked")
+	}
+}
+
 func TestEngine_ListenAndServeCancel(t *testing.T) {
 	e, err := engine.New(engine.Options{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),

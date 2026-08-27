@@ -211,15 +211,30 @@ func decisionReason(d map[string]any) string {
 	return s
 }
 
-func applyInbound(ctx context.Context, q *rego.PreparedEvalQuery, planID, version, workflowID string, inputs map[string]any) (map[string]any, error) {
-	stripped := stripPolicyHints(inputs)
+func policyEvalInput(ctx context.Context, planID, version, workflowID string, inputs map[string]any, outputs map[string]any) map[string]any {
 	in := map[string]any{
 		"planId":     planID,
 		"version":    version,
 		"workflowId": workflowID,
-		"inputs":     stripped,
+		"inputs":     inputs,
 	}
-	d, err := evalDecision(ctx, q, in)
+	if outputs != nil {
+		in["outputs"] = outputs
+	}
+	if pc := arazzo.PolicyRequestFromContext(ctx); pc != nil {
+		if pc.Headers != nil {
+			in["headers"] = pc.Headers
+		}
+		if pc.Auth != nil {
+			in["auth"] = pc.Auth
+		}
+	}
+	return in
+}
+
+func applyInbound(ctx context.Context, q *rego.PreparedEvalQuery, planID, version, workflowID string, inputs map[string]any) (map[string]any, error) {
+	stripped := stripPolicyHints(inputs)
+	d, err := evalDecision(ctx, q, policyEvalInput(ctx, planID, version, workflowID, stripped, nil))
 	if err != nil {
 		return nil, fmt.Errorf("%w: inbound eval: %w", ErrPolicyLoad, err)
 	}
@@ -241,14 +256,7 @@ func applyInbound(ctx context.Context, q *rego.PreparedEvalQuery, planID, versio
 }
 
 func applyOutbound(ctx context.Context, q *rego.PreparedEvalQuery, planID, version, workflowID string, inputs, outputs map[string]any) (map[string]any, error) {
-	in := map[string]any{
-		"planId":     planID,
-		"version":    version,
-		"workflowId": workflowID,
-		"inputs":     inputs,
-		"outputs":    outputs,
-	}
-	d, err := evalDecision(ctx, q, in)
+	d, err := evalDecision(ctx, q, policyEvalInput(ctx, planID, version, workflowID, inputs, outputs))
 	if err != nil {
 		return nil, fmt.Errorf("%w: outbound eval: %w", ErrPolicyLoad, err)
 	}
@@ -281,15 +289,44 @@ func applyOutbound(ctx context.Context, q *rego.PreparedEvalQuery, planID, versi
 }
 
 func stripPolicyHints(inputs map[string]any) map[string]any {
+	return stripPrefixed(inputs, arazzo.PolicyHintsKey)
+}
+
+func stripSecrets(inputs map[string]any) map[string]any {
+	return stripPrefixed(inputs, arazzo.SecretsKey)
+}
+
+func stripPrefixed(inputs map[string]any, key string) map[string]any {
 	out := map[string]any{}
-	prefix := arazzo.PolicyHintsKey + "."
+	prefix := key + "."
 	for k, v := range inputs {
-		if k == arazzo.PolicyHintsKey || strings.HasPrefix(k, prefix) {
+		if k == key || strings.HasPrefix(k, prefix) {
 			continue
 		}
 		out[k] = v
 	}
 	return out
+}
+
+func injectSecrets(ctx context.Context, inputs map[string]any, p arazzo.SecretsProvider, names []string) (map[string]any, error) {
+	if p == nil || len(names) == 0 {
+		return inputs, nil
+	}
+	out := inputs
+	if out == nil {
+		out = map[string]any{}
+	}
+	bag := map[string]any{}
+	for _, name := range names {
+		v, err := p.Get(ctx, name)
+		if err != nil {
+			return nil, fmt.Errorf("secret %q: %w", name, err)
+		}
+		bag[name] = v
+	}
+	out[arazzo.SecretsKey] = bag
+	flattenPolicyHints(out, arazzo.SecretsKey, bag)
+	return out, nil
 }
 
 func flattenPolicyHints(dst map[string]any, prefix string, obj map[string]any) {
