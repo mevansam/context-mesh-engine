@@ -13,71 +13,27 @@ using [go-sdk](https://github.com/modelcontextprotocol/go-sdk) as the MCP librar
 
 ## Reference architecture
 
-High-level modular runtime (Toolbox Runtime Modular Design). **`context-mesh-engine` is the SDK inside a host process**, not the host itself. The host wires plugins the engine calls at init and execute time. Names such as Keel, Stratum, OKF, and CWP are the originating reference deployment; the same shape applies to any embed.
+High-level modular runtime (Toolbox Runtime Modular Design). `**context-mesh-engine` is the SDK inside a host process**, not the host itself. 
 
-| Color | Ownership |
-| --- | --- |
-| Green | Open source (go-sdk, libopenapi, OPA) |
-| Blue | Fidelity open source (`context-mesh-engine`) |
-| Orange | Fidelity internal (host app, registry plugins) |
-| Red | Fidelity confidential (domain APIs) |
-
-```mermaid
-flowchart LR
-  MCP["MCP"] -->|"/mcp"| Engine
-  REST["REST"] -->|"/api"| Engine
-
-  subgraph host["Domain API Context Mesh Router (Keel) Service App"]
-    direction TB
-    Init["«initialization» configure engine"] --> Engine["«SDK» context-mesh-engine"]
-    Engine -->|use| MCPSDK["«SDK» MCP go-sdk"]
-    Engine -->|use| OPASDK["«SDK» OPA open-policy-agent"]
-    Engine -->|use| ArazzoSDK["«SDK» Arazzo libopenapi"]
-
-    subgraph registry["Semantic Plan Registry Plugins"]
-      Loader["Plan Loader"]
-      Matcher["Plan Matcher"]
-    end
-    Engine --> Loader
-    Engine --> Matcher
-
-    subgraph execplug["API Executor Plugins"]
-      Exec["Stratum REST API Executor"]
-    end
-    ArazzoSDK --> Exec
-  end
-
-  Loader --> OKF[("OKF TOOLS REGISTRY<br/>Plan help in OKF format")]
-  Matcher --> SEM[("SEMANTIC MATCH REPOSITORY<br/>Pre-Compiled Routing Plans")]
-  Exec --> CWP["CWP Domain APIs"]
-
-  classDef oss fill:#d5e8d4,stroke:#82b366,color:#000
-  classDef fos fill:#dae8fc,stroke:#6c8ebf,color:#000
-  classDef fi fill:#ffe6cc,stroke:#d79b00,color:#000
-  classDef fc fill:#f8cecc,stroke:#b85450,color:#000
-  classDef store fill:#fef9e7,stroke:#f39c12,color:#000
-  class MCPSDK,OPASDK,ArazzoSDK oss
-  class Engine fos
-  class host,Init,registry,Loader,Matcher,execplug,Exec fi
-  class CWP fc
-  class OKF,SEM store
-```
+![Modular Architecture](modular-design.png)
 
 How the boxes map to this repository:
 
-| Diagram | Engine surface |
-| --- | --- |
-| «initialization» configure engine | Host `engine.New(Options{...})` — loaders, executor, matcher, policy |
-| «SDK» context-mesh-engine | Packages `engine`, `arazzo`, `api` |
-| «SDK» MCP (go-sdk) | `internal/mcpgw` — shared `mcp.Server` + Streamable HTTP |
-| «SDK» Arazzo (libopenapi) | Catalog parse/validate/run; new `arazzo.Engine` per `Run` |
-| «SDK» OPA | `internal/plans` policy cache; `Options.PolicyLoader` supplies modules |
-| Plan Loader | `Options.ArazzoLoaders` (and `PolicyLoader` / `ToolHelpLookup` if help is stored with plans) |
-| Plan Matcher | `Options.QueryMatcher` — omitted if nil (no `query` tool) |
-| API Executor plugin | `Options.ArazzoExecutor` — one HTTP call per workflow step |
-| OKF tools registry | App-owned store behind the loader / help lookup |
-| Semantic match repository | App-owned index the matcher queries |
-| CWP Domain APIs | Origins the executor calls; the engine never talks to them directly |
+
+| Diagram                           | Engine surface                                                                               |
+| --------------------------------- | -------------------------------------------------------------------------------------------- |
+| «initialization» configure engine | Host `engine.New(Options{...})` — loaders, executor, matcher, policy                         |
+| «SDK» context-mesh-engine         | Packages `engine`, `arazzo`, `api`                                                           |
+| «SDK» MCP (go-sdk)                | `internal/mcpgw` — shared `mcp.Server` + Streamable HTTP                                     |
+| «SDK» Arazzo (libopenapi)         | Catalog parse/validate/run; new `arazzo.Engine` per `Run`                                    |
+| «SDK» OPA                         | `internal/plans` policy cache; `Options.PolicyLoader` supplies modules                       |
+| Plan Loader                       | `Options.ArazzoLoaders` (and `PolicyLoader` / `ToolHelpLookup` if help is stored with plans) |
+| Plan Matcher                      | `Options.QueryMatcher` — omitted if nil (no `query` tool)                                    |
+| API Executor plugin               | `Options.ArazzoExecutor` — one HTTP call per workflow step                                   |
+| OKF tools registry                | App-owned store behind the loader / help lookup                                              |
+| Semantic match repository         | App-owned index the matcher queries                                                          |
+| CWP Domain APIs                   | Origins the executor calls; the engine never talks to them directly                          |
+
 
 MCP and REST are two faces of the **same** runner. Plugins are how a host (Keel or otherwise) stays a thin process around this SDK.
 
@@ -114,6 +70,8 @@ flowchart TB
   clientREST["REST client"] -->|"JSON"| restH
 ```
 
+
+
 One `mcp.Server` is reused for every session. `getServer` in `NewStreamableHTTPHandler` always returns that instance (`internal/mcpgw`). Sessions live inside the handler, keyed by `Mcp-Session-Id`.
 
 When Arazzo loaders are set, MCP `run_*` tools and REST plan handlers share `internal/plans.Runner`.
@@ -122,11 +80,13 @@ When Arazzo loaders are set, MCP `run_*` tools and REST plan handlers share `int
 
 Stateful `StreamableHTTPHandler.ServeHTTP` (go-sdk `mcp/streamable.go`):
 
-| Method | Role |
-| --- | --- |
-| POST | JSON-RPC. First POST without `Mcp-Session-Id` creates a session. Default response is `text/event-stream`. |
-| GET | Standalone SSE for server-initiated messages. Requires session id + `Accept: text/event-stream`. |
-| DELETE | Close session. |
+
+| Method | Role                                                                                                      |
+| ------ | --------------------------------------------------------------------------------------------------------- |
+| POST   | JSON-RPC. First POST without `Mcp-Session-Id` creates a session. Default response is `text/event-stream`. |
+| GET    | Standalone SSE for server-initiated messages. Requires session id + `Accept: text/event-stream`.          |
+| DELETE | Close session.                                                                                            |
+
 
 `internal/mcpgw` must keep:
 
@@ -154,14 +114,16 @@ The REST prefix (`Options.APIPrefix`, default `/api`) is mounted as `StripPrefix
 
 ## Package split
 
-| Package | Owns |
-| --- | --- |
-| `internal/mcpgw` | shared `mcp.Server` + `NewStreamableHTTPHandler` |
-| `internal/httpserver` | root mux, `ListenAndServe`, `Shutdown` (10s) |
-| `internal/api` | JSON encode/decode |
-| `internal/api/v1` | REST mux, health, plans HTTP |
-| `internal/plans` | catalog, runner, MCP registration, OAS JSON |
-| `engine` / `api` / `arazzo` | public facades |
+
+| Package                     | Owns                                             |
+| --------------------------- | ------------------------------------------------ |
+| `internal/mcpgw`            | shared `mcp.Server` + `NewStreamableHTTPHandler` |
+| `internal/httpserver`       | root mux, `ListenAndServe`, `Shutdown` (10s)     |
+| `internal/api`              | JSON encode/decode                               |
+| `internal/api/v1`           | REST mux, health, plans HTTP                     |
+| `internal/plans`            | catalog, runner, MCP registration, OAS JSON      |
+| `engine` / `api` / `arazzo` | public facades                                   |
+
 
 ## Lifecycle
 
@@ -203,3 +165,4 @@ Follow [arazzo.md](arazzo.md). Do not call `RunWorkflow` on a shared `arazzo.Eng
 - A shipping HTTP `Executor` (apps provide one)
 - Semantic matching / vector search (apps implement `arazzo.QueryMatcher`; nil omits query)
 - Changes under the `go-sdk` or `libopenapi` checkouts unless you are contributing to those repos
+
