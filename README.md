@@ -29,6 +29,27 @@ Arazzo plans move that design **out of the model**. Authors publish a versioned 
 
 The unit of work is a **pre-built, validated, governed plan**, not unbounded tool-use against every domain operation.
 
+## Why inbound and outbound policy
+
+A published plan still runs for whoever can call `run_*` or `POST /api/plans/...`. Without a policy layer, **who may run which workflow** and **what may leave the engine** live in prompts, ad-hoc checks in the Executor, or nowhere. An agent can pick `purchasePet` as easily as `retrievePet`. A REST client can send a forged role. A successful step can return fields the caller should never see.
+
+Optional [OPA](https://www.openpolicyagent.org/) modules attach to `(planId, version)` and run on **every** execute path (MCP `run_*`, REST, `query`). They are not prompts. They are versioned with the plan, default-deny, and fail closed if the bundle cannot load.
+
+- **Inbound** (`data.plan.inbound`) runs **before** any step. Allow or deny; optional `hints` become `$inputs.policyHints` (caller-supplied `policyHints` are discarded). Deny is **403** and the workflow does not run. Hints are how policy constrains the plan (for example forcing a browse-only status) without putting that logic in the Arazzo document or trusting the model.
+- **Outbound** (`data.plan.outbound`) runs **after** a successful workflow. Allow, redact JSON Pointers in the outputs, or replace the outputs map. Deny is **403** and outputs are **not** returned—even though the steps already ran. That is data-minimization and leak-stop, not a rollback of backends.
+
+| Without policy | With inbound / outbound OPA |
+| --- | --- |
+| Any caller who can hit execute can run any loaded workflow | Allow lists are evaluated per `workflowId`, identity, and inputs |
+| “Don’t purchase unless you are a buyer” is a prompt | Inbound deny is 403; the Executor is never called |
+| Plan inputs are whatever the client or model sent | Hints are policy-authored; they cannot be forged on the request |
+| Full workflow outputs go back to the agent or HTTP client | Outbound redact/replace strips fields (PII, photos, secrets) before return |
+| MCP and REST can drift if you check auth in only one adapter | One runner: the same modules wrap both surfaces |
+| A bad Executor or over-broad plan leaks on a 200 | Outbound is a second gate after the plan succeeds |
+| Policy load failure might skip checks | Load/compile errors are **500** unless a compiled bundle is still cached |
+
+Plans define **how** domain APIs are chained. Policy defines **who** may run that chain and **what** may leave the process. Together they keep orchestration deterministic **and** access governed—without asking the model to police itself.
+
 ## What you run
 
 One process, one TCP port:
@@ -46,7 +67,7 @@ One process, one TCP port:
 
 `query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_`* and `POST /api/plans/{planId}/...` are for when the plan and version are already known.
 
-You supply **loaders**, an **Executor** for domain HTTP, and optionally a **QueryMatcher** for natural-language plan selection. The engine loads plans, exposes tools and OpenAPI, and runs steps through libopenapi’s Arazzo engine.
+You supply **loaders**, an **Executor** for domain HTTP, optionally a **PolicyLoader** for inbound/outbound OPA, and optionally a **QueryMatcher** for natural-language plan selection. The engine loads plans, exposes tools and OpenAPI, evaluates policy around `Run`, and executes steps through libopenapi’s Arazzo engine. Nil `PolicyLoader` skips those checks.
 
 ## Quick start
 
