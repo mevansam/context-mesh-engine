@@ -30,6 +30,7 @@ Default Petstore target is **local Docker**. Pass `-petstore hosted` for [petsto
   - [Loader](#loader)
   - [Executor](#executor)
   - [PolicyLoader](#policyloader)
+  - [OAuth and the engine SDK](#oauth-and-the-engine-sdk)
   - [HTTP surfaces](#http-surfaces)
   - [AsyncAPI as OpenAPI HTTP](#asyncapi-as-openapi-http)
   - [Checklist for your own host](#checklist-for-your-own-host)
@@ -143,7 +144,7 @@ Inbound OPA **must not** call Petstore. `userStatus` is already on the user JWT 
 
 The host `Executor` mints a **new** HS256 JWT (`SecretsProvider` key `downstream-hmac`) for Petstore HTTP. That signing key is **not** listed in `SecretInputs`, so it never appears in `$inputs`.
 
-Demo client: `client_id=petstore-mcp`, `client_secret=mcp-secret`. Users: `browser` / `abc123` (`userStatus` 1), `buyer` / `abc123` (`userStatus` 2). Package: [`jwtx/`](jwtx/). Auth-server: [`petstore-auth-server/README.md`](petstore-auth-server/README.md).
+Demo client: `client_id=petstore-mcp`, `client_secret=mcp-secret`. Users: `browser` / `abc123` (`userStatus` 1), `buyer` / `abc123` (`userStatus` 2). Package: [`jwtx/`](jwtx/). Auth-server: [`petstore-auth-server/README.md`](petstore-auth-server/README.md). How those tokens are wired into `engine.Options`: [OAuth and the engine SDK](#oauth-and-the-engine-sdk).
 
 ## Quick start
 
@@ -638,6 +639,79 @@ Rego decision objects:
 
 `hints` is inbound-only. Outbound may set `outputs` (replaces the workflow map and ignores `redact`) or `redact` pointers. Details: [Adapters — PolicyLoader](../../docs/users/adapters.md#policyloader).
 
+### OAuth and the engine SDK
+
+The engine does **not** implement OAuth. It exposes four host-owned seams on [`engine.Options`](../../docs/users/configuration.md#options-reference). This demo uses all of them. Operator-facing token table: [Identity and tokens](#identity-and-tokens). Contracts: [Configuration — Auth](../../docs/users/configuration.md#auth), [Adapters — RequestPreprocessor](../../docs/users/adapters.md#requestpreprocessor), [Adapters — SecretsProvider](../../docs/users/adapters.md#secretsprovider).
+
+| Token | Who mints it | SDK seam | Where it is consumed |
+| --- | --- | --- | --- |
+| Calling-app JWT (`Authorization: Bearer`) | [`petstore-auth-server`](petstore-auth-server/) `client_credentials` | `MCPHandlerWrap` / `RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/auth/auth.go) | HTTP middleware **before** REST execute / MCP Streamable HTTP |
+| End-user JWT (`X-End-User-Token`) | auth-server `password` grant (`loginUser` + `getUserByName`) | `RequestPreprocessor` | `Runner.EnrichContext` on execute/`query`, **before** inbound OPA |
+| Downstream JWT (Petstore `Authorization`) | this host’s `Executor` | `SecretsProvider` (`Get("downstream-hmac")`) | Each OpenAPI step if the plan did not already set `Authorization` |
+
+`RequireBearerToken` verifies **one** bearer. Extra JWTs on `x-*` headers are not that middleware’s job. They belong on `RequestPreprocessor`, which may also call a remote user-info service. This demo does not: `userStatus` is already a claim on the user JWT.
+
+#### What you pass to `engine.New`
+
+From [`mcp-server/main.go`](mcp-server/main.go) and [`mcp-server/auth.go`](mcp-server/auth.go):
+
+1. **`MCPHandlerWrap` / `RESTHandlerWrap`** — wrap **child** handlers (`/mcp` and the REST mux after `APIPrefix` strip), never the root mux. The engine applies `RESTHandlerWrap` **before** `APITimeout`. Petstore wraps **all** MCP traffic (so `initialize` and `tools/list` need the client JWT). REST wrap is `wrapRESTPlans`: only `POST /plans/…`. `GET /health`, `GET /tools`, and `GET /openapi/…` stay open.
+2. **`RequestPreprocessor`** — `dualJWTPreprocessor` reads `X-End-User-Token`, verifies HS256 (`jwtx.ParseUser`), and returns `PolicyRequestContext`. `Auth.endUser` is `{username, userStatus, sub}`. `Auth.client` is copied from `RequestSource.ClientAuth` (go-sdk `TokenInfo` after the bearer wrap). Allowlisted headers only (`X-Request-Id` → `x-request-id`). Do not put raw `Authorization` or the user JWT into `Headers`.
+3. **`SecretsProvider`** — `arazzo.MapSecrets{"downstream-hmac": jwt-secret}` shared with the auth-server’s `-jwt-secret`. The same map is passed into `newHTTPExec`. **`SecretInputs` is empty**: the HMAC key is not flattened onto `$inputs.secrets.*`. Caller-supplied `secrets` / `secrets.*` keys are stripped either way.
+4. **`PolicyLoader`** — inbound reads `input.auth.endUser`, not `http.send`. Invalid preprocessor is **401**; inbound deny is **403**.
+
+The engine stores the preprocessor result on `context.Context` (`arazzo.WithPolicyRequest`). Inbound/outbound OPA read it as `input.auth` / `input.headers`. The `Executor` reads the same context to set `sub`/`username` on the **new** downstream JWT. It does not forward the caller’s bearer.
+
+#### Request path (execute)
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant W as Handler wrap
+  participant E as Engine REST or MCP
+  participant Pre as RequestPreprocessor
+  participant P as OPA inbound
+  participant X as Executor
+  participant S as SecretsProvider
+  participant API as Petstore / async adapter
+
+  C->>W: Authorization Bearer (client JWT)
+  alt invalid or missing client JWT
+    W-->>C: 401
+  else verified
+    W->>E: TokenInfo on request context
+    Note over E: REST POST /plans or MCP run_*
+    E->>Pre: RequestSource (headers + ClientAuth)
+    alt missing or invalid X-End-User-Token
+      Pre-->>C: 401
+    else ok
+      Pre->>P: input.auth.endUser + input.auth.client
+      alt deny
+        P-->>C: 403
+      else allow
+        loop each Arazzo step
+          X->>S: Get("downstream-hmac")
+          S-->>X: signing key
+          X->>API: Authorization Bearer (new JWT)
+          API-->>X: HTTP response
+        end
+      end
+    end
+  end
+```
+
+#### Host code you own vs engine code
+
+| You implement (this example) | The engine does |
+| --- | --- |
+| HS256 parse/sign ([`jwtx/`](jwtx/)) | Mount wraps on MCP and REST children |
+| `jwtVerifier.verifyClient` for `RequireBearerToken` | `RequestSourceFromHTTP` / `RequestSourceFromMCP` (`TokenInfo` → `ClientAuth`) |
+| `dualJWTPreprocessor` | `Runner.EnrichContext` → `ErrUnauthorized` (**401**) |
+| `httpExec.downstreamBearer` | Strip caller `secrets`; inject only `SecretInputs` names |
+| Demo IdP ([`petstore-auth-server`](petstore-auth-server/)) | Eval inbound/outbound; never issue tokens |
+
+Copy this pattern when the calling app and the end user are different principals, inbound must not call the domain API, and domain APIs need a **host-minted** credential. If you only have one bearer, set `MCPHandlerWrap` / `RESTHandlerWrap` and leave `RequestPreprocessor` nil.
+
 ### HTTP surfaces
 
 `DualMCPandREST`, `MCPOnly`, and `RESTOnly` are mutually exclusive. **All false (default) = REST only**; `/mcp` is not mounted. `-dual` sets `DualMCPandREST`.
@@ -660,6 +734,7 @@ REST POST body is the workflow **inputs object** (no `workflowId` wrapper). MCP 
 | --- | --- |
 | 200 | Outputs JSON |
 | 400 | Invalid JSON, workflow failure, other runner error |
+| 401 | Bearer wrap or `RequestPreprocessor` rejected the call |
 | 403 | Inbound or outbound deny |
 | 404 | Unknown plan, version, or workflow |
 | 500 | Policy load/compile failed |
