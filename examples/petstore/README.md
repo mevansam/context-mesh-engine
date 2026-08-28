@@ -795,7 +795,7 @@ Windows (PowerShell):
 ./examples/petstore/openapi-server/run.ps1
 ```
 
-Force a fresh image: `run.sh --rebuild` / `run.ps1 -Rebuild`. Pass `--upstream IMAGE` / `-Upstream IMAGE` to change the Docker Hub base (default `swaggerapi/petstore3:latest`).
+Force a fresh image: `run.sh --rebuild` / `run.ps1 -Rebuild`. Pass `--upstream IMAGE` / `-Upstream IMAGE` to change the Docker Hub base (default `swaggerapi/petstore3:latest`). Pass `--slf4j URL|PATH` / `-Slf4j URL|PATH` for any SLF4J 1.7 binding jar (default Maven Central `slf4j-simple` 1.7.36; the source name need not be `slf4j-simple.jar`). Pass `--no-slf4j` / `-NoSlf4j` to skip the binding.
 
 Host port **8090** avoids clashing with `mcp-server` on 8080 (the process inside the container still uses 8080).
 
