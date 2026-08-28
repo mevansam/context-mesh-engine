@@ -1,16 +1,20 @@
 # Build (if needed) and run the local Petstore 3 OpenAPI server in Docker.
 param(
     [switch]$Rebuild,
-    [switch]$Help
+    [switch]$Help,
+    [string]$Upstream = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 if ($Help) {
     Write-Host @"
-usage: ./run.ps1 [-Rebuild]
+usage: ./run.ps1 [-Rebuild] [-Upstream IMAGE]
 
-  -Rebuild   remove the local image/container and rebuild from the Dockerfile
+  -Rebuild    remove the local image/container and rebuild from the Dockerfile
+  -Upstream   base image (default swaggerapi/petstore3:latest).
+              Overrides PETSTORE_UPSTREAM. Use -Rebuild to apply a new base
+              when context-mesh-petstore3:local already exists.
 
 Runs Petstore 3 in the foreground. Ctrl+C stops the container and removes it
 (--rm), which deletes in-memory users/orders.
@@ -19,7 +23,7 @@ Env:
   PETSTORE_IMAGE         local tag (default context-mesh-petstore3:local)
   PETSTORE_CONTAINER     container name (default petstore-openapi-server)
   PETSTORE_PORT          host port mapped to 8080 (default 8090)
-  PETSTORE_UPSTREAM      image to pull (default swaggerapi/petstore3:latest)
+  PETSTORE_UPSTREAM      base image to pull/build from (default swaggerapi/petstore3:latest)
   PETSTORE_PLATFORM      pull/run platform (default linux/amd64)
   PETSTORE_PULL_TIMEOUT  seconds to wait for docker pull (default 120)
 "@
@@ -29,7 +33,9 @@ Env:
 $Image = if ($env:PETSTORE_IMAGE) { $env:PETSTORE_IMAGE } else { "context-mesh-petstore3:local" }
 $Name = if ($env:PETSTORE_CONTAINER) { $env:PETSTORE_CONTAINER } else { "petstore-openapi-server" }
 $HostPort = if ($env:PETSTORE_PORT) { $env:PETSTORE_PORT } else { "8090" }
-$Upstream = if ($env:PETSTORE_UPSTREAM) { $env:PETSTORE_UPSTREAM } else { "swaggerapi/petstore3:latest" }
+if (-not $Upstream) {
+    $Upstream = if ($env:PETSTORE_UPSTREAM) { $env:PETSTORE_UPSTREAM } else { "swaggerapi/petstore3:latest" }
+}
 $Platform = if ($env:PETSTORE_PLATFORM) { $env:PETSTORE_PLATFORM } else { "linux/amd64" }
 $PullTimeout = if ($env:PETSTORE_PULL_TIMEOUT) { [int]$env:PETSTORE_PULL_TIMEOUT } else { 120 }
 $ContainerPort = 8080
@@ -113,8 +119,8 @@ if (Test-LocalImage $Image) {
     } else {
         Write-Host "using local $Upstream as build base (skipping pull)"
     }
-    Write-Host "building $Image (--platform $Platform)..."
-    docker build --platform $Platform -t $Image $PSScriptRoot
+    Write-Host "building $Image (--platform $Platform, base $Upstream)..."
+    docker build --platform $Platform --build-arg "PETSTORE_UPSTREAM=$Upstream" -t $Image $PSScriptRoot
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

@@ -14,20 +14,23 @@ BASE_URL="http://localhost:${HOST_PORT}/api/v3"
 
 usage() {
   cat <<EOF
-usage: $(basename "$0") [--rebuild]
+usage: $(basename "$0") [--rebuild] [--upstream IMAGE]
 
-  --rebuild   remove the local image/container and rebuild from the Dockerfile
+  --rebuild           remove the local image/container and rebuild from the Dockerfile
+  --upstream IMAGE    base image (default swaggerapi/petstore3:latest).
+                      Overrides PETSTORE_UPSTREAM. Use --rebuild to apply a new base
+                      when context-mesh-petstore3:local already exists.
 
 Runs Petstore 3 in the **foreground**. Ctrl+C (or SIGTERM) stops the container
 and removes it (--rm), which deletes in-memory users/orders.
 
 Env:
-  PETSTORE_IMAGE         local tag (default ${IMAGE})
-  PETSTORE_CONTAINER     container name (default ${NAME})
-  PETSTORE_PORT          host port mapped to 8080 (default ${HOST_PORT})
-  PETSTORE_UPSTREAM      image to pull (default ${UPSTREAM})
-  PETSTORE_PLATFORM      pull/run platform (default ${PLATFORM})
-  PETSTORE_PULL_TIMEOUT  seconds to wait for docker pull (default ${PULL_TIMEOUT})
+  PETSTORE_IMAGE         local tag (default context-mesh-petstore3:local)
+  PETSTORE_CONTAINER     container name (default petstore-openapi-server)
+  PETSTORE_PORT          host port mapped to 8080 (default 8090)
+  PETSTORE_UPSTREAM      base image to pull/build from (default swaggerapi/petstore3:latest)
+  PETSTORE_PLATFORM      pull/run platform (default linux/amd64)
+  PETSTORE_PULL_TIMEOUT  seconds to wait for docker pull (default 120)
 EOF
 }
 
@@ -68,17 +71,36 @@ pull_upstream() {
 }
 
 REBUILD=0
-for arg in "$@"; do
-  case "$arg" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     -h|--help)
       usage
       exit 0
       ;;
     --rebuild)
       REBUILD=1
+      shift
+      ;;
+    --upstream)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        echo "--upstream requires an image name" >&2
+        usage >&2
+        exit 2
+      fi
+      UPSTREAM="$2"
+      shift 2
+      ;;
+    --upstream=*)
+      UPSTREAM="${1#*=}"
+      if [[ -z "$UPSTREAM" ]]; then
+        echo "--upstream requires an image name" >&2
+        usage >&2
+        exit 2
+      fi
+      shift
       ;;
     *)
-      echo "unknown argument: $arg" >&2
+      echo "unknown argument: $1" >&2
       usage >&2
       exit 2
       ;;
@@ -107,8 +129,8 @@ else
   else
     echo "using local ${UPSTREAM} as build base (skipping pull)"
   fi
-  echo "building ${IMAGE} (--platform ${PLATFORM})..."
-  docker build --platform "$PLATFORM" -t "$IMAGE" "$ROOT"
+  echo "building ${IMAGE} (--platform ${PLATFORM}, base ${UPSTREAM})..."
+  docker build --platform "$PLATFORM" --build-arg PETSTORE_UPSTREAM="$UPSTREAM" -t "$IMAGE" "$ROOT"
 fi
 
 if docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then

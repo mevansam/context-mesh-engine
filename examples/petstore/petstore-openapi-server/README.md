@@ -2,7 +2,7 @@
 
 Runs the official [Swagger Petstore 3](https://github.com/swagger-api/swagger-petstore) OpenAPI server in Docker so the petstore example does not depend on the hosted [petstore3.swagger.io](https://petstore3.swagger.io/) demo.
 
-The [Dockerfile](Dockerfile) starts from [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) and adds an [SLF4J](http://www.slf4j.org/) 1.7 simple binding so Jetty does not print `StaticLoggerBinder` errors. Scripts **build** `context-mesh-petstore3:local` when that tag is missing (they pull the upstream base only if it is not already local). The published image is `linux/amd64`; Docker Desktop on Apple Silicon runs it under emulation.
+The [Dockerfile](Dockerfile) starts from [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) by default and adds an [SLF4J](http://www.slf4j.org/) 1.7 simple binding so Jetty does not print `StaticLoggerBinder` errors. Override the base with `--upstream` / `-Upstream` or `PETSTORE_UPSTREAM`. Scripts **build** `context-mesh-petstore3:local` when that tag is missing (they pull the upstream base only if it is not already local). The published image is `linux/amd64`; Docker Desktop on Apple Silicon runs it under emulation.
 
 Jetty still prints `jetty-runner is deprecated` on startup; that warning comes from upstream and is harmless.
 
@@ -26,14 +26,16 @@ Windows (PowerShell):
 ./examples/petstore/petstore-openapi-server/run.ps1
 ```
 
-Rebuild the local image and recreate the container:
+Force a fresh image (optionally from another base):
 
 ```bash
 ./examples/petstore/petstore-openapi-server/run.sh --rebuild
+./examples/petstore/petstore-openapi-server/run.sh --rebuild --upstream swaggerapi/petstore3:latest
 ```
 
 ```powershell
 ./examples/petstore/petstore-openapi-server/run.ps1 -Rebuild
+./examples/petstore/petstore-openapi-server/run.ps1 -Rebuild -Upstream swaggerapi/petstore3:latest
 ```
 
 Host **8090** is used so it does not collide with `mcp-server` on `8080`. The container still listens on 8080 inside Docker.
@@ -102,6 +104,9 @@ docker image rm context-mesh-petstore3:local
 | `PETSTORE_IMAGE` | `context-mesh-petstore3:local` | Local image tag |
 | `PETSTORE_CONTAINER` | `petstore-openapi-server` | Container name |
 | `PETSTORE_PORT` | `8090` | Host port |
+| `PETSTORE_UPSTREAM` | `swaggerapi/petstore3:latest` | Base image (`--upstream` / `-Upstream` override this) |
+| `PETSTORE_PLATFORM` | `linux/amd64` | `docker pull` / `build` / `run` platform |
+| `PETSTORE_PULL_TIMEOUT` | `120` | Seconds to wait for `docker pull` |
 
 If you change `PETSTORE_PORT`, pass the same origin to the Go processes:
 

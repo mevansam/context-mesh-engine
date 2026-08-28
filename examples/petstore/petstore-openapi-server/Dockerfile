@@ -10,7 +10,9 @@
 #
 # https://github.com/swagger-api/swagger-petstore
 # Image is linux/amd64; Apple Silicon runs it via emulation.
-FROM swaggerapi/petstore3:latest
+# PETSTORE_UPSTREAM is set by run.sh / run.ps1 (--upstream / -Upstream).
+ARG PETSTORE_UPSTREAM=swaggerapi/petstore3:latest
+FROM ${PETSTORE_UPSTREAM}
 
 RUN wget -q -O /swagger-petstore/slf4j-simple.jar \
       https://repo1.maven.org/maven2/org/slf4j/slf4j-simple/1.7.36/slf4j-simple-1.7.36.jar \

@@ -781,7 +781,7 @@ Smaller embed without plans: [minimal](../minimal/README.md). Plans without back
 
 ### Petstore 3 in Docker
 
-`run.sh` **builds** `context-mesh-petstore3:local` from [petstore-openapi-server/Dockerfile](petstore-openapi-server/Dockerfile) when that tag is missing (upstream [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) is pulled only if it is not already local). The local image adds an SLF4J 1.7 binding so Jetty does not print `StaticLoggerBinder` errors. `run.sh` stays in the **foreground**; Ctrl+C removes the container and its in-memory data. If pull or build times out, the Docker VM often cannot reach Hub / Maven Central while a VPN is up — disconnect VPN, restart Docker Desktop, retry, or use `-petstore hosted`.
+`run.sh` **builds** `context-mesh-petstore3:local` from [petstore-openapi-server/Dockerfile](petstore-openapi-server/Dockerfile) when that tag is missing (upstream [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) by default; override with `--upstream` / `PETSTORE_UPSTREAM`). The local image adds an SLF4J 1.7 binding so Jetty does not print `StaticLoggerBinder` errors. `run.sh` stays in the **foreground**; Ctrl+C removes the container and its in-memory data. If pull or build times out, the Docker VM often cannot reach Hub / Maven Central while a VPN is up — disconnect VPN, restart Docker Desktop, retry, or use `-petstore hosted`.
 
 From the **repository root**:
 
@@ -795,7 +795,7 @@ Windows (PowerShell):
 ./examples/petstore/petstore-openapi-server/run.ps1
 ```
 
-Force a fresh image: `run.sh --rebuild` / `run.ps1 -Rebuild`.
+Force a fresh image: `run.sh --rebuild` / `run.ps1 -Rebuild`. Pass `--upstream IMAGE` / `-Upstream IMAGE` to change the Docker Hub base (default `swaggerapi/petstore3:latest`).
 
 Host port **8090** avoids clashing with `mcp-server` on 8080 (the process inside the container still uses 8080).
 
