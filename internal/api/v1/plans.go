@@ -19,11 +19,12 @@ import (
 type PlansController struct {
 	catalog *plans.Catalog
 	runner  *plans.Runner
+	meta    plans.OpenAPIMeta
 }
 
 // NewPlansController returns a REST controller for Arazzo plans.
-func NewPlansController(catalog *plans.Catalog, runner *plans.Runner) *PlansController {
-	return &PlansController{catalog: catalog, runner: runner}
+func NewPlansController(catalog *plans.Catalog, runner *plans.Runner, meta plans.OpenAPIMeta) *PlansController {
+	return &PlansController{catalog: catalog, runner: runner, meta: meta}
 }
 
 // Register implements api.Controller.
@@ -128,7 +129,7 @@ func decodeJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, e
 
 func (c *PlansController) openapiCatalog(w http.ResponseWriter, r *http.Request) {
 	query := c.runner != nil && c.runner.QueryEnabled()
-	b, err := plans.CatalogOpenAPIJSON(c.catalog, query)
+	b, err := plans.CatalogOpenAPIJSON(c.catalog, query, c.meta)
 	if err != nil {
 		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -155,7 +156,7 @@ func (c *PlansController) openapiVersioned(w http.ResponseWriter, r *http.Reques
 }
 
 func (c *PlansController) writeOpenAPI(w http.ResponseWriter, e *plans.Entry, latest bool) {
-	b, err := plans.OpenAPIJSON(e, latest)
+	b, err := plans.OpenAPIJSON(e, latest, c.meta)
 	if err != nil {
 		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
 		return

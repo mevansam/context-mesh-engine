@@ -98,7 +98,7 @@ MCP tool name: run_{{.SafePlanID}}_v{{.SafeVersion}}
 {{.Description}}
 {{end}}How to call this MCP tool:
 - Set workflowId to one of: {{.WorkflowIDs}}
-- Set inputs to a JSON object that matches that workflow's Arazzo inputs schema (see inputSchema.oneOf).
+- Set inputs to a JSON object that matches that workflow's inputs schema (see inputSchema.oneOf).
 
 Workflows in this plan:
 {{range .Workflows}}- {{.ID}}: {{.SummaryOrDescription}}
@@ -164,6 +164,8 @@ func NewToolDocContext(planID, version, title, summary, description string, work
 	ids := make([]string, 0, len(workflows))
 	wfs := make([]WorkflowDoc, len(workflows))
 	for i, w := range workflows {
+		w.Summary = omitReservedInputText(w.Summary)
+		w.Description = omitReservedInputText(w.Description)
 		w.SummaryOrDescription = firstNonEmpty(w.Summary, firstLine(w.Description), w.ID)
 		wfs[i] = w
 		ids = append(ids, w.ID)
@@ -175,8 +177,8 @@ func NewToolDocContext(planID, version, title, summary, description string, work
 		PlanID:                  planID,
 		Version:                 version,
 		Title:                   title,
-		Summary:                 summary,
-		Description:             description,
+		Summary:                 omitReservedInputText(summary),
+		Description:             omitReservedInputText(description),
 		Workflows:               wfs,
 		WorkflowIDs:             strings.Join(ids, ", "),
 		SafePlanID:              sanitizeRunes(planID, false),
@@ -315,6 +317,13 @@ func isMCPToolRune(r rune) bool {
 		(r >= 'A' && r <= 'Z') ||
 		(r >= '0' && r <= '9') ||
 		r == '_' || r == '-' || r == '.'
+}
+
+func omitReservedInputText(s string) string {
+	if LeaksReservedInputs(s) {
+		return ""
+	}
+	return s
 }
 
 func firstNonEmpty(ss ...string) string {

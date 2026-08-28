@@ -238,9 +238,9 @@ func New(opts Options) (*Engine, error) {
 		}
 		gw.Server().AddReceivingMiddleware(help.ReceivingMiddleware())
 		toolsCtrl.SetToolHelpOverlay(help.ApplyREST)
-		router.Register(apiv1.NewPlansController(catalog, runner))
+		router.Register(apiv1.NewPlansController(catalog, runner, openAPIMeta(opts)))
 	} else {
-		router.Register(apiv1.NewPlansController(nil, nil))
+		router.Register(apiv1.NewPlansController(nil, nil, openAPIMeta(opts)))
 	}
 
 	return &Engine{
@@ -280,6 +280,13 @@ func applyDefaults(opts Options) Options {
 		opts.PolicyCacheTTL = arazzo.DefaultPolicyCacheTTL
 	}
 	return opts
+}
+
+func openAPIMeta(opts Options) plans.OpenAPIMeta {
+	return plans.OpenAPIMeta{
+		ServerURL: plans.OpenAPIServerURL(opts.PublicBaseURL, opts.APIPrefix),
+		APIPrefix: opts.APIPrefix,
+	}
 }
 
 func normalizeAPIPrefix(p string) string {

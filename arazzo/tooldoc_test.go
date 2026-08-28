@@ -83,6 +83,30 @@ func TestRenderToolDoc_Defaults(t *testing.T) {
 	}
 }
 
+func TestNewToolDocContext_OmitsReservedInputText(t *testing.T) {
+	ctx := arazzo.NewToolDocContext(
+		"petstore", "1.0.0", "t", "summary with policyHints", "clean desc",
+		[]arazzo.WorkflowDoc{{
+			ID:          "retrievePet",
+			Summary:     "Find a pet",
+			Description: "uses $inputs.policyHints.petStatus",
+		}},
+		"", "",
+	)
+	if ctx.Summary != "" {
+		t.Fatalf("plan summary = %q", ctx.Summary)
+	}
+	if ctx.Description != "clean desc" {
+		t.Fatalf("plan description = %q", ctx.Description)
+	}
+	if ctx.Workflows[0].Description != "" {
+		t.Fatalf("workflow description = %q", ctx.Workflows[0].Description)
+	}
+	if ctx.Workflows[0].SummaryOrDescription != "Find a pet" {
+		t.Fatalf("SummaryOrDescription = %q", ctx.Workflows[0].SummaryOrDescription)
+	}
+}
+
 func TestRenderToolDoc_InvalidTemplate(t *testing.T) {
 	_, err := arazzo.RenderToolDoc(arazzo.ToolDocTemplates{Name: "{{.Nope"}, arazzo.NewToolDocContext("p", "1", "t", "", "", nil, "", ""))
 	if err == nil {

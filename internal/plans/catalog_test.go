@@ -375,6 +375,145 @@ func TestInputSchema_EmptyAndNilNode(t *testing.T) {
 	}
 }
 
+func yamlMapping(t *testing.T, src string) *yaml.Node {
+	t.Helper()
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		return doc.Content[0]
+	}
+	return &doc
+}
+
+func TestNodeToJSON_StripsReservedInputs(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+required: [status, policyHints, secrets]
+properties:
+  status:
+    type: string
+  policyHints:
+    type: object
+    additionalProperties: true
+  secrets:
+    type: object
+  policyHints.petStatus:
+    type: string
+  vault:
+    type: object
+    properties:
+      secrets:
+        type: array
+      token:
+        type: string
+oneOf:
+  - properties:
+      policyHints:
+        type: object
+      name:
+        type: string
+`)
+	v, err := nodeToJSON(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := v.(map[string]any)
+	props, _ := m["properties"].(map[string]any)
+	if _, ok := props["status"]; !ok {
+		t.Fatalf("status missing: %#v", props)
+	}
+	for _, k := range []string{"policyHints", "secrets", "policyHints.petStatus"} {
+		if _, ok := props[k]; ok {
+			t.Fatalf("leaked %s: %#v", k, props)
+		}
+	}
+	vault, _ := props["vault"].(map[string]any)
+	vprops, _ := vault["properties"].(map[string]any)
+	if _, ok := vprops["secrets"]; !ok {
+		t.Fatalf("nested secrets should remain: %#v", vprops)
+	}
+	req, _ := m["required"].([]any)
+	if len(req) != 1 || req[0] != "status" {
+		t.Fatalf("required = %#v", req)
+	}
+	oneOf, _ := m["oneOf"].([]any)
+	branch, _ := oneOf[0].(map[string]any)
+	bprops, _ := branch["properties"].(map[string]any)
+	if _, ok := bprops["policyHints"]; ok {
+		t.Fatalf("oneOf leaked policyHints: %#v", bprops)
+	}
+	if _, ok := bprops["name"]; !ok {
+		t.Fatalf("oneOf name missing: %#v", bprops)
+	}
+}
+
+func TestInputSchema_StripsReservedInputs(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+properties:
+  status:
+    type: string
+  policyHints:
+    type: object
+`)
+	s, err := InputSchema(&high.Arazzo{
+		Workflows: []*high.Workflow{{
+			WorkflowId: "retrievePet",
+			Inputs:     n,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := s.OneOf[0].Properties["inputs"]
+	if _, ok := in.Properties["status"]; !ok {
+		t.Fatalf("status missing: %#v", in.Properties)
+	}
+	if _, ok := in.Properties["policyHints"]; ok {
+		t.Fatalf("leaked policyHints: %#v", in.Properties)
+	}
+}
+
+func TestOpenAPIJSON_OmitsReservedInputsAndText(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+properties:
+  status:
+    type: string
+  policyHints:
+    type: object
+    additionalProperties: true
+`)
+	e := &Entry{
+		PlanID:  "petstore",
+		Version: "0.0.1",
+		Doc: &high.Arazzo{
+			Workflows: []*high.Workflow{{
+				WorkflowId:  "retrievePet",
+				Summary:     "Find a pet by status",
+				Description: "Availability comes from $inputs.policyHints.petStatus",
+				Inputs:      n,
+			}},
+		},
+	}
+	b, err := OpenAPIJSON(e, true, OpenAPIMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := string(b)
+	if strings.Contains(raw, "policyHints") {
+		t.Fatalf("OpenAPI leaked policyHints: %s", raw)
+	}
+	if !strings.Contains(raw, `"status"`) {
+		t.Fatalf("missing status: %s", raw)
+	}
+	if !strings.Contains(raw, `"Find a pet by status"`) {
+		t.Fatalf("missing summary: %s", raw)
+	}
+}
+
 func TestOutputsToJSONSchema(t *testing.T) {
 	empty := outputsToJSONSchema(nil)
 	if empty["type"] != "object" {
@@ -395,7 +534,7 @@ func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	if !ok {
 		t.Fatal("latest")
 	}
-	b, err := OpenAPIJSON(latest, true)
+	b, err := OpenAPIJSON(latest, true, OpenAPIMeta{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,18 +547,24 @@ func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	if strings.Contains(string(b), `/plans/petstore/v1.1.0/`) {
 		t.Fatalf("latest should not include version segment: %s", b)
 	}
-	b, err = OpenAPIJSON(latest, false)
+	if !strings.Contains(string(b), `"url":"/api"`) {
+		t.Fatalf("latest missing default servers url: %s", b)
+	}
+	b, err = OpenAPIJSON(latest, false, OpenAPIMeta{ServerURL: "http://example.test/api"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(b), `/plans/petstore/v1.1.0/echoName`) {
 		t.Fatalf("versioned paths: %s", b)
 	}
+	if !strings.Contains(string(b), `"url":"http://example.test/api"`) {
+		t.Fatalf("versioned missing servers url: %s", b)
+	}
 }
 
 func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 	c := loadPetstore(t)
-	b, err := CatalogOpenAPIJSON(c, false)
+	b, err := CatalogOpenAPIJSON(c, false, OpenAPIMeta{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,12 +584,12 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 	}
 	ping, _ := paths["/plans/petstore/pingHealth"].(map[string]any)
 	ref, _ := ping["$ref"].(string)
-	want := "./petstore#/paths/~1plans~1petstore~1pingHealth"
+	want := "/api/openapi/petstore#/paths/~1plans~1petstore~1pingHealth"
 	if ref != want {
 		t.Fatalf("pingHealth $ref = %q, want %q", ref, want)
 	}
 	echo, _ := paths["/plans/petstore/echoName"].(map[string]any)
-	if echo["$ref"] != "./petstore#/paths/~1plans~1petstore~1echoName" {
+	if echo["$ref"] != "/api/openapi/petstore#/paths/~1plans~1petstore~1echoName" {
 		t.Fatalf("echoName $ref = %v", echo["$ref"])
 	}
 	if _, ok := paths["/plans/petstore/v1.1.0/echoName"]; ok {
@@ -469,7 +614,7 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 		t.Fatalf("Tool missing name: %#v", itemProps)
 	}
 
-	b, err = CatalogOpenAPIJSON(c, true)
+	b, err = CatalogOpenAPIJSON(c, true, OpenAPIMeta{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +622,7 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 		t.Fatalf("queryEnabled missing /plans/query: %s", b)
 	}
 
-	b, err = CatalogOpenAPIJSON(nil, false)
+	b, err = CatalogOpenAPIJSON(nil, false, OpenAPIMeta{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,6 +635,18 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 	}
 	if _, ok := paths["/plans/petstore/pingHealth"]; ok {
 		t.Fatal("nil catalog must not $ref plans")
+	}
+}
+
+func TestOpenAPIServerURL(t *testing.T) {
+	if got := OpenAPIServerURL("", ""); got != "/api" {
+		t.Fatalf("empty = %q", got)
+	}
+	if got := OpenAPIServerURL("http://localhost:8080", "/api"); got != "http://localhost:8080/api" {
+		t.Fatalf("joined = %q", got)
+	}
+	if got := OpenAPIServerURL("http://example.test/", "/service/v2"); got != "http://example.test/service/v2" {
+		t.Fatalf("custom = %q", got)
 	}
 }
 

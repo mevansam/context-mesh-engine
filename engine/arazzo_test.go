@@ -132,8 +132,16 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 		t.Fatalf("catalog missing /tools: %v", cpaths)
 	}
 	ping, _ := cpaths["/plans/petstore/pingHealth"].(map[string]any)
-	if ping["$ref"] != "./petstore#/paths/~1plans~1petstore~1pingHealth" {
+	if ping["$ref"] != "/api/openapi/petstore#/paths/~1plans~1petstore~1pingHealth" {
 		t.Fatalf("catalog pingHealth $ref = %v", ping["$ref"])
+	}
+	servers, _ := catalog["servers"].([]any)
+	if len(servers) == 0 {
+		t.Fatal("catalog missing servers")
+	}
+	s0, _ := servers[0].(map[string]any)
+	if s0["url"] != "http://example.test/api" {
+		t.Fatalf("catalog servers url = %v", s0["url"])
 	}
 	if _, ok := cpaths["/plans/query"]; ok {
 		t.Fatal("catalog must omit /plans/query without QueryMatcher")
@@ -348,6 +356,15 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 	defer cat.Body.Close()
 	if cat.StatusCode != http.StatusOK {
 		t.Fatalf("custom catalog status = %d", cat.StatusCode)
+	}
+	var catDoc map[string]any
+	if err := json.NewDecoder(cat.Body).Decode(&catDoc); err != nil {
+		t.Fatal(err)
+	}
+	catPaths, _ := catDoc["paths"].(map[string]any)
+	ping, _ := catPaths["/plans/petstore/pingHealth"].(map[string]any)
+	if ping["$ref"] != "/service/v2/openapi/petstore#/paths/~1plans~1petstore~1pingHealth" {
+		t.Fatalf("custom prefix $ref = %v", ping["$ref"])
 	}
 
 	old, err := http.Get(ts.URL + "/api/openapi/petstore")

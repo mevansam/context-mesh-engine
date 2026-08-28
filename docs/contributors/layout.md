@@ -85,7 +85,7 @@ context-mesh-engine/
 | `plans/request.go` | HTTP/MCP → `RequestSource` |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
-| `plans/openapi.go` | OAS 3.1 catalog index (`$ref` child specs + `ListToolsResult`) and per-plan JSON (paths **without** `APIPrefix`) |
+| `plans/openapi.go` | OAS 3.1 catalog + per-plan JSON; prefix-absolute `$ref`; `servers` from PublicBaseURL+APIPrefix |
 | `plans/mcp.go` | `query` + `run_*` tools |
 | `plans/help.go` | Help TTL cache + `tools/list` overlay (`internal/ttlcache`) |
 | `ttlcache/cache.go` | Generic singleflight TTL cache |

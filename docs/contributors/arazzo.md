@@ -10,6 +10,7 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
 | `arazzo/fileloader.go` | Recursive `.yaml/.yml/.json`; `BaseURL` **must** end with `/` |
 | `arazzo/policy.go` | `PolicyLoader`, `PolicyBundle`, `PolicyHintsKey` |
+| `arazzo/inputs.go` | `ReservedInputKey`, `LeaksReservedInputs` (omit from generated schemas/docs) |
 | `arazzo/request.go` | `RequestPreprocessor`, `PolicyRequestContext`, `RequestSource` |
 | `arazzo/secrets.go` | `SecretsProvider`, `MapSecrets`, `SecretInputs` flattening keys |
 | `arazzo/filepolicy.go` | `{planId}/{version}/inbound.rego` + `outbound.rego` |
@@ -21,7 +22,7 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `internal/plans/runner.go` | `NewEngine` per `Run`; inbound then workflow then outbound |
 | `internal/plans/policy.go` | Compile `data.plan.inbound` / `data.plan.outbound`; cache |
 | `internal/plans/redact.go` | RFC 6901 output redaction |
-| `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const |
+| `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const; strip reserved input keys |
 | `internal/plans/openapi.go` | OAS 3.1 catalog index + per-plan specs; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | `query` + one `run_*` tool per catalog entry |
 | `internal/api/v1/plans.go` | `GET /openapi`, `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; 400/403/404/500/501 |
@@ -112,9 +113,13 @@ Two layers. Both are OAS **3.1.0** JSON. Paths omit `APIPrefix` (REST mux is `St
 | --- | --- | --- |
 | `GET /tools` | always | MCP `tools/list`. 200 schema is `components.schemas.ListToolsResult`, inferred at runtime from go-sdk `mcp.ListToolsResult` (`jsonschema.For`). Optional query `cursor` is `ListToolsParams.cursor`. |
 | `POST /plans/query` | `QueryMatcher` set | MCP tool `query`. Body `{query, data}`; 200 is workflow outputs. |
-| `POST /plans/{planId}/{workflowId}` | latest entry for that `planId` | Path-item **`$ref`** to the child spec: `./{planId}#/paths/~1plans~1{planId}~1{workflowId}` |
+| `POST /plans/{planId}/{workflowId}` | latest entry for that `planId` | Path-item **`$ref`** to the child spec: `{APIPrefix}/openapi/{planId}#/paths/~1plans~1{planId}~1{workflowId}` |
 
-`$ref` is relative to the catalog document URL. With default prefix, `GET /api/openapi` plus `./petstore#/paths/~1plans~1petstore~1pingHealth` resolves to `GET /api/openapi/petstore` (the latest child spec). Versioned child specs (`GET /openapi/{planId}/v{version}`) are **not** inlined in the index.
+`$ref` is **prefix-absolute** (starts with `APIPrefix`, default `/api`). `GET /openapi` has no trailing slash, so a relative `./petstore` would resolve to `/api/petstore`. Absolute `/api/openapi/petstore#/paths/...` is what Swagger UI and other OAS clients need. Versioned child specs (`GET /openapi/{planId}/v{version}`) are **not** inlined in the index.
+
+Both catalog and child documents set `servers: [{ url: PublicBaseURL + APIPrefix }]`. Empty `PublicBaseURL` → `{APIPrefix}` only (`/api`). That is the Try-it-out origin; path keys stay unprefixed.
+
+`OpenAPIMeta` / `OpenAPIServerURL` live in `internal/plans/openapi.go`. `PlansController` gets them from `engine.New`.
 
 Do not copy backend OpenAPI (`sourceDescriptions`) into these documents. Those specs are for libopenapi step execution only.
 
@@ -123,7 +128,7 @@ Do not copy backend OpenAPI (`sourceDescriptions`) into these documents. Those s
 - `latest == true` → paths `/plans/{planId}/{workflowId}`
 - `latest == false` → `/plans/{planId}/{versionSegment}/{workflowId}`
 
-`info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema. **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types).
+`info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema after stripping reserved engine keys (`policyHints`, `secrets`, `policyHints.*`, `secrets.*`) from that schema’s `properties` / `required` (and combinators / `$defs`). Nested consumer fields with those names are kept. Summary and description are copied only when they do not name those keys. MCP `InputSchema` uses the same strip (`nodeToJSON` / `nodeToSchema`). **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types). `servers` as for the catalog. Do not copy Arazzo step parameters, source OpenAPI, or policy bundles into these documents.
 
 ### REST resources vs MCP tools
 
@@ -145,7 +150,7 @@ MCP granularity is **one tool per plan version** (`run_*`) plus optional `query`
 
 ## Templates
 
-`ToolDoc.Name` / `Title` / `Description` / `RESTDescription` are `text/template` executed with `missingkey=zero`. `{{.Title}}` is Arazzo info.title, not the MCP title recipe. MCP `tools/list` middleware and `GET /tools` overlay clone `*mcp.Tool` so the MCP registry is not mutated.
+`ToolDoc.Name` / `Title` / `Description` / `RESTDescription` are `text/template` executed with `missingkey=zero`. `{{.Title}}` is Arazzo info.title, not the MCP title recipe. MCP `tools/list` middleware and `GET /tools` overlay clone `*mcp.Tool` so the MCP registry is not mutated. `NewToolDocContext` drops summary/description text that names reserved engine inputs (`policyHints`, `$inputs.secrets`).
 
 `engine.New` renders run templates (and query templates when `QueryMatcher` is set) once with a dummy context **before** load so syntax errors fail fast even if the catalog is empty. Per-entry **name** render still happens in `RegisterMCP`. Registry `Lookup` is not called at `New`.
 
@@ -178,7 +183,8 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
-| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult` |
+| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip |
+| `arazzo/inputs_test.go` | `ReservedInputKey` / `LeaksReservedInputs` |
 | `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
 | `engine/engine_test.go` | `GET /openapi` without loaders still describes `/tools` |
 
@@ -201,7 +207,7 @@ testdata/arazzo/
 - Do not import `internal/plans` from public packages except `engine` (already does).
 - Do not add a second `arazzo.Engine` cache.
 - Keep `FSRoots` covering `../sources`.
-- Keep OpenAPI paths unprefixed. Catalog index `$ref`s child specs; do not inline plan operations in `CatalogOpenAPIJSON`.
+- Keep OpenAPI paths unprefixed. Catalog index `$ref`s child specs with `{APIPrefix}/openapi/{planId}#/paths/...`; do not inline plan operations in `CatalogOpenAPIJSON`. Always set `servers`.
 - Keep `oneOf` at the tool-args object with `workflowId` const.
 - If you add a REST route, add it on the **v1** mux with a method pattern, and add an `engine` test.
 - If you change skip/fail rules, update `docs/users/arazzo.md` in the same change.

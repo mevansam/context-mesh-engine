@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
@@ -26,6 +27,7 @@ func TestPetstorePlanLoads(t *testing.T) {
 	if e.APIPrefix() != engine.DefaultAPIPrefix {
 		t.Fatalf("prefix = %s", e.APIPrefix())
 	}
+	e.AddController(docsController{})
 
 	ts := httptest.NewServer(e.Handler())
 	t.Cleanup(ts.Close)
@@ -58,6 +60,32 @@ func TestPetstorePlanLoads(t *testing.T) {
 	}
 	if _, ok := props["inputs"]; ok {
 		t.Fatalf("200 schema should be outputs, not trace: %#v", schema)
+	}
+	rb, _ := op["requestBody"].(map[string]any)
+	rcontent, _ := rb["content"].(map[string]any)
+	rapp, _ := rcontent["application/json"].(map[string]any)
+	rschema, _ := rapp["schema"].(map[string]any)
+	rprops, _ := rschema["properties"].(map[string]any)
+	if _, ok := rprops["status"]; !ok {
+		t.Fatalf("retrievePet request schema missing status: %#v", rschema)
+	}
+	if _, ok := rprops["policyHints"]; ok {
+		t.Fatalf("consumer schema leaked policyHints: %#v", rschema)
+	}
+	if desc, _ := op["description"].(string); strings.Contains(desc, "policyHints") {
+		t.Fatalf("description leaked policyHints: %s", desc)
+	}
+
+	docs, err := http.Get(ts.URL + "/api/docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer docs.Body.Close()
+	if docs.StatusCode != http.StatusOK {
+		t.Fatalf("docs status = %d", docs.StatusCode)
+	}
+	if ct := docs.Header.Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Fatalf("docs Content-Type = %q", ct)
 	}
 }
 

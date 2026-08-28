@@ -31,7 +31,7 @@ sourceDescriptions:
 workflows:
   - workflowId: retrievePet
     summary: Find a pet by status
-    description: Loads the user (getUserByName) and returns details of a pet. Availability status comes from inbound policy hints (`$inputs.policyHints.petStatus`). Username is `$inputs.policyHints.username` from the end-user JWT.
+    description: Loads the authenticated user and returns details of a pet. Availability status is applied by the server from the caller's role. Username comes from the end-user JWT.
     inputs:
       type: object
       required: [status]

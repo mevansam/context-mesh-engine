@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Petstore plan catalog</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui.css">
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    .token-bar {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: end;
+      padding: 0.75rem 1rem; background: #1b1b1b; color: #f5f5f5;
+    }
+    .token-bar label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 12px; }
+    .token-bar input { width: 22rem; max-width: 90vw; padding: 0.35rem 0.5rem; }
+    .token-bar p { margin: 0; font-size: 12px; opacity: 0.85; max-width: 28rem; }
+    .token-bar a { color: #9cdcfe; }
+  </style>
+</head>
+<body>
+  <div class="token-bar">
+    <p>
+      mcp-server REST Try it out. Paste tokens from
+      <a href="http://localhost:8092/oauth/token">auth-server</a>
+      (client credentials → Client bearer; password grant → End-user JWT).
+      GET catalog/tools need none. POST /plans needs both.
+    </p>
+    <label>Client bearer
+      <input id="client-token" type="password" autocomplete="off" placeholder="Authorization: Bearer …">
+    </label>
+    <label>End-user JWT
+      <input id="end-user-token" type="password" autocomplete="off" placeholder="X-End-User-Token">
+    </label>
+  </div>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      urls: [
+        { url: "/api/openapi", name: "Catalog" },
+        { url: "/api/openapi/petstore", name: "petstore (latest)" },
+        { url: "/api/openapi/petstore/v0.0.1", name: "petstore v0.0.1" }
+      ],
+      "urls.primaryName": "Catalog",
+      dom_id: "#swagger-ui",
+      deepLinking: true,
+      tryItOutEnabled: true,
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+      layout: "StandaloneLayout",
+      requestInterceptor: function (req) {
+        var client = document.getElementById("client-token").value.trim();
+        var endUser = document.getElementById("end-user-token").value.trim();
+        req.headers = req.headers || {};
+        if (client) {
+          req.headers.Authorization = /^bearer /i.test(client) ? client : "Bearer " + client;
+        }
+        if (endUser) {
+          req.headers["X-End-User-Token"] = endUser;
+        }
+        return req;
+      }
+    });
+  </script>
+</body>
+</html>

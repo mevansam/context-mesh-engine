@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/mevansam/context-mesh-engine/arazzo"
 	high "github.com/pb33f/libopenapi/datamodel/high/arazzo"
 	"github.com/pb33f/libopenapi/orderedmap"
 	"go.yaml.in/yaml/v4"
@@ -17,11 +18,8 @@ func objectSchema() *jsonschema.Schema {
 }
 
 func nodeToSchema(n *yaml.Node) (*jsonschema.Schema, error) {
-	if n == nil {
-		return objectSchema(), nil
-	}
-	var v any
-	if err := n.Decode(&v); err != nil {
+	v, err := nodeToJSON(n)
+	if err != nil {
 		return nil, err
 	}
 	b, err := json.Marshal(v)
@@ -46,7 +44,80 @@ func nodeToJSON(n *yaml.Node) (any, error) {
 	if err := n.Decode(&v); err != nil {
 		return nil, err
 	}
-	return v, nil
+	return stripReservedInputSchema(v), nil
+}
+
+// stripReservedInputSchema removes engine-injected input names from a JSON
+// Schema object. Only this schema level and combinators ($defs, oneOf, …)
+// are walked so a nested consumer field named secrets is kept.
+func stripReservedInputSchema(v any) any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	if props, ok := m["properties"].(map[string]any); ok {
+		for k := range props {
+			if arazzo.ReservedInputKey(k) {
+				delete(props, k)
+			}
+		}
+	}
+	if req, ok := m["required"]; ok {
+		m["required"] = filterReservedRequired(req)
+	}
+	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+		if arr, ok := m[key].([]any); ok {
+			for i, item := range arr {
+				arr[i] = stripReservedInputSchema(item)
+			}
+		}
+	}
+	for _, key := range []string{"not", "if", "then", "else"} {
+		if child, ok := m[key]; ok {
+			m[key] = stripReservedInputSchema(child)
+		}
+	}
+	for _, key := range []string{"$defs", "definitions"} {
+		if defs, ok := m[key].(map[string]any); ok {
+			for k, def := range defs {
+				defs[k] = stripReservedInputSchema(def)
+			}
+		}
+	}
+	return m
+}
+
+func filterReservedRequired(v any) any {
+	switch req := v.(type) {
+	case []any:
+		out := make([]any, 0, len(req))
+		for _, item := range req {
+			s, ok := item.(string)
+			if ok && arazzo.ReservedInputKey(s) {
+				continue
+			}
+			out = append(out, item)
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(req))
+		for _, s := range req {
+			if arazzo.ReservedInputKey(s) {
+				continue
+			}
+			out = append(out, s)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func consumerFacingText(s string) string {
+	if arazzo.LeaksReservedInputs(s) {
+		return ""
+	}
+	return s
 }
 
 // outputsToJSONSchema builds a JSON Schema object from Arazzo workflow

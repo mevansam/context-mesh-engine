@@ -8,6 +8,7 @@
 // the adapters in engine.Options. Files:
 //
 //	main.go     — engine.New wiring (copy this)
+//	docs.go     — GET /docs Swagger UI (AddController)
 //	auth.go     — MCPHandlerWrap / RESTHandlerWrap / RequestPreprocessor
 //	executor.go — ArazzoExecutor (HTTP to Petstore + async adapter)
 //
@@ -51,12 +52,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	e.AddController(docsController{})
+	docsURL := "http://" + *addr + e.APIPrefix() + "/docs"
 	if *dual {
-		log.Printf("MCP http://%s%s  REST http://%s%s  async %s  petstore %s",
-			*addr, engine.MCPPath, *addr, e.APIPrefix(), *asyncURL, petstoreBase)
+		log.Printf("MCP http://%s%s  REST http://%s%s  docs %s  async %s  petstore %s",
+			*addr, engine.MCPPath, *addr, e.APIPrefix(), docsURL, *asyncURL, petstoreBase)
 	} else {
-		log.Printf("REST http://%s%s  async %s  petstore %s",
-			*addr, e.APIPrefix(), *asyncURL, petstoreBase)
+		log.Printf("REST http://%s%s  docs %s  async %s  petstore %s",
+			*addr, e.APIPrefix(), docsURL, *asyncURL, petstoreBase)
 	}
 	if err := e.ListenAndServe(ctx); err != nil {
 		log.Fatal(err)

@@ -5,6 +5,7 @@
 | File | SDK seam | What it changes |
 | --- | --- | --- |
 | [`main.go`](main.go) | `engine.Options` | Loader, executor, policy, preprocessor, secrets, handler wraps |
+| [`docs.go`](docs.go) / [`docs/`](docs/) | `AddController` | Swagger UI at `GET /api/docs` |
 | [`auth.go`](auth.go) | `MCPHandlerWrap`, `RESTHandlerWrap`, `RequestPreprocessor` | Client JWT on MCP + `POST /plans/`; end-user JWT → OPA `input.auth` |
 | [`executor.go`](executor.go) | `ArazzoExecutor`, `SecretsProvider` | HTTP to Petstore / async adapter; **new** downstream JWT |
 | `plans/` | `ArazzoLoaders` | Arazzo document (`x-planId: petstore`) |
@@ -19,3 +20,5 @@ Inbound (`policies/petstore/0.0.1/inbound.rego`) reads `input.auth.endUser`. It 
 Tokens: [`../petstore-auth-server`](../petstore-auth-server/). Share `-jwt-secret`. Petstore: `-petstore local` (default) or `-hosted`. Override `-petstore-url`.
 
 Stdout logs client JWT claims (`sub`, `iss`, `aud`, `token_use`), end-user claims (`username`, `userStatus`), and each Arazzo step (method, URL, status, truncated body). Raw tokens and passwords are not logged.
+
+Swagger UI: **[../README.md — Swagger UI](../README.md#swagger-ui)** (`http://localhost:8080/api/docs`).

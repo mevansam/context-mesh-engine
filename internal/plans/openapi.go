@@ -16,6 +16,54 @@ import (
 
 const catalogOpenAPIVersion = "1.0.0"
 
+const defaultOpenAPIPrefix = "/api"
+
+// OpenAPIMeta is host URL data for generated OAS documents.
+type OpenAPIMeta struct {
+	// ServerURL is the Try-it-out origin (PublicBaseURL + APIPrefix),
+	// for example http://localhost:8080/api. Empty uses APIPrefix only.
+	ServerURL string
+	// APIPrefix is the REST prefix (default /api). Catalog plan $refs are
+	// prefix-absolute so they resolve from GET /openapi (no trailing slash).
+	APIPrefix string
+}
+
+func (m OpenAPIMeta) prefix() string {
+	p := m.APIPrefix
+	if p == "" {
+		p = defaultOpenAPIPrefix
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return strings.TrimRight(p, "/")
+}
+
+func (m OpenAPIMeta) serverURL() string {
+	if strings.TrimSpace(m.ServerURL) != "" {
+		return strings.TrimRight(m.ServerURL, "/")
+	}
+	return m.prefix()
+}
+
+func (m OpenAPIMeta) applyServers(doc map[string]any) {
+	doc["servers"] = []any{map[string]any{"url": m.serverURL()}}
+}
+
+func (m OpenAPIMeta) planSpecRef(planID, path string) string {
+	return m.prefix() + "/openapi/" + planID + "#/paths/" + jsonPointerEscape(path)
+}
+
+// OpenAPIServerURL joins PublicBaseURL and APIPrefix for OAS servers[].url.
+func OpenAPIServerURL(publicBase, apiPrefix string) string {
+	p := OpenAPIMeta{APIPrefix: apiPrefix}.prefix()
+	b := strings.TrimRight(publicBase, "/")
+	if b == "" {
+		return p
+	}
+	return b + p
+}
+
 var (
 	listToolsSchemaOnce sync.Once
 	listToolsSchema     any
@@ -25,7 +73,7 @@ var (
 // OpenAPIJSON builds an OAS 3.1 document describing POST execute paths.
 // versioned: paths include /plans/{planId}/{versionSegment}/{workflowId}
 // latest: paths use /plans/{planId}/{workflowId}
-func OpenAPIJSON(e *Entry, latest bool) ([]byte, error) {
+func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 	title := e.PlanID
 	if e.Doc.Info != nil && e.Doc.Info.Title != "" {
 		title = e.Doc.Info.Title
@@ -40,32 +88,35 @@ func OpenAPIJSON(e *Entry, latest bool) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		p := executePath(e.PlanID, wf.WorkflowId, e.VersionSegment(), latest)
-		paths[p] = map[string]any{
-			"post": map[string]any{
-				"operationId": wf.WorkflowId,
-				"summary":     wf.Summary,
-				"description": wf.Description,
-				"requestBody": map[string]any{
-					"required": true,
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": schema,
-						},
+		post := map[string]any{
+			"operationId": wf.WorkflowId,
+			"requestBody": map[string]any{
+				"required": true,
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": schema,
 					},
 				},
-				"responses": map[string]any{
-					"200": map[string]any{
-						"description": "workflow outputs",
-						"content": map[string]any{
-							"application/json": map[string]any{
-								"schema": outputsToJSONSchema(wf.Outputs),
-							},
+			},
+			"responses": map[string]any{
+				"200": map[string]any{
+					"description": "workflow outputs",
+					"content": map[string]any{
+						"application/json": map[string]any{
+							"schema": outputsToJSONSchema(wf.Outputs),
 						},
 					},
 				},
 			},
 		}
+		if s := consumerFacingText(wf.Summary); s != "" {
+			post["summary"] = s
+		}
+		if d := consumerFacingText(wf.Description); d != "" {
+			post["description"] = d
+		}
+		p := executePath(e.PlanID, wf.WorkflowId, e.VersionSegment(), latest)
+		paths[p] = map[string]any{"post": post}
 	}
 	doc := map[string]any{
 		"openapi": "3.1.0",
@@ -75,14 +126,16 @@ func OpenAPIJSON(e *Entry, latest bool) ([]byte, error) {
 		},
 		"paths": paths,
 	}
+	meta.applyServers(doc)
 	return json.Marshal(doc)
 }
 
 // CatalogOpenAPIJSON builds an OAS 3.1 index for the loaded catalog.
 // GET /tools uses a schema inferred from go-sdk [mcp.ListToolsResult].
-// Each latest-plan execute path is a path-item $ref into ./ {planId}.
-// queryEnabled adds POST /plans/query (MCP tool query).
-func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool) ([]byte, error) {
+// Each latest-plan execute path is a path-item $ref into
+// {APIPrefix}/openapi/{planId} (prefix-absolute, so GET /openapi without a
+// trailing slash still resolves). queryEnabled adds POST /plans/query.
+func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool, meta OpenAPIMeta) ([]byte, error) {
 	toolsSchema, err := listToolsResultSchema()
 	if err != nil {
 		return nil, err
@@ -168,7 +221,7 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool) ([]byte, error) {
 				}
 				p := executePath(e.PlanID, wf.WorkflowId, e.VersionSegment(), true)
 				paths[p] = map[string]any{
-					"$ref": "./" + planID + "#/paths/" + jsonPointerEscape(p),
+					"$ref": meta.planSpecRef(planID, p),
 				}
 			}
 		}
@@ -178,7 +231,7 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool) ([]byte, error) {
 		"info": map[string]any{
 			"title":       "Arazzo plan catalog",
 			"version":     catalogOpenAPIVersion,
-			"description": "Index of REST surfaces for this process. GET /tools is MCP tools/list. Plan execute paths $ref the latest child spec at ./ {planId} (GET /openapi/{planId}). Versioned child specs are GET /openapi/{planId}/v{version}.",
+			"description": "Index of REST surfaces for this process. GET /tools is MCP tools/list. Plan execute paths $ref the latest child spec at {APIPrefix}/openapi/{planId}. Versioned child specs are GET /openapi/{planId}/v{version}.",
 		},
 		"paths": paths,
 		"components": map[string]any{
@@ -187,6 +240,7 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool) ([]byte, error) {
 			},
 		},
 	}
+	meta.applyServers(doc)
 	return json.Marshal(doc)
 }
 

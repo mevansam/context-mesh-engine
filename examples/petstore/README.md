@@ -40,6 +40,7 @@ Default Petstore target is **local Docker**. Pass `-petstore hosted` for [petsto
   - [Hosted Petstore 3](#hosted-petstore-3)
   - [Run the Go servers](#run-the-go-servers)
   - [Seed users](#seed-users)
+  - [Swagger UI](#swagger-ui)
   - [REST: retrieve, purchase, check order](#rest-retrieve-purchase-check-order)
   - [MCP](#mcp)
 - [Further reading](#further-reading)
@@ -236,7 +237,7 @@ OpenAPI operations used by the plan:
 
 **Purpose:** load the end user (`getUserByName`), then return the first pet matching a status that **inbound policy** chooses. The caller’s `status` input is a hint for buyers only; browsers always search `available`. Username comes from the end-user JWT via `policyHints.username`, not from the JSON body.
 
-**Inputs (required):** `status` (`available` \| `pending` \| `sold`). `policyHints` is declared so the schema documents the injected object; callers must not send it (the engine strips it).
+**Inputs (required):** `status` (`available` \| `pending` \| `sold`). Generated OpenAPI and MCP `inputSchema` omit `policyHints` (and `secrets`); those keys stay in the Arazzo file for execution. Callers must not send them — the engine strips them at run time.
 
 **Steps**
 
@@ -727,6 +728,7 @@ When `ArazzoLoaders` is set, `New` registers:
 | REST execute versioned | `POST {APIPrefix}/plans/{planId}/{version}/{workflowId}` |
 | REST OpenAPI catalog | `GET {APIPrefix}/openapi` |
 | REST OpenAPI plan | `GET {APIPrefix}/openapi/{planId}` |
+| REST Swagger UI (this example) | `GET {APIPrefix}/docs` |
 | REST tools | `GET {APIPrefix}/tools` (MCP `tools/list` envelope; REST descriptions) |
 | REST health | `GET {APIPrefix}/health` |
 | MCP `run_*` | only if MCP is mounted (`-dual` or `MCPOnly`) |
@@ -886,6 +888,26 @@ BUYER=$(curl -s -X POST http://localhost:8092/oauth/token \
   -d '{"grant_type":"password","username":"buyer","password":"abc123"}' \
   | jq -r .access_token)
 ```
+
+### Swagger UI
+
+mcp-server serves a single HTML page at **`http://localhost:8080/api/docs`** ([`mcp-server/docs/index.html`](mcp-server/docs/index.html), registered with `e.AddController`). It loads [Swagger UI](https://github.com/swagger-api/swagger-ui) from a CDN (`swagger-ui-dist@5.27.1`) and fetches this process’s generated OAS on the **same origin** (no CORS):
+
+| Dropdown | Spec |
+| --- | --- |
+| Catalog | `GET /api/openapi` — `/tools` plus `$ref` to each latest plan |
+| petstore (latest) | `GET /api/openapi/petstore` |
+| petstore v0.0.1 | `GET /api/openapi/petstore/v0.0.1` |
+
+The sticky bar at the top is for **Try it out** on `POST /plans/…`. A `requestInterceptor` copies the fields into headers; it does not log the values.
+
+1. Seed users and mint `$CLIENT`, `$BROWSER` / `$BUYER` as above.
+2. Open [http://localhost:8080/api/docs](http://localhost:8080/api/docs) (needs network once for the CDN).
+3. Paste the client access token into **Client bearer** (`Authorization: Bearer`).
+4. Paste an end-user access token into **End-user JWT** (`X-End-User-Token`).
+5. Pick a spec in the dropdown. `GET /tools` and `GET /openapi` work with empty fields. Execute `retrievePet` / `purchasePet` / `checkOrderStatus` with the same token rules as curl (`browser` retrieve-only; `buyer` may purchase).
+
+`GET /health`, `GET /tools`, `GET /openapi`, and `GET /docs` stay unauthenticated. Only `POST /plans/` requires the two JWTs.
 
 ### REST: retrieve, purchase, check order
 

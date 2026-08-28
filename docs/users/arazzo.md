@@ -182,17 +182,17 @@ Override display strings with `ToolDoc.QueryName` (name only) and [`ToolHelpLook
 
 ## OpenAPI
 
-`GET /api/openapi` returns the **catalog** OAS **3.1.0** (`Content-Type: application/json`). It always describes `GET /tools` (schema from go-sdk `mcp.ListToolsResult`). When plans are loaded, each latest execute path is a path-item `$ref` into that plan’s child spec (`./{planId}#/paths/...`). `POST /plans/query` is included only when `QueryMatcher` is set.
+`GET /api/openapi` returns the **catalog** OAS **3.1.0** (`Content-Type: application/json`). It always describes `GET /tools` (schema from go-sdk `mcp.ListToolsResult`). When plans are loaded, each latest execute path is a path-item `$ref` into that plan’s child spec (`{APIPrefix}/openapi/{planId}#/paths/...`). `POST /plans/query` is included only when `QueryMatcher` is set.
 
 `GET /api/openapi/{planId}` and `GET /api/openapi/{planId}/{version}` return the **child** OAS **3.1.0** for that plan.
 
-Paths **inside** those documents omit `Options.APIPrefix` (the REST mux is `StripPrefix`’d). With the default prefix:
+Paths **inside** those documents omit `Options.APIPrefix` (the REST mux is `StripPrefix`’d). `servers[].url` is `PublicBaseURL` + `APIPrefix` (or `/api` if the origin is empty) so Try-it-out clients hit the real execute URLs. With the default prefix:
 
 - HTTP: `GET /api/openapi` → catalog index
 - HTTP: `GET /api/openapi/petstore`
 - Document path: `/plans/petstore/pingHealth` → real URL `POST /api/plans/petstore/pingHealth`
 
-Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs`. **200** schema is an object with a property per Arazzo `outputs` name.
+Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted. Workflow summary/description that name those keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped schema. **200** schema is an object with a property per Arazzo `outputs` name.
 
 404 if the plan or version is missing. OpenAPI does **not** require an executor. Child documents describe execute routes, not `/plans/query` (that lives on the catalog index).
 
@@ -234,7 +234,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
-- Generated OpenAPI `paths` keys omit `Options.APIPrefix`. Catalog plan paths `$ref` `GET /openapi/{planId}`.
+- Generated OpenAPI `paths` keys omit `Options.APIPrefix`. Catalog plan paths `$ref` `{APIPrefix}/openapi/{planId}`. `servers` is `PublicBaseURL` + `APIPrefix`.
 - Set `PublicBaseURL` if you want absolute URLs in REST descriptions.
 - Optional [`ToolHelpLookup`](adapters.md#toolhelplookup) for per-plan/query title and description.
 
