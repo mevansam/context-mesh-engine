@@ -150,6 +150,14 @@ type Options struct {
 	// as secrets.<name>). Empty means do not inject secrets into $inputs.
 	SecretInputs []string
 
+	// OpenAPICatalogTitle is info.title on GET {APIPrefix}/openapi.
+	// Empty uses "Arazzo plan catalog".
+	OpenAPICatalogTitle string
+
+	// OpenAPICatalogVersion is info.version on GET {APIPrefix}/openapi.
+	// Empty uses "1.0.0".
+	OpenAPICatalogVersion string
+
 	// MCPHandlerWrap wraps the Streamable HTTP handler only (not REST).
 	// Use auth.RequireBearerToken here. Nil means no wrap.
 	MCPHandlerWrap func(http.Handler) http.Handler
@@ -286,8 +294,10 @@ func applyDefaults(opts Options) Options {
 
 func openAPIMeta(opts Options) plans.OpenAPIMeta {
 	return plans.OpenAPIMeta{
-		ServerURL: plans.OpenAPIServerURL(opts.PublicBaseURL, opts.APIPrefix),
-		APIPrefix: opts.APIPrefix,
+		ServerURL:      plans.OpenAPIServerURL(opts.PublicBaseURL, opts.APIPrefix),
+		APIPrefix:      opts.APIPrefix,
+		CatalogTitle:   opts.OpenAPICatalogTitle,
+		CatalogVersion: opts.OpenAPICatalogVersion,
 	}
 }
 

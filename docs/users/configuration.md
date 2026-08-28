@@ -112,6 +112,8 @@ These fields are optional. Empty `ArazzoLoaders` means no `run_*` tools and no `
 | `ArazzoExecutor` | `arazzo.Executor` | `nil` | Backend HTTP for workflow steps. Nil: catalog and OpenAPI still load; execute is **501**. See [`Executor`](adapters.md#executor). |
 | `QueryMatcher` | `arazzo.QueryMatcher` | `nil` | Plan selection for MCP `query` and `POST {APIPrefix}/plans/query`. Nil: those surfaces are **not** registered. See [`QueryMatcher`](adapters.md#querymatcher). |
 | `PublicBaseURL` | `string` | empty | Origin written into REST tool descriptions (for example `http://localhost:8080`). Empty → path-only URLs (`{APIPrefix}/...`). **Not** derived from `Addr` except in `cmd/engine` (`-public-base-url` or `http://` + `-addr`). |
+| `OpenAPICatalogTitle` | `string` | `Arazzo plan catalog` | `info.title` on `GET {APIPrefix}/openapi`. |
+| `OpenAPICatalogVersion` | `string` | `1.0.0` | `info.version` on `GET {APIPrefix}/openapi`. Not a plan `info.version`. |
 
 How documents are loaded, executed, and exposed: [Arazzo plans](arazzo.md).
 

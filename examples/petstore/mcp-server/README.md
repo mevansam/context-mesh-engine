@@ -5,7 +5,7 @@
 | File | SDK seam | What it changes |
 | --- | --- | --- |
 | [`main.go`](main.go) | `engine.Options` | Loader, executor, policy, preprocessor, secrets, handler wraps |
-| [`docs.go`](docs.go) / [`docs/`](docs/) | `AddController` | Swagger UI at `GET /api/docs` |
+| [`docs.go`](docs.go) / [`docs/`](docs/) | `AddController` | Swagger UI at `GET /api/docs`; client-token gate at `GET /api/docs/login` |
 | [`auth.go`](auth.go) | `MCPHandlerWrap`, `RESTHandlerWrap`, `RequestPreprocessor` | Client JWT on MCP + `GET /tools` + `GET /openapi` + `POST /plans/`; end-user JWT → OPA `input.auth` |
 | [`executor.go`](executor.go) | `ArazzoExecutor`, `SecretsProvider` | HTTP to Petstore / async adapter; **new** downstream JWT |
 | `plans/` | `ArazzoLoaders` | Arazzo document (`x-planId: petstore`) |

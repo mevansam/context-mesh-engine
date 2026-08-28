@@ -618,6 +618,26 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 	if doc["openapi"] != "3.1.0" {
 		t.Fatalf("openapi = %v", doc["openapi"])
 	}
+	info, _ := doc["info"].(map[string]any)
+	if info["title"] != "Arazzo plan catalog" {
+		t.Fatalf("default catalog title = %v", info["title"])
+	}
+	if info["version"] != "1.0.0" {
+		t.Fatalf("default catalog version = %v", info["version"])
+	}
+	named, err := CatalogOpenAPIJSON(c, false, OpenAPIMeta{
+		CatalogTitle:   "API Execution Plan Catalog Demo",
+		CatalogVersion: "0.0.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(named), `"title":"API Execution Plan Catalog Demo"`) {
+		t.Fatalf("custom catalog title: %s", named)
+	}
+	if !strings.Contains(string(named), `"version":"0.0.1"`) {
+		t.Fatalf("custom catalog version: %s", named)
+	}
 	paths, _ := doc["paths"].(map[string]any)
 	if _, ok := paths["/tools"]; !ok {
 		t.Fatalf("missing /tools: %s", b)

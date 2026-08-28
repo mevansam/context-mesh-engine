@@ -111,13 +111,15 @@ func hostOptions(addr, asyncURL, petstoreBase, jwtSecret string, dual bool) engi
 		// Origin written into GET /api/tools REST descriptions (not inferred from Addr).
 		PublicBaseURL: "http://" + addr,
 
+		OpenAPICatalogTitle: "API Execution Plan Catalog Demo",
+
 		// All false = REST only. DualMCPandREST also mounts /mcp.
 		DualMCPandREST: dual,
 
 		// Wraps apply to child handlers only, never the root mux.
 		// MCP: every Streamable HTTP request (initialize, tools/list, run_*).
 		// REST: wrapRESTPlans requires bearer on GET /tools, GET /openapi/…, and POST /plans/.
-		// GET /health and GET /docs stay open.
+		// GET /health, GET /docs, and GET /docs/login stay open.
 		MCPHandlerWrap:  bearer,
 		RESTHandlerWrap: func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
 	}

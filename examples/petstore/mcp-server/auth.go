@@ -60,7 +60,7 @@ func clientBearer(secret []byte) func(http.Handler) http.Handler {
 // wrapRESTPlans is Options.RESTHandlerWrap. After the engine StripPrefix of
 // APIPrefix, paths are /health, /tools, /openapi/…, /plans/…, /docs.
 // Client JWT is required on catalog reads (GET /tools, GET /openapi/…) and
-// execute (POST /plans/). GET /health and GET /docs stay open.
+// execute (POST /plans/). GET /health, GET /docs, and GET /docs/login stay open.
 func wrapRESTPlans(inner http.Handler, bearer func(http.Handler) http.Handler) http.Handler {
 	protected := bearer(inner)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

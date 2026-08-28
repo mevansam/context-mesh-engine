@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Execution Plan Catalog Demo</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: sans-serif;
+      background: #1b1b1b;
+      color: #f5f5f5;
+    }
+    form {
+      width: min(28rem, 92vw);
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    h1 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+    p { margin: 0; font-size: 13px; opacity: 0.85; line-height: 1.4; }
+    a { color: #9cdcfe; }
+    label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 12px; }
+    input, button { font: inherit; padding: 0.5rem 0.65rem; }
+    input { background: #111; color: #f5f5f5; border: 1px solid #444; }
+    button {
+      cursor: pointer;
+      background: #3b82f6;
+      color: #fff;
+      border: 0;
+      font-size: 14px;
+    }
+    button:hover { background: #2563eb; }
+    .err { color: #fca5a5; min-height: 1.2em; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <form id="login">
+    <h1>Client token</h1>
+    <p>
+      Catalog OpenAPI requires the calling-app JWT.
+      Mint one with
+      <a href="http://localhost:8092/oauth/token">auth-server</a>
+      <code>client_credentials</code>, then open the docs.
+    </p>
+    <label>Client bearer
+      <input id="client-token" type="password" autocomplete="off" required
+        placeholder="access_token or Bearer …">
+    </label>
+    <button type="submit">Open catalog docs</button>
+    <p class="err" id="err"></p>
+  </form>
+  <script>
+    var KEY = "petstore.clientToken";
+    var tokenEl = document.getElementById("client-token");
+    var errEl = document.getElementById("err");
+    var existing = sessionStorage.getItem(KEY);
+    if (existing) tokenEl.value = existing;
+
+    document.getElementById("login").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var raw = tokenEl.value.trim();
+      if (!raw) {
+        errEl.textContent = "Paste a client access token.";
+        return;
+      }
+      var token = /^bearer /i.test(raw) ? raw.replace(/^bearer\s+/i, "") : raw;
+      sessionStorage.setItem(KEY, token);
+      location.replace("/api/docs");
+    });
+  </script>
+</body>
+</html>

@@ -26,6 +26,11 @@ type OpenAPIMeta struct {
 	// APIPrefix is the REST prefix (default /api). Catalog plan $refs are
 	// prefix-absolute so they resolve from GET /openapi (no trailing slash).
 	APIPrefix string
+	// CatalogTitle is info.title on GET /openapi. Empty uses
+	// "Arazzo plan catalog".
+	CatalogTitle string
+	// CatalogVersion is info.version on GET /openapi. Empty uses "1.0.0".
+	CatalogVersion string
 }
 
 func (m OpenAPIMeta) prefix() string {
@@ -44,6 +49,20 @@ func (m OpenAPIMeta) serverURL() string {
 		return strings.TrimRight(m.ServerURL, "/")
 	}
 	return m.prefix()
+}
+
+func (m OpenAPIMeta) catalogTitle() string {
+	if t := strings.TrimSpace(m.CatalogTitle); t != "" {
+		return t
+	}
+	return "Arazzo plan catalog"
+}
+
+func (m OpenAPIMeta) catalogVersion() string {
+	if v := strings.TrimSpace(m.CatalogVersion); v != "" {
+		return v
+	}
+	return catalogOpenAPIVersion
 }
 
 func (m OpenAPIMeta) applyServers(doc map[string]any) {
@@ -229,8 +248,8 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool, meta OpenAPIMeta) ([]byte
 	doc := map[string]any{
 		"openapi": "3.1.0",
 		"info": map[string]any{
-			"title":       "Arazzo plan catalog",
-			"version":     catalogOpenAPIVersion,
+			"title":       meta.catalogTitle(),
+			"version":     meta.catalogVersion(),
 			"description": "Index of REST surfaces for this process. GET /tools is MCP tools/list. Plan execute paths $ref the latest child spec at {APIPrefix}/openapi/{planId}. Versioned child specs are GET /openapi/{planId}/v{version}.",
 		},
 		"paths": paths,

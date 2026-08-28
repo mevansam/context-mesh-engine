@@ -891,7 +891,7 @@ BUYER=$(curl -s -X POST http://localhost:8092/oauth/token \
 
 ### Swagger UI
 
-mcp-server serves a single HTML page at **`http://localhost:8080/api/docs`** ([`mcp-server/docs/index.html`](mcp-server/docs/index.html), registered with `e.AddController`). It loads [Swagger UI](https://github.com/swagger-api/swagger-ui) from a CDN (`swagger-ui-dist@5.27.1`) and fetches this process’s generated OAS on the **same origin** (no CORS):
+mcp-server serves HTML at **`http://localhost:8080/api/docs`** ([`mcp-server/docs/index.html`](mcp-server/docs/index.html), registered with `e.AddController`). Catalog OpenAPI requires a client JWT, so a first visit with no token redirects to **`/api/docs/login`**. That page stores the token in `sessionStorage` (not in the URL) and sends you back to `/api/docs`, which then loads [Swagger UI](https://github.com/swagger-api/swagger-ui) from a CDN (`swagger-ui-dist@5.27.1`) and fetches this process’s generated OAS on the **same origin** (no CORS). The first spec request already has `Authorization: Bearer`.
 
 | Dropdown | Spec |
 | --- | --- |
@@ -899,15 +899,15 @@ mcp-server serves a single HTML page at **`http://localhost:8080/api/docs`** ([`
 | petstore (latest) | `GET /api/openapi/petstore` |
 | petstore v0.0.1 | `GET /api/openapi/petstore/v0.0.1` |
 
-The sticky bar at the top is for **Try it out** on `POST /plans/…`. A `requestInterceptor` copies the fields into headers; it does not log the values.
+The sticky bar on `/api/docs` is for **Try it out**. A `requestInterceptor` copies the fields into headers; it does not log the values. **Log out** clears `sessionStorage` and returns to login.
 
 1. Seed users and mint `$CLIENT`, `$BROWSER` / `$BUYER` as above.
-2. Open [http://localhost:8080/api/docs](http://localhost:8080/api/docs) (needs network once for the CDN).
-3. Paste the client access token into **Client bearer** (`Authorization: Bearer`).
-4. Paste an end-user access token into **End-user JWT** (`X-End-User-Token`).
-5. Pick a spec in the dropdown. Paste the client token first: `GET /tools` and `GET /openapi` require it. Execute `retrievePet` / `purchasePet` / `checkOrderStatus` with the same token rules as curl (`browser` retrieve-only; `buyer` may purchase).
+2. Open [http://localhost:8080/api/docs](http://localhost:8080/api/docs) (needs network once for the CDN). You land on `/api/docs/login` until a client token is stored.
+3. Paste the client access token (`$CLIENT`) and submit. The catalog spec should load.
+4. Paste an end-user access token into **End-user JWT** (`X-End-User-Token`) before **Try it out** on `POST /plans/…`.
+5. Pick a spec in the dropdown. Execute `retrievePet` / `purchasePet` / `checkOrderStatus` with the same token rules as curl (`browser` retrieve-only; `buyer` may purchase).
 
-`GET /health` and `GET /docs` stay unauthenticated. `GET /tools` and `GET /openapi/…` need the client JWT. `POST /plans/` needs both JWTs.
+`GET /health` and `GET /docs` (login + UI HTML) stay unauthenticated. `GET /tools` and `GET /openapi/…` need the client JWT (the UI sends it after login). `POST /plans/` needs both JWTs.
 
 ### REST: retrieve, purchase, check order
 

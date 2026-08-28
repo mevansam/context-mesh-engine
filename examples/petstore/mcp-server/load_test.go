@@ -92,6 +92,24 @@ func TestPetstorePlanLoads(t *testing.T) {
 	if ct := docs.Header.Get("Content-Type"); ct != "text/html; charset=utf-8" {
 		t.Fatalf("docs Content-Type = %q", ct)
 	}
+	login, err := http.Get(ts.URL + "/api/docs/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer login.Body.Close()
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("docs login status = %d", login.StatusCode)
+	}
+	lb, err := io.ReadAll(login.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(lb), "Open catalog docs") {
+		t.Fatalf("login page missing form: %s", lb)
+	}
+	if strings.Contains(string(lb), "swagger-ui-bundle") {
+		t.Fatal("GET /docs/login served the Swagger page")
+	}
 }
 
 func TestPetstoreCatalogRequiresClientJWT(t *testing.T) {
@@ -136,6 +154,11 @@ func TestPetstoreCatalogRequiresClientJWT(t *testing.T) {
 	docs.Body.Close()
 	if docs.StatusCode != http.StatusOK {
 		t.Fatalf("docs = %d", docs.StatusCode)
+	}
+	login := get("/api/docs/login", nil)
+	login.Body.Close()
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("docs login = %d", login.StatusCode)
 	}
 	unauth := get("/api/openapi/petstore", nil)
 	unauth.Body.Close()

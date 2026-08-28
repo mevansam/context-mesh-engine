@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Petstore plan catalog</title>
+  <title>API Execution Plan Catalog Demo</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui.css">
   <style>
     body { margin: 0; font-family: sans-serif; }
@@ -16,15 +16,20 @@
     .token-bar input { width: 22rem; max-width: 90vw; padding: 0.35rem 0.5rem; }
     .token-bar p { margin: 0; font-size: 12px; opacity: 0.85; max-width: 28rem; }
     .token-bar a { color: #9cdcfe; }
+    .token-bar button {
+      font: inherit; font-size: 12px; padding: 0.4rem 0.7rem;
+      cursor: pointer; background: #333; color: #f5f5f5; border: 1px solid #555;
+    }
   </style>
 </head>
 <body>
   <div class="token-bar">
     <p>
-      mcp-server REST Try it out. Paste tokens from
-      <a href="http://localhost:8092/oauth/token">auth-server</a>
-      (client credentials → Client bearer; password grant → End-user JWT).
-      GET catalog/tools need none. POST /plans needs both.
+      mcp-server REST Try it out.
+      Catalog GET uses the client token from
+      <a href="/api/docs/login">login</a>.
+      POST /plans also needs an end-user JWT
+      (<a href="http://localhost:8092/oauth/token">password grant</a>).
     </p>
     <label>Client bearer
       <input id="client-token" type="password" autocomplete="off" placeholder="Authorization: Bearer …">
@@ -32,36 +37,57 @@
     <label>End-user JWT
       <input id="end-user-token" type="password" autocomplete="off" placeholder="X-End-User-Token">
     </label>
+    <button type="button" id="logout">Log out</button>
   </div>
   <div id="swagger-ui"></div>
   <script src="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui-bundle.js"></script>
   <script src="https://unpkg.com/swagger-ui-dist@5.27.1/swagger-ui-standalone-preset.js"></script>
   <script>
-    window.ui = SwaggerUIBundle({
-      urls: [
-        { url: "/api/openapi", name: "Catalog" },
-        { url: "/api/openapi/petstore", name: "petstore (latest)" },
-        { url: "/api/openapi/petstore/v0.0.1", name: "petstore v0.0.1" }
-      ],
-      "urls.primaryName": "Catalog",
-      dom_id: "#swagger-ui",
-      deepLinking: true,
-      tryItOutEnabled: true,
-      presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-      layout: "StandaloneLayout",
-      requestInterceptor: function (req) {
-        var client = document.getElementById("client-token").value.trim();
-        var endUser = document.getElementById("end-user-token").value.trim();
-        req.headers = req.headers || {};
-        if (client) {
-          req.headers.Authorization = /^bearer /i.test(client) ? client : "Bearer " + client;
+    var KEY = "petstore.clientToken";
+    var clientEl = document.getElementById("client-token");
+    var endUserEl = document.getElementById("end-user-token");
+    var stored = sessionStorage.getItem(KEY);
+    if (!stored) {
+      var login = "/api/docs/login";
+      location.replace(login);
+    } else {
+      clientEl.value = stored;
+      clientEl.addEventListener("change", function () {
+        var v = clientEl.value.trim();
+        if (v) {
+          sessionStorage.setItem(KEY, /^bearer /i.test(v) ? v.replace(/^bearer\s+/i, "") : v);
         }
-        if (endUser) {
-          req.headers["X-End-User-Token"] = endUser;
+      });
+      document.getElementById("logout").addEventListener("click", function () {
+        sessionStorage.removeItem(KEY);
+        location.replace("/api/docs/login");
+      });
+      window.ui = SwaggerUIBundle({
+        urls: [
+          { url: "/api/openapi", name: "Catalog" },
+          { url: "/api/openapi/petstore", name: "petstore (latest)" },
+          { url: "/api/openapi/petstore/v0.0.1", name: "petstore v0.0.1" }
+        ],
+        "urls.primaryName": "Catalog",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        tryItOutEnabled: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout",
+        requestInterceptor: function (req) {
+          var client = clientEl.value.trim() || sessionStorage.getItem(KEY) || "";
+          var endUser = endUserEl.value.trim();
+          req.headers = req.headers || {};
+          if (client) {
+            req.headers.Authorization = /^bearer /i.test(client) ? client : "Bearer " + client;
+          }
+          if (endUser) {
+            req.headers["X-End-User-Token"] = endUser;
+          }
+          return req;
         }
-        return req;
-      }
-    });
+      });
+    }
   </script>
 </body>
 </html>
