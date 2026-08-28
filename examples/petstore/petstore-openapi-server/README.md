@@ -2,7 +2,11 @@
 
 Runs the official [Swagger Petstore 3](https://github.com/swagger-api/swagger-petstore) OpenAPI server in Docker so the petstore example does not depend on the hosted [petstore3.swagger.io](https://petstore3.swagger.io/) demo.
 
-The image is [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3). Scripts **pull only when** the local tag `context-mesh-petstore3:local` is missing, then start (or reuse) a container. The published image is `linux/amd64`; Docker Desktop on Apple Silicon runs it under emulation.
+The [Dockerfile](Dockerfile) starts from [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) and adds an [SLF4J](http://www.slf4j.org/) 1.7 simple binding so Jetty does not print `StaticLoggerBinder` errors. Scripts **build** `context-mesh-petstore3:local` when that tag is missing (they pull the upstream base only if it is not already local). The published image is `linux/amd64`; Docker Desktop on Apple Silicon runs it under emulation.
+
+Jetty still prints `jetty-runner is deprecated` on startup; that warning comes from upstream and is harmless.
+
+The container runs in the **foreground** (`docker run --rm`). Ctrl+C stops it and **removes** the container, which deletes in-memory users and orders. Each run is a clean store.
 
 ## Requirements
 
@@ -22,7 +26,7 @@ Windows (PowerShell):
 ./examples/petstore/petstore-openapi-server/run.ps1
 ```
 
-Pull again and recreate the container:
+Rebuild the local image and recreate the container:
 
 ```bash
 ./examples/petstore/petstore-openapi-server/run.sh --rebuild
@@ -77,19 +81,15 @@ curl -s -H 'Accept: application/json' http://localhost:8090/api/v3/store/order/9
 
 ## Stop
 
-Stop only (container stays, `run.sh` can start it again):
+Ctrl+C in the terminal running `run.sh` / `run.ps1`. The container is removed (`--rm`); seed users and orders are gone.
 
-```bash
-docker stop petstore-openapi-server
-```
-
-Stop, remove the container, and delete anonymous volumes attached to it (`-v`). This demo does not create named volumes.
+If a leftover container remains:
 
 ```bash
 docker rm -fv petstore-openapi-server
 ```
 
-Optional — also drop the local image tag (next `run.sh` will pull/tag again):
+Optional — also drop the local image tag (next `run.sh` will rebuild):
 
 ```bash
 docker image rm context-mesh-petstore3:local

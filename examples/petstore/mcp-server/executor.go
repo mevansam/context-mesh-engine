@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -195,6 +196,16 @@ func (e *httpExec) do(ctx context.Context, base, method, path string, req *arazz
 		return nil, err
 	}
 	decoded := decodeJSONBody(raw)
+	op := lastSegment(req.OperationID)
+	if op == "" {
+		op = lastSegment(req.OperationPath)
+	}
+	log.Printf("step %s %s op=%s status=%d", httpReq.Method, u.String(), op, resp.StatusCode)
+	logJSON("step params", req.Parameters)
+	if req.RequestBody != nil {
+		logJSON("step request body", req.RequestBody)
+	}
+	logJSON("step response body", decoded)
 	return &arazzo.ExecutionResponse{
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header.Clone(),
@@ -224,6 +235,7 @@ func (e *httpExec) downstreamBearer(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
+	log.Printf("downstream JWT username=%s iss=%s", username, jwtx.IssuerEngine)
 	return "Bearer " + tok
 }
 

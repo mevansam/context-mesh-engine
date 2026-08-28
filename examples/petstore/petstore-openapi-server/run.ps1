@@ -1,4 +1,4 @@
-# Pull (if needed) and run the local Petstore 3 OpenAPI server in Docker.
+# Build (if needed) and run the local Petstore 3 OpenAPI server in Docker.
 param(
     [switch]$Rebuild,
     [switch]$Help
@@ -10,7 +10,10 @@ if ($Help) {
     Write-Host @"
 usage: ./run.ps1 [-Rebuild]
 
-  -Rebuild   remove the local image/container and pull again
+  -Rebuild   remove the local image/container and rebuild from the Dockerfile
+
+Runs Petstore 3 in the foreground. Ctrl+C stops the container and removes it
+(--rm), which deletes in-memory users/orders.
 
 Env:
   PETSTORE_IMAGE         local tag (default context-mesh-petstore3:local)
@@ -104,50 +107,71 @@ if ($Rebuild) {
 
 if (Test-LocalImage $Image) {
     Write-Host "using existing image $Image"
-} elseif (Test-LocalImage $Upstream) {
-    Write-Host "tagging local $Upstream as $Image (skipping pull)"
-    docker tag $Upstream $Image
 } else {
-    Invoke-PullUpstream
-    docker tag $Upstream $Image
+    if ($Rebuild -or -not (Test-LocalImage $Upstream)) {
+        Invoke-PullUpstream
+    } else {
+        Write-Host "using local $Upstream as build base (skipping pull)"
+    }
+    Write-Host "building $Image (--platform $Platform)..."
+    docker build --platform $Platform -t $Image $PSScriptRoot
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 switch (Get-ContainerState $Name) {
-    "running" { Write-Host "container $Name already running" }
-    "stopped" {
-        Write-Host "starting existing container $Name"
-        docker start $Name | Out-Null
+    "running" {
+        Write-Host "removing leftover container $Name"
+        docker rm -f $Name 2>$null | Out-Null
     }
-    default {
-        Write-Host "starting container $Name on localhost:${HostPort}"
-        docker run -d --name $Name --platform $Platform -p "${HostPort}:${ContainerPort}" $Image | Out-Null
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    "stopped" {
+        Write-Host "removing leftover container $Name"
+        docker rm -f $Name 2>$null | Out-Null
     }
 }
 
-Write-Host "waiting for $BaseUrl/openapi.json ..."
-$ready = $false
-for ($i = 0; $i -lt 60; $i++) {
-    try {
-        Invoke-WebRequest -Uri "$BaseUrl/openapi.json" -UseBasicParsing -TimeoutSec 2 | Out-Null
-        $ready = $true
-        break
-    } catch {
+Write-Host "starting container $Name on localhost:${HostPort} (foreground, --rm)"
+$run = Start-Process -FilePath "docker" -ArgumentList @(
+    "run", "--rm", "--name", $Name, "--platform", $Platform,
+    "-p", "${HostPort}:${ContainerPort}", $Image
+) -NoNewWindow -PassThru
+
+try {
+    Write-Host "waiting for $BaseUrl/openapi.json ..."
+    $ready = $false
+    for ($i = 0; $i -lt 60; $i++) {
+        if ($run.HasExited) {
+            Write-Error "container exited before ready"
+            exit 1
+        }
         try {
-            Invoke-WebRequest -Uri "$BaseUrl/pet/findByStatus?status=available" -UseBasicParsing -TimeoutSec 2 | Out-Null
+            Invoke-WebRequest -Uri "$BaseUrl/openapi.json" -UseBasicParsing -TimeoutSec 2 | Out-Null
             $ready = $true
             break
         } catch {
-            Start-Sleep -Seconds 1
+            try {
+                Invoke-WebRequest -Uri "$BaseUrl/pet/findByStatus?status=available" -UseBasicParsing -TimeoutSec 2 | Out-Null
+                $ready = $true
+                break
+            } catch {
+                Start-Sleep -Seconds 1
+            }
         }
     }
-}
-if (-not $ready) {
-    Write-Error "timed out waiting for Petstore at $BaseUrl"
-    docker logs $Name --tail 40
-    exit 1
-}
+    if (-not $ready) {
+        Write-Error "timed out waiting for Petstore at $BaseUrl"
+        docker logs $Name --tail 40
+        exit 1
+    }
 
-Write-Host "Petstore 3 OpenAPI: $BaseUrl"
-Write-Host "Swagger UI:         http://localhost:${HostPort}/"
-Write-Host "stop: docker stop $Name"
+    Write-Host "Petstore 3 OpenAPI: $BaseUrl"
+    Write-Host "Swagger UI:         http://localhost:${HostPort}/"
+    Write-Host "Ctrl+C stops the container and deletes its data"
+    Wait-Process -Id $run.Id
+    exit $run.ExitCode
+} finally {
+    if (-not $run.HasExited) {
+        Stop-Process -Id $run.Id -ErrorAction SilentlyContinue
+        try { Wait-Process -Id $run.Id -Timeout 5 } catch { }
+    }
+    docker rm -f $Name 2>$null | Out-Null
+}

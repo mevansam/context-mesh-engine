@@ -104,6 +104,7 @@ func (s *orderServer) handlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 	s.byCorr[corr] = order
 	s.mu.Unlock()
 
+	log.Printf("place-order corr=%s petId=%d orderId=%d status=%s", corr, petID, order.OrderID, order.Status)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"accepted":       true,
 		"orderRequestId": corr,
@@ -124,9 +125,11 @@ func (s *orderServer) handleConfirmOrder(w http.ResponseWriter, r *http.Request)
 	c, ok := s.byCorr[corr]
 	s.mu.Unlock()
 	if !ok {
+		log.Printf("confirm-order corr=%s not ready", corr)
 		http.Error(w, "confirmation not ready", http.StatusNotFound)
 		return
 	}
+	log.Printf("confirm-order corr=%s orderId=%d", corr, c.OrderID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"headers": map[string]any{"orderRequestId": corr},
 		"payload": map[string]any{"orderId": c.OrderID},

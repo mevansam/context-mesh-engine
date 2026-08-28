@@ -102,6 +102,8 @@ func (s *authServer) handleToken(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
 			return
 		}
+		log.Printf("issued client JWT grant=client_credentials client_id=%s iss=%s aud=%s ttl=%s",
+			id, jwtx.IssuerAuth, jwtx.AudienceMCP, tokenTTL)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"access_token": tok,
 			"token_type":   "Bearer",
@@ -129,6 +131,8 @@ func (s *authServer) handleToken(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
 			return
 		}
+		log.Printf("issued user JWT grant=password username=%s userStatus=%d iss=%s aud=%s ttl=%s",
+			user, status, jwtx.IssuerAuth, jwtx.AudienceMCP, tokenTTL)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"access_token": tok,
 			"token_type":   "Bearer",
@@ -159,6 +163,7 @@ func (s *authServer) loginUser(ctx context.Context, username, password string) e
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("login status %d", resp.StatusCode)
 	}
+	log.Printf("petstore loginUser username=%s status=%d", username, resp.StatusCode)
 	return nil
 }
 
@@ -187,8 +192,9 @@ func (s *authServer) userStatus(ctx context.Context, username string) (int, erro
 		return 0, err
 	}
 	if user.UserStatus == 0 {
-		return 1, nil
+		user.UserStatus = 1
 	}
+	log.Printf("petstore getUserByName username=%s userStatus=%d", username, user.UserStatus)
 	return user.UserStatus, nil
 }
 

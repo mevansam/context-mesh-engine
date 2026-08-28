@@ -778,7 +778,7 @@ Smaller embed without plans: [minimal](../minimal/README.md). Plans without back
 
 ### Petstore 3 in Docker
 
-Needs [Docker](https://docs.docker.com/get-docker/) on `PATH`. Scripts pull [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) **only if** `context-mesh-petstore3:local` is missing. If pull times out, the Docker VM often cannot reach Hub while a VPN is up — disconnect VPN, restart Docker Desktop, retry, or use `-petstore hosted`.
+`run.sh` **builds** `context-mesh-petstore3:local` from [petstore-openapi-server/Dockerfile](petstore-openapi-server/Dockerfile) when that tag is missing (upstream [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) is pulled only if it is not already local). The local image adds an SLF4J 1.7 binding so Jetty does not print `StaticLoggerBinder` errors. `run.sh` stays in the **foreground**; Ctrl+C removes the container and its in-memory data. If pull or build times out, the Docker VM often cannot reach Hub / Maven Central while a VPN is up — disconnect VPN, restart Docker Desktop, retry, or use `-petstore hosted`.
 
 From the **repository root**:
 
@@ -801,7 +801,7 @@ curl -s http://localhost:8090/api/v3/openapi.json | head
 curl -s 'http://localhost:8090/api/v3/pet/findByStatus?status=available' | head
 ```
 
-Stop: `docker stop petstore-openapi-server`. Image names and port: [petstore-openapi-server/README.md](petstore-openapi-server/README.md). If you change the port, pass `-petstore-url http://localhost:PORT/api/v3` to **async-order-server**, **petstore-auth-server**, and **mcp-server**.
+Stop: Ctrl+C in the `run.sh` terminal (container `--rm`). Image names and port: [petstore-openapi-server/README.md](petstore-openapi-server/README.md). If you change the port, pass `-petstore-url http://localhost:PORT/api/v3` to **async-order-server**, **petstore-auth-server**, and **mcp-server**.
 
 ### Hosted Petstore 3
 

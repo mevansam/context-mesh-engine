@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pull (if needed) and run the local Petstore 3 OpenAPI server in Docker.
+# Build (if needed) and run the local Petstore 3 OpenAPI server in Docker.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -16,7 +16,10 @@ usage() {
   cat <<EOF
 usage: $(basename "$0") [--rebuild]
 
-  --rebuild   remove the local image/container and pull again
+  --rebuild   remove the local image/container and rebuild from the Dockerfile
+
+Runs Petstore 3 in the **foreground**. Ctrl+C (or SIGTERM) stops the container
+and removes it (--rm), which deletes in-memory users/orders.
 
 Env:
   PETSTORE_IMAGE         local tag (default ${IMAGE})
@@ -98,28 +101,44 @@ image_exists() {
 
 if image_exists "$IMAGE"; then
   echo "using existing image ${IMAGE}"
-elif image_exists "$UPSTREAM"; then
-  echo "tagging local ${UPSTREAM} as ${IMAGE} (skipping pull)"
-  docker tag "$UPSTREAM" "$IMAGE"
 else
-  pull_upstream
-  docker tag "$UPSTREAM" "$IMAGE"
+  if [[ "$REBUILD" -eq 1 ]] || ! image_exists "$UPSTREAM"; then
+    pull_upstream
+  else
+    echo "using local ${UPSTREAM} as build base (skipping pull)"
+  fi
+  echo "building ${IMAGE} (--platform ${PLATFORM})..."
+  docker build --platform "$PLATFORM" -t "$IMAGE" "$ROOT"
 fi
 
-if docker ps --format '{{.Names}}' | grep -qx "$NAME"; then
-  echo "container ${NAME} already running"
-elif docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
-  echo "starting existing container ${NAME}"
-  docker start "$NAME" >/dev/null
-else
-  echo "starting container ${NAME} on localhost:${HOST_PORT}"
-  docker run -d --name "$NAME" --platform "$PLATFORM" \
-    -p "${HOST_PORT}:${CONTAINER_PORT}" "$IMAGE" >/dev/null
+if docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
+  echo "removing leftover container ${NAME}"
+  docker rm -f "$NAME" >/dev/null 2>&1 || true
 fi
+
+echo "starting container ${NAME} on localhost:${HOST_PORT} (foreground, --rm)"
+docker run --rm --name "$NAME" --platform "$PLATFORM" \
+  -p "${HOST_PORT}:${CONTAINER_PORT}" "$IMAGE" &
+dockpid=$!
+
+cleanup() {
+  trap - EXIT INT TERM
+  if kill -0 "$dockpid" 2>/dev/null; then
+    kill "$dockpid" 2>/dev/null || true
+    wait "$dockpid" 2>/dev/null || true
+  fi
+  docker rm -f "$NAME" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
 
 echo "waiting for ${BASE_URL}/openapi.json ..."
 ready=0
 for _ in $(seq 1 60); do
+  if ! kill -0 "$dockpid" 2>/dev/null; then
+    echo "container exited before ready" >&2
+    wait "$dockpid" || true
+    exit 1
+  fi
   if curl -sf "${BASE_URL}/openapi.json" >/dev/null 2>&1 \
     || curl -sf "${BASE_URL}/pet/findByStatus?status=available" >/dev/null 2>&1; then
     ready=1
@@ -136,4 +155,9 @@ fi
 
 echo "Petstore 3 OpenAPI: ${BASE_URL}"
 echo "Swagger UI:         http://localhost:${HOST_PORT}/"
-echo "stop: docker stop ${NAME}"
+echo "Ctrl+C stops the container and deletes its data"
+
+wait "$dockpid"
+status=$?
+trap - EXIT INT TERM
+exit "$status"

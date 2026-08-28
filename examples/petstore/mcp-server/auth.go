@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ func (v *jwtVerifier) verifyClient(_ context.Context, token string, _ *http.Requ
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", auth.ErrInvalidToken, err)
 	}
+	logClientToken(c)
 	exp := time.Time{}
 	if c.ExpiresAt != nil {
 		exp = c.ExpiresAt.Time
@@ -62,6 +64,7 @@ func wrapRESTPlans(inner http.Handler, bearer func(http.Handler) http.Handler) h
 	protected := bearer(inner)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/plans/") {
+			log.Printf("rest execute %s %s", r.Method, r.URL.Path)
 			protected.ServeHTTP(w, r)
 			return
 		}
@@ -88,6 +91,10 @@ func (p *dualJWTPreprocessor) Process(_ context.Context, src arazzo.RequestSourc
 	user, err := jwtx.ParseUser(p.secret, raw)
 	if err != nil {
 		return nil, fmt.Errorf("end-user token: %w", err)
+	}
+	logUserToken(user)
+	if src.ClientAuth != nil {
+		log.Printf("client TokenInfo %v", src.ClientAuth)
 	}
 	headers := map[string]string{}
 	if src.Header != nil {
