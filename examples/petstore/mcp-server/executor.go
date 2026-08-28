@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
-	"github.com/mevansam/context-mesh-engine/examples/petstore/petstore-auth-server/jwtx"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/auth-server/jwtx"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 

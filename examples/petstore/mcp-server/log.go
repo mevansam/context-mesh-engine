@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/mevansam/context-mesh-engine/examples/petstore/petstore-auth-server/jwtx"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/auth-server/jwtx"
 )
 
 func fmtTime(t time.Time) string {

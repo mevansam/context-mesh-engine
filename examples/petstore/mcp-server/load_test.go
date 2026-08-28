@@ -15,7 +15,7 @@ import (
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/mevansam/context-mesh-engine/engine"
-	"github.com/mevansam/context-mesh-engine/examples/petstore/petstore-auth-server/jwtx"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/auth-server/jwtx"
 )
 
 func TestPetstorePlanLoads(t *testing.T) {

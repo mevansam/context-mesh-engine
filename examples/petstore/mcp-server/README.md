@@ -17,7 +17,7 @@ Plan: `plans/petstore.arazzo.yaml` (`x-planId: petstore`, version `0.0.1`). Work
 
 Inbound (`policies/petstore/0.0.1/inbound.rego`) reads `input.auth.endUser`. It does **not** `http.send`. `userStatus` **1** may only `retrievePet`; **2** may also purchase/check order.
 
-Tokens: [`../petstore-auth-server`](../petstore-auth-server/). Share `-jwt-secret`. Petstore: `-petstore local` (default) or `-hosted`. Override `-petstore-url`.
+Tokens: [`../auth-server`](../auth-server/). Share `-jwt-secret`. Petstore: `-petstore local` (default) or `-hosted`. Override `-petstore-url`.
 
 Stdout logs client JWT claims (`sub`, `iss`, `aud`, `token_use`), end-user claims (`username`, `userStatus`), and each Arazzo step (method, URL, status, truncated body). Raw tokens and passwords are not logged.
 

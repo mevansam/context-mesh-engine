@@ -1,4 +1,4 @@
-# petstore-openapi-server
+# openapi-server
 
 Runs the official [Swagger Petstore 3](https://github.com/swagger-api/swagger-petstore) OpenAPI server in Docker so the petstore example does not depend on the hosted [petstore3.swagger.io](https://petstore3.swagger.io/) demo.
 
@@ -17,25 +17,25 @@ The container runs in the **foreground** (`docker run --rm`). Ctrl+C stops it an
 From the **repository root**, or from this directory:
 
 ```bash
-./examples/petstore/petstore-openapi-server/run.sh
+./examples/petstore/openapi-server/run.sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-./examples/petstore/petstore-openapi-server/run.ps1
+./examples/petstore/openapi-server/run.ps1
 ```
 
 Force a fresh image (optionally from another base):
 
 ```bash
-./examples/petstore/petstore-openapi-server/run.sh --rebuild
-./examples/petstore/petstore-openapi-server/run.sh --rebuild --upstream swaggerapi/petstore3:latest
+./examples/petstore/openapi-server/run.sh --rebuild
+./examples/petstore/openapi-server/run.sh --rebuild --upstream swaggerapi/petstore3:latest
 ```
 
 ```powershell
-./examples/petstore/petstore-openapi-server/run.ps1 -Rebuild
-./examples/petstore/petstore-openapi-server/run.ps1 -Rebuild -Upstream swaggerapi/petstore3:latest
+./examples/petstore/openapi-server/run.ps1 -Rebuild
+./examples/petstore/openapi-server/run.ps1 -Rebuild -Upstream swaggerapi/petstore3:latest
 ```
 
 Host **8090** is used so it does not collide with `mcp-server` on `8080`. The container still listens on 8080 inside Docker.

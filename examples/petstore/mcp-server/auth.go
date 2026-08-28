@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
-	"github.com/mevansam/context-mesh-engine/examples/petstore/petstore-auth-server/jwtx"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/auth-server/jwtx"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 )
 

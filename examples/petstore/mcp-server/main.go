@@ -36,7 +36,7 @@ func main() {
 	asyncURL := flag.String("async-order-url", defaultAsyncBase, "async-order-server origin")
 	petstore := flag.String("petstore", "local", "Petstore 3 target: local (Docker on :8090) or hosted (petstore3.swagger.io)")
 	petstoreURL := flag.String("petstore-url", "", "override Petstore 3 OpenAPI origin")
-	jwtSecret := flag.String("jwt-secret", "petstore-demo-hs256", "HS256 secret shared with petstore-auth-server")
+	jwtSecret := flag.String("jwt-secret", "petstore-demo-hs256", "HS256 secret shared with auth-server")
 	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
 	flag.Parse()
 

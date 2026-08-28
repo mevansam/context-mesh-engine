@@ -110,8 +110,8 @@ Three processes plus a demo IdP:
 
 | Process | Listen | Role |
 | --- | --- | --- |
-| `petstore-openapi-server` | `localhost:8090` | Official Petstore 3 in Docker |
-| `petstore-auth-server` | `localhost:8092` | Issues client + end-user JWTs (`loginUser` + `getUserByName`) |
+| `openapi-server` | `localhost:8090` | Official Petstore 3 in Docker |
+| `auth-server` | `localhost:8092` | Issues client + end-user JWTs (`loginUser` + `getUserByName`) |
 | `async-order-server` | `localhost:8091` | HTTP adapter for the spec’s AsyncAPI order flow; calls Petstore `POST /store/order` |
 | `mcp-server` | `localhost:8080` | `context-mesh-engine` with `x-planId: petstore` |
 
@@ -131,9 +131,9 @@ Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. `GET /api/openapi` 
 Default Petstore target is local Docker (`-petstore local`). `-petstore hosted` uses [petstore3.swagger.io](https://petstore3.swagger.io/) (often flaky). Seed users, mint JWTs, and MCP agent prompts: the [petstore README](../../examples/petstore/README.md).
 
 ```bash
-./examples/petstore/petstore-openapi-server/run.sh   # Docker Petstore on :8090
+./examples/petstore/openapi-server/run.sh   # Docker Petstore on :8090
 go run ./examples/petstore/async-order-server
-go run ./examples/petstore/petstore-auth-server
+go run ./examples/petstore/auth-server
 go run ./examples/petstore/mcp-server                 # REST only
 go run ./examples/petstore/mcp-server -dual           # also /mcp
 ```
@@ -146,7 +146,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
   -d '{"status":"available"}'
 ```
 
-Mint `$CLIENT` / `$USER` from `petstore-auth-server` (`POST /oauth/token`). See the [petstore README](../../examples/petstore/README.md).
+Mint `$CLIENT` / `$USER` from `auth-server` (`POST /oauth/token`). See the [petstore README](../../examples/petstore/README.md).
 
 ---
 

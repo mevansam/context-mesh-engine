@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mevansam/context-mesh-engine/examples/petstore/petstore-auth-server/jwtx"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/auth-server/jwtx"
 )
 
 const (
@@ -66,7 +66,7 @@ func main() {
 
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("petstore-auth-server http://%s  petstore %s", *addr, s.petstore)
+		log.Printf("auth-server http://%s  petstore %s", *addr, s.petstore)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

@@ -1,4 +1,4 @@
-# petstore-auth-server
+# auth-server
 
 Demo OAuth token endpoint for the petstore host. It is **not** a full authorization server. It issues HS256 JWTs that `mcp-server` verifies using the same claim types in [`jwtx/`](jwtx/).
 
@@ -12,7 +12,7 @@ Password grant calls Petstore [loginUser](https://petstore3.swagger.io/#/user/lo
 Default listen: `localhost:8092`. Same `-petstore` / `-petstore-url` flags as the other Go processes. Shared HMAC: `-jwt-secret` (default `petstore-demo-hs256`). Must match `mcp-server`.
 
 ```bash
-go run ./examples/petstore/petstore-auth-server
+go run ./examples/petstore/auth-server
 ```
 
 ```bash

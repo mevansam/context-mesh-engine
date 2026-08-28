@@ -51,8 +51,8 @@ Four processes cooperate. Only **`mcp-server`** is a `context-mesh-engine` host.
 
 | Directory | Process | Role |
 | --- | --- | --- |
-| [`petstore-openapi-server/`](petstore-openapi-server/) | `localhost:8090` | Official [Petstore 3](https://github.com/swagger-api/swagger-petstore) in Docker. OpenAPI base `http://localhost:8090/api/v3`. |
-| [`petstore-auth-server/`](petstore-auth-server/) | `localhost:8092` | Demo OAuth. Password grant calls [loginUser](https://petstore3.swagger.io/#/user/loginUser) then [getUserByName](https://petstore3.swagger.io/#/user/getUserByName) and issues an end-user JWT with `userStatus`. Client-credentials grant issues the calling-app bearer. |
+| [`openapi-server/`](openapi-server/) | `localhost:8090` | Official [Petstore 3](https://github.com/swagger-api/swagger-petstore) in Docker. OpenAPI base `http://localhost:8090/api/v3`. |
+| [`auth-server/`](auth-server/) | `localhost:8092` | Demo OAuth. Password grant calls [loginUser](https://petstore3.swagger.io/#/user/loginUser) then [getUserByName](https://petstore3.swagger.io/#/user/getUserByName) and issues an end-user JWT with `userStatus`. Client-credentials grant issues the calling-app bearer. |
 | [`async-order-server/`](async-order-server/) | `localhost:8091` | HTTP adapter for the spec’s AsyncAPI order channels. `POST /place-order` → Petstore `POST /store/order`. |
 | [`mcp-server/`](mcp-server/) | `localhost:8080` | Engine host. Plan [`mcp-server/plans/petstore.arazzo.yaml`](mcp-server/plans/petstore.arazzo.yaml) (`x-planId: petstore`, version `0.0.1`). |
 
@@ -80,7 +80,7 @@ flowchart LR
   end
 
   subgraph backends [Backends]
-    Auth["petstore-auth-server :8092"]
+    Auth["auth-server :8092"]
     Pet["Petstore 3 :8090"]
     Async["async-order-server :8091"]
   end
@@ -131,7 +131,7 @@ sequenceDiagram
   end
 ```
 
-`mcp-server` and `async-order-server` must target the **same** Petstore origin (`-petstore local|hosted` or `-petstore-url`). Share `-jwt-secret` between `mcp-server` and `petstore-auth-server` (default `petstore-demo-hs256`).
+`mcp-server` and `async-order-server` must target the **same** Petstore origin (`-petstore local|hosted` or `-petstore-url`). Share `-jwt-secret` between `mcp-server` and `auth-server` (default `petstore-demo-hs256`).
 
 ## Identity and tokens
 
@@ -146,17 +146,17 @@ Inbound OPA **must not** call Petstore. `userStatus` is already on the user JWT 
 
 The host `Executor` mints a **new** HS256 JWT (`SecretsProvider` key `downstream-hmac`) for Petstore HTTP. That signing key is **not** listed in `SecretInputs`, so it never appears in `$inputs`. This demo verifies inbound tokens with the **same shared HMAC**, not an issuer public key — see [Demo verification vs production](#demo-verification-vs-production).
 
-Demo client: `client_id=petstore-mcp`, `client_secret=mcp-secret`. Users: `browser` / `abc123` (`userStatus` 1), `buyer` / `abc123` (`userStatus` 2). Package: [`petstore-auth-server/jwtx/`](petstore-auth-server/jwtx/). Auth-server: [`petstore-auth-server/README.md`](petstore-auth-server/README.md). How those tokens are wired into `engine.Options`: [OAuth and the engine SDK](#oauth-and-the-engine-sdk).
+Demo client: `client_id=petstore-mcp`, `client_secret=mcp-secret`. Users: `browser` / `abc123` (`userStatus` 1), `buyer` / `abc123` (`userStatus` 2). Package: [`auth-server/jwtx/`](auth-server/jwtx/). Auth-server: [`auth-server/README.md`](auth-server/README.md). How those tokens are wired into `engine.Options`: [OAuth and the engine SDK](#oauth-and-the-engine-sdk).
 
 ## Quick start
 
 From the **repository root**:
 
 ```bash
-./examples/petstore/petstore-openapi-server/run.sh
+./examples/petstore/openapi-server/run.sh
 # other terminals:
 go run ./examples/petstore/async-order-server
-go run ./examples/petstore/petstore-auth-server
+go run ./examples/petstore/auth-server
 go run ./examples/petstore/mcp-server
 ```
 
@@ -631,7 +631,7 @@ The engine does **not** implement OAuth. It exposes four host-owned seams on [`e
 
 | Token | Who mints it | SDK seam | Where it is consumed |
 | --- | --- | --- | --- |
-| Calling-app JWT (`Authorization: Bearer`) | [`petstore-auth-server`](petstore-auth-server/) `client_credentials` | `MCPHandlerWrap` / `RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/auth/auth.go) | HTTP middleware **before** REST catalog + execute / MCP Streamable HTTP |
+| Calling-app JWT (`Authorization: Bearer`) | [`auth-server`](auth-server/) `client_credentials` | `MCPHandlerWrap` / `RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/auth/auth.go) | HTTP middleware **before** REST catalog + execute / MCP Streamable HTTP |
 | End-user JWT (`X-End-User-Token`) | auth-server `password` grant (`loginUser` + `getUserByName`) | `RequestPreprocessor` | `Runner.EnrichContext` on execute/`query`, **before** inbound OPA |
 | Downstream JWT (Petstore `Authorization`) | this host’s `Executor` | `SecretsProvider` (`Get("downstream-hmac")`) | Each OpenAPI step if the plan did not already set `Authorization` |
 
@@ -650,7 +650,7 @@ The engine stores the preprocessor result on `context.Context` (`arazzo.WithPoli
 
 #### Demo verification vs production
 
-[`petstore-auth-server/jwtx/jwt.go`](petstore-auth-server/jwtx/jwt.go) is a **demo** crypto helper, not a production verifier. Auth-server and mcp-server share `-jwt-secret` and sign/verify **HS256** (symmetric HMAC). `parseHS256` returns that secret as the key. There is no issuer public key, JWKS, RS256, or ES256.
+[`auth-server/jwtx/jwt.go`](auth-server/jwtx/jwt.go) is a **demo** crypto helper, not a production verifier. Auth-server and mcp-server share `-jwt-secret` and sign/verify **HS256** (symmetric HMAC). `parseHS256` returns that secret as the key. There is no issuer public key, JWKS, RS256, or ES256.
 
 `iss` (`petstore-auth`) and `aud` (`petstore-mcp`) are **written** on sign. They are **not** checked on parse (`jwt.WithIssuer` / `jwt.WithAudience` are unused). `ParseWithClaims` still enforces `exp`. After HMAC succeeds, the host only checks `token_use` (`client` vs `user`) and that the user token has `username`.
 
@@ -708,11 +708,11 @@ sequenceDiagram
 
 | You implement (this example) | The engine does |
 | --- | --- |
-| HS256 parse/sign ([`petstore-auth-server/jwtx/`](petstore-auth-server/jwtx/)) | Mount wraps on MCP and REST children |
+| HS256 parse/sign ([`auth-server/jwtx/`](auth-server/jwtx/)) | Mount wraps on MCP and REST children |
 | `jwtVerifier.verifyClient` for `RequireBearerToken` | `RequestSourceFromHTTP` / `RequestSourceFromMCP` (`TokenInfo` → `ClientAuth`) |
 | `dualJWTPreprocessor` | `Runner.EnrichContext` → `ErrUnauthorized` (**401**) |
 | `httpExec.downstreamBearer` | Strip caller `secrets`; inject only `SecretInputs` names |
-| Demo IdP ([`petstore-auth-server`](petstore-auth-server/)) | Eval inbound/outbound; never issue tokens |
+| Demo IdP ([`auth-server`](auth-server/)) | Eval inbound/outbound; never issue tokens |
 
 Copy this pattern when the calling app and the end user are different principals, inbound must not call the domain API, and domain APIs need a **host-minted** credential. If you only have one bearer, set `MCPHandlerWrap` / `RESTHandlerWrap` and leave `RequestPreprocessor` nil.
 
@@ -781,18 +781,18 @@ Smaller embed without plans: [minimal](../minimal/README.md). Plans without back
 
 ### Petstore 3 in Docker
 
-`run.sh` **builds** `context-mesh-petstore3:local` from [petstore-openapi-server/Dockerfile](petstore-openapi-server/Dockerfile) when that tag is missing (upstream [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) by default; override with `--upstream` / `PETSTORE_UPSTREAM`). The local image adds an SLF4J 1.7 binding so Jetty does not print `StaticLoggerBinder` errors. `run.sh` stays in the **foreground**; Ctrl+C removes the container and its in-memory data. If pull or build times out, the Docker VM often cannot reach Hub / Maven Central while a VPN is up — disconnect VPN, restart Docker Desktop, retry, or use `-petstore hosted`.
+`run.sh` **builds** `context-mesh-petstore3:local` from [openapi-server/Dockerfile](openapi-server/Dockerfile) when that tag is missing (upstream [swaggerapi/petstore3:latest](https://hub.docker.com/r/swaggerapi/petstore3) by default; override with `--upstream` / `PETSTORE_UPSTREAM`). The local image adds an SLF4J 1.7 binding so Jetty does not print `StaticLoggerBinder` errors. `run.sh` stays in the **foreground**; Ctrl+C removes the container and its in-memory data. If pull or build times out, the Docker VM often cannot reach Hub / Maven Central while a VPN is up — disconnect VPN, restart Docker Desktop, retry, or use `-petstore hosted`.
 
 From the **repository root**:
 
 ```bash
-./examples/petstore/petstore-openapi-server/run.sh
+./examples/petstore/openapi-server/run.sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-./examples/petstore/petstore-openapi-server/run.ps1
+./examples/petstore/openapi-server/run.ps1
 ```
 
 Force a fresh image: `run.sh --rebuild` / `run.ps1 -Rebuild`. Pass `--upstream IMAGE` / `-Upstream IMAGE` to change the Docker Hub base (default `swaggerapi/petstore3:latest`).
@@ -804,7 +804,7 @@ curl -s http://localhost:8090/api/v3/openapi.json | head
 curl -s 'http://localhost:8090/api/v3/pet/findByStatus?status=available' | head
 ```
 
-Stop: Ctrl+C in the `run.sh` terminal (container `--rm`). Image names and port: [petstore-openapi-server/README.md](petstore-openapi-server/README.md). If you change the port, pass `-petstore-url http://localhost:PORT/api/v3` to **async-order-server**, **petstore-auth-server**, and **mcp-server**.
+Stop: Ctrl+C in the `run.sh` terminal (container `--rm`). Image names and port: [openapi-server/README.md](openapi-server/README.md). If you change the port, pass `-petstore-url http://localhost:PORT/api/v3` to **async-order-server**, **auth-server**, and **mcp-server**.
 
 ### Hosted Petstore 3
 
@@ -830,7 +830,7 @@ For **local** Petstore, start Docker first. Then from the **repository root**:
 
 ```bash
 go run ./examples/petstore/async-order-server
-go run ./examples/petstore/petstore-auth-server
+go run ./examples/petstore/auth-server
 go run ./examples/petstore/mcp-server
 ```
 
@@ -838,7 +838,7 @@ Optional flags:
 
 ```bash
 go run ./examples/petstore/async-order-server -addr localhost:8091 -petstore local
-go run ./examples/petstore/petstore-auth-server -addr localhost:8092 -petstore local
+go run ./examples/petstore/auth-server -addr localhost:8092 -petstore local
 go run ./examples/petstore/mcp-server -addr localhost:8080 -async-order-url http://localhost:8091 -petstore local
 go run ./examples/petstore/mcp-server -dual
 ```
@@ -1054,6 +1054,6 @@ Replace `<session>` with the `Mcp-Session-Id` value. Expect `run_petstore_v0.0.1
 | Catalog, MCP `run_*`, REST execute, spec rules | [Arazzo plans](../../docs/users/arazzo.md) |
 | Which example to copy | [Examples](../../docs/users/examples.md) |
 | This host, short form | [mcp-server/README.md](mcp-server/README.md) |
-| Demo OAuth | [petstore-auth-server/README.md](petstore-auth-server/README.md) |
+| Demo OAuth | [auth-server/README.md](auth-server/README.md) |
 | Adapter HTTP | [async-order-server/README.md](async-order-server/README.md) |
-| Docker Petstore | [petstore-openapi-server/README.md](petstore-openapi-server/README.md) |
+| Docker Petstore | [openapi-server/README.md](openapi-server/README.md) |
