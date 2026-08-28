@@ -35,5 +35,5 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Optional local slf4j jar copied into the petstore OpenAPI image build
-examples/petstore/openapi-server/slf4j.bundle/*.jar
+# Local build staging (petstore openapi-server downloads / copied jars)
+.build/

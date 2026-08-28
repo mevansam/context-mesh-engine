@@ -169,42 +169,48 @@ resolve_local_jar() {
 }
 
 build_image() {
-  local mode url sha jar stage
+  local mode sha src build jar
   sha=""
-  url=""
-  jar=""
+  src=""
   if [[ "$SLF4J_SKIP" -eq 1 ]]; then
     mode=skip
   elif is_http_url "$SLF4J"; then
-    mode=url
-    url="$SLF4J"
-    if [[ "$url" == "$DEFAULT_SLF4J_URL" ]]; then
+    mode=bind
+    src="$SLF4J"
+    if [[ "$src" == "$DEFAULT_SLF4J_URL" ]]; then
       sha="$DEFAULT_SLF4J_SHA256"
     fi
   else
-    mode=file
-    jar="$(resolve_local_jar "$SLF4J")"
+    mode=bind
+    src="$(resolve_local_jar "$SLF4J")"
   fi
 
-  stage=$(mktemp -d)
-  mkdir -p "$stage/slf4j.bundle"
-  : > "$stage/slf4j.bundle/.keep"
-  cp "$ROOT/Dockerfile" "$ROOT/jetty-context.xml" "$ROOT/jetty-context-noslf4j.xml" "$stage/"
-  if [[ -n "$jar" ]]; then
-    cp "$jar" "$stage/slf4j.bundle/slf4j-impl.jar"
+  build="$ROOT/.build"
+  rm -rf "$build"
+  mkdir -p "$build/slf4j"
+  : > "$build/slf4j/.keep"
+  cp "$ROOT/jetty-context.xml" "$ROOT/jetty-context-noslf4j.xml" "$build/"
+
+  if [[ "$mode" == bind ]]; then
+    jar="$build/slf4j/slf4j-impl.jar"
+    if is_http_url "$src"; then
+      echo "downloading SLF4J binding from ${src} ..."
+      if ! curl -fsSL --max-time "$PULL_TIMEOUT" -o "$jar" "$src"; then
+        echo "failed to download ${src}" >&2
+        return 1
+      fi
+    else
+      cp "$src" "$jar"
+    fi
   fi
 
-  echo "building ${IMAGE} (--platform ${PLATFORM}, base ${UPSTREAM}, slf4j ${mode}${url:+ ${url}}${jar:+ ${jar}})..."
-  if ! docker build --platform "$PLATFORM" \
+  echo "building ${IMAGE} (--platform ${PLATFORM}, base ${UPSTREAM}, slf4j ${mode}${src:+ ${src}})..."
+  docker build --platform "$PLATFORM" \
+    -f "$ROOT/Dockerfile" \
     --build-arg PETSTORE_UPSTREAM="$UPSTREAM" \
     --build-arg SLF4J_MODE="$mode" \
-    --build-arg SLF4J_URL="$url" \
     --build-arg SLF4J_SHA256="$sha" \
-    -t "$IMAGE" "$stage"; then
-    rm -rf "$stage"
-    return 1
-  fi
-  rm -rf "$stage"
+    -t "$IMAGE" "$build"
 }
 
 if ! command -v docker >/dev/null 2>&1; then

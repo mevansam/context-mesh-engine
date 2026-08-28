@@ -8,30 +8,30 @@
 # webapp does not share the runner's StaticLoggerBinder (that mismatch is a
 # LinkageError). The default binding is slf4j-simple 1.7.36 (matches
 # slf4j-api-1.7.36, Java 8). --slf4j may supply any 1.7 binding (simple,
-# log4j12, jdk14, …); it is installed as slf4j-impl.jar.
+# log4j12, jdk14, …); run.sh stages it in .build/ and it is installed as
+# slf4j-impl.jar.
+#
+# Build context is examples/petstore/openapi-server/.build (prepared by
+# run.sh / run.ps1). Do not commit that directory.
 #
 # https://github.com/swagger-api/swagger-petstore
 # Image is linux/amd64; Apple Silicon runs it via emulation.
-# Build args are set by run.sh / run.ps1 (--upstream, --slf4j, --no-slf4j).
 ARG PETSTORE_UPSTREAM=swaggerapi/petstore3:latest
 FROM ${PETSTORE_UPSTREAM}
 
-ARG SLF4J_MODE=url
-ARG SLF4J_URL=https://repo1.maven.org/maven2/org/slf4j/slf4j-simple/1.7.36/slf4j-simple-1.7.36.jar
+ARG SLF4J_MODE=bind
 ARG SLF4J_SHA256=2f39bed943d624dfa8f4102d0571283a10870b6aa36f197a8a506f147010c10f
 
 COPY jetty-context.xml /swagger-petstore/jetty-context.xml
 COPY jetty-context-noslf4j.xml /tmp/jetty-context-noslf4j.xml
-COPY slf4j.bundle/ /tmp/slf4j.bundle/
+COPY slf4j/ /tmp/slf4j/
 
 RUN set -e; \
     case "$SLF4J_MODE" in \
       skip) \
         cp /tmp/jetty-context-noslf4j.xml /swagger-petstore/jetty-context.xml ;; \
-      file) \
-        cp /tmp/slf4j.bundle/slf4j-impl.jar /swagger-petstore/slf4j-impl.jar ;; \
-      url) \
-        wget -q -O /swagger-petstore/slf4j-impl.jar "$SLF4J_URL"; \
+      bind) \
+        cp /tmp/slf4j/slf4j-impl.jar /swagger-petstore/slf4j-impl.jar; \
         if [ -n "$SLF4J_SHA256" ]; then \
           echo "$SLF4J_SHA256  /swagger-petstore/slf4j-impl.jar" | sha256sum -c; \
         fi ;; \

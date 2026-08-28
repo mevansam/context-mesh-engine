@@ -141,45 +141,48 @@ function Invoke-PullUpstream {
 }
 
 function Invoke-BuildImage {
-    $mode = "url"
-    $url = ""
+    $mode = "bind"
     $sha = ""
-    $jar = ""
+    $src = ""
     if ($NoSlf4j) {
         $mode = "skip"
     } elseif (Test-HttpUrl $Slf4j) {
-        $mode = "url"
-        $url = $Slf4j
-        if ($url -eq $DefaultSlf4jUrl) {
+        $src = $Slf4j
+        if ($src -eq $DefaultSlf4jUrl) {
             $sha = $DefaultSlf4jSha256
         }
     } else {
-        $mode = "file"
-        $jar = Resolve-LocalJar $Slf4j
+        $src = Resolve-LocalJar $Slf4j
     }
 
-    $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("petstore-openapi-" + [guid]::NewGuid().ToString())
-    New-Item -ItemType Directory -Path (Join-Path $stage "slf4j.bundle") | Out-Null
-    try {
-        New-Item -ItemType File -Path (Join-Path $stage "slf4j.bundle/.keep") | Out-Null
-        Copy-Item (Join-Path $PSScriptRoot "Dockerfile") $stage
-        Copy-Item (Join-Path $PSScriptRoot "jetty-context.xml") $stage
-        Copy-Item (Join-Path $PSScriptRoot "jetty-context-noslf4j.xml") $stage
-        if ($jar) {
-            Copy-Item $jar (Join-Path $stage "slf4j.bundle/slf4j-impl.jar")
-        }
-        $extra = if ($url) { " $url" } elseif ($jar) { " $jar" } else { "" }
-        Write-Host "building $Image (--platform $Platform, base $Upstream, slf4j $mode$extra)..."
-        docker build --platform $Platform `
-            --build-arg "PETSTORE_UPSTREAM=$Upstream" `
-            --build-arg "SLF4J_MODE=$mode" `
-            --build-arg "SLF4J_URL=$url" `
-            --build-arg "SLF4J_SHA256=$sha" `
-            -t $Image $stage
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    } finally {
-        Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
+    $build = Join-Path $PSScriptRoot ".build"
+    if (Test-Path $build) {
+        Remove-Item -Recurse -Force $build
     }
+    New-Item -ItemType Directory -Path (Join-Path $build "slf4j") | Out-Null
+    New-Item -ItemType File -Path (Join-Path $build "slf4j/.keep") | Out-Null
+    Copy-Item (Join-Path $PSScriptRoot "jetty-context.xml") $build
+    Copy-Item (Join-Path $PSScriptRoot "jetty-context-noslf4j.xml") $build
+
+    if ($mode -eq "bind") {
+        $jar = Join-Path $build "slf4j/slf4j-impl.jar"
+        if (Test-HttpUrl $src) {
+            Write-Host "downloading SLF4J binding from $src ..."
+            Invoke-WebRequest -Uri $src -OutFile $jar -UseBasicParsing -TimeoutSec $PullTimeout
+        } else {
+            Copy-Item $src $jar
+        }
+    }
+
+    $extra = if ($src) { " $src" } else { "" }
+    Write-Host "building $Image (--platform $Platform, base $Upstream, slf4j $mode$extra)..."
+    docker build --platform $Platform `
+        -f (Join-Path $PSScriptRoot "Dockerfile") `
+        --build-arg "PETSTORE_UPSTREAM=$Upstream" `
+        --build-arg "SLF4J_MODE=$mode" `
+        --build-arg "SLF4J_SHA256=$sha" `
+        -t $Image $build
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 Test-Docker
