@@ -119,6 +119,26 @@ func TestHandler_ToolsListEmpty(t *testing.T) {
 	if len(body.Tools) != 0 {
 		t.Fatalf("tools = %v, want empty", body.Tools)
 	}
+
+	oresp, err := http.Get(ts.URL + "/api/openapi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer oresp.Body.Close()
+	if oresp.StatusCode != http.StatusOK {
+		t.Fatalf("catalog status = %d", oresp.StatusCode)
+	}
+	var catalog map[string]any
+	if err := json.NewDecoder(oresp.Body).Decode(&catalog); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := catalog["paths"].(map[string]any)
+	if _, ok := paths["/tools"]; !ok {
+		t.Fatalf("catalog missing /tools: %v", paths)
+	}
+	if _, ok := paths["/plans/petstore/pingHealth"]; ok {
+		t.Fatal("catalog without loaders must not $ref plans")
+	}
 }
 
 func TestHandler_MCPInitializeAndPing(t *testing.T) {

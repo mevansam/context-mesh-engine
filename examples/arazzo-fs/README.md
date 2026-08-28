@@ -22,6 +22,7 @@ The sample fixtures (`x-planId: petstore`, versions `1.0.0` and `1.1.0`) registe
 Serves:
 
 - `GET /api/tools` (MCP `tools/list` envelope; Arazzo descriptions are REST-specific)
+- `GET /api/openapi` (catalog OAS; `$ref`s latest plan spec; includes `POST /plans/query`)
 - `POST /api/plans/query` (dummy matcher → latest petstore `pingHealth`)
 - `POST /api/plans/petstore/{workflowId}` (latest = 1.1.0)
 - `POST /api/plans/petstore/v1.0.0/{workflowId}`
@@ -33,6 +34,7 @@ Stub `Executor` always returns HTTP 200. Dummy `QueryMatcher` always selects `pe
 ## REST
 
 ```bash
+curl -s http://localhost:8080/api/openapi
 curl -s http://localhost:8080/api/openapi/petstore
 curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'

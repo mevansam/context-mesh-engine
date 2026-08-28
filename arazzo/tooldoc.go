@@ -63,6 +63,7 @@ type ToolDocContext struct {
 	RESTQueryURL            string
 	RESTExecuteLatestURL    string
 	RESTExecuteVersionedURL string
+	OpenAPICatalogURL       string
 	OpenAPILatestURL        string
 	OpenAPIVersionedURL     string
 }
@@ -119,6 +120,7 @@ POST with Content-Type: application/json. The JSON body is the workflow inputs o
 Replace {workflowId} with one of: {{.WorkflowIDs}}
 
 OpenAPI:
+- Catalog: GET {{.OpenAPICatalogURL}}
 - This version: GET {{.OpenAPIVersionedURL}}
 - Latest: GET {{.OpenAPILatestURL}}
 
@@ -185,6 +187,7 @@ func NewToolDocContext(planID, version, title, summary, description string, work
 		RESTQueryURL:            apiRoot + "/plans/query",
 		RESTExecuteLatestURL:    apiRoot + "/plans/" + planID + "/{workflowId}",
 		RESTExecuteVersionedURL: apiRoot + "/plans/" + planID + "/" + seg + "/{workflowId}",
+		OpenAPICatalogURL:       apiRoot + "/openapi",
 		OpenAPILatestURL:        apiRoot + "/openapi/" + planID,
 		OpenAPIVersionedURL:     apiRoot + "/openapi/" + planID + "/" + seg,
 	}

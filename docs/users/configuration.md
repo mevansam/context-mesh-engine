@@ -104,7 +104,7 @@ REST errors from this SDK use `{"error":"<message>"}` (`api.ErrorBody`), except 
 
 ### Arazzo plans
 
-These fields are optional. Empty `ArazzoLoaders` means no `run_*` tools and no `/plans` or `/openapi` routes. `GET {APIPrefix}/tools` is always registered.
+These fields are optional. Empty `ArazzoLoaders` means no `run_*` tools and no `/plans` execute routes or per-plan OpenAPI. `GET {APIPrefix}/tools` and `GET {APIPrefix}/openapi` (catalog index) are always registered.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -182,6 +182,7 @@ Paths below use the default REST prefix `/api`. Replace it with `Options.APIPref
 | DELETE | `/mcp` | same | End the MCP session |
 | GET | `/api/health` | REST mounted | `{"status":"ok"}` (`api.HealthResponse`) |
 | GET | `/api/tools` | REST mounted | MCP `tools/list` envelope (`ttlMs`, `cacheScope`, `tools`). Optional `?cursor=` |
+| GET | `/api/openapi` | REST mounted | Catalog OAS 3.1: `GET /tools` plus `$ref` to each latest plan spec |
 | POST | `/api/plans/query` | loaders **and** `QueryMatcher` | Natural-language match + execute |
 | POST | `/api/plans/{planId}/{workflowId}` | loaders | Execute **latest** version; body is workflow inputs |
 | POST | `/api/plans/{planId}/{version}/{workflowId}` | loaders | Execute that version (`{version}` is `v` + `info.version`) |

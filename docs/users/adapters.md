@@ -146,7 +146,7 @@ Exact `ExecutionRequest` fields (`OperationPath` vs `OperationID`, parameter pla
 
 | Surface | Behavior |
 | --- | --- |
-| `GET /tools`, `GET /openapi/...` | Work |
+| `GET /tools`, `GET /openapi`, `GET /openapi/...` | Work |
 | `POST /plans/{planId}/...` | **501** `{"error":"executor not configured"}` |
 | MCP `run_*` | Tool error (`IsError: true`), not a JSON-RPC protocol error |
 | `query` | Not registered without a matcher; with a matcher, same 501/tool error on execute |
@@ -447,6 +447,7 @@ Data bag passed to `ToolDoc` and help templates.
 | `RESTQueryURL` | `{APIRoot}/plans/query` |
 | `RESTExecuteLatestURL` | `{APIRoot}/plans/{PlanID}/{workflowId}` |
 | `RESTExecuteVersionedURL` | `{APIRoot}/plans/{PlanID}/{VersionSegment}/{workflowId}` |
+| `OpenAPICatalogURL` | `{APIRoot}/openapi` |
 | `OpenAPILatestURL` | `{APIRoot}/openapi/{PlanID}` |
 | `OpenAPIVersionedURL` | `{APIRoot}/openapi/{PlanID}/{VersionSegment}` |
 

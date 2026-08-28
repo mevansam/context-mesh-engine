@@ -78,6 +78,9 @@ func TestRenderToolDoc_Defaults(t *testing.T) {
 	if want := "GET http://localhost:8080/api/openapi/petstore"; !strings.Contains(doc.RESTDescription, want) {
 		t.Fatalf("REST description missing %q:\n%s", want, doc.RESTDescription)
 	}
+	if want := "Catalog: GET http://localhost:8080/api/openapi"; !strings.Contains(doc.RESTDescription, want) {
+		t.Fatalf("REST description missing catalog OpenAPI %q:\n%s", want, doc.RESTDescription)
+	}
 }
 
 func TestRenderToolDoc_InvalidTemplate(t *testing.T) {

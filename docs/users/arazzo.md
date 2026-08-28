@@ -4,7 +4,7 @@ Load [Arazzo](https://spec.openapis.org/arazzo/latest.html) workflow documents, 
 
 Public package: `github.com/mevansam/context-mesh-engine/arazzo`. Wire adapters through `engine.Options` — see [Adapters](adapters.md). Do **not** import `internal/plans`.
 
-This surface is off until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan or OpenAPI REST routes. `GET {APIPrefix}/tools` is always registered; with loaders it includes each `run_*`, and `query` only when `QueryMatcher` is set.
+This surface is off until `engine.Options.ArazzoLoaders` is non-empty. Empty loaders: no `query` tool, no `run_*` tools, no plan execute routes or per-plan OpenAPI. `GET {APIPrefix}/tools` and `GET {APIPrefix}/openapi` (catalog index) are always registered; with loaders the catalog `$ref`s each plan’s latest spec, `GET /tools` includes each `run_*`, and `query` only when `QueryMatcher` is set.
 
 REST paths below use the default prefix `/api`. Set `Options.APIPrefix` to change it. Generated OpenAPI `paths` omit that prefix either way.
 
@@ -17,11 +17,12 @@ When `ArazzoLoaders` is set, `New` loads every document from every loader, then:
 | MCP `query` | `query` | `QueryMatcher` is set |
 | MCP `run_*` | one per catalog entry; default name `run_{{.SafePlanID}}_v{{.SafeVersion}}` | always (with loaders) |
 | REST tools | `GET /api/tools` | always (MCP envelope; Arazzo descriptions use REST templates) |
+| REST catalog OpenAPI | `GET /api/openapi` | always (index: `/tools` + `$ref` to each latest plan spec) |
 | REST query | `POST /api/plans/query` | `QueryMatcher` is set |
 | REST execute (latest) | `POST /api/plans/{planId}/{workflowId}` | always (with loaders) |
 | REST execute (versioned) | `POST /api/plans/{planId}/{version}/{workflowId}` | always (with loaders) |
-| OpenAPI (latest) | `GET /api/openapi/{planId}` | always (with loaders) |
-| OpenAPI (versioned) | `GET /api/openapi/{planId}/{version}` | always (with loaders) |
+| OpenAPI (latest plan) | `GET /api/openapi/{planId}` | always (with loaders) |
+| OpenAPI (versioned plan) | `GET /api/openapi/{planId}/{version}` | always (with loaders) |
 
 `{version}` in URLs is **`v` + Arazzo `info.version`**. Example: `info.version: 1.0.0` → path token `v1.0.0`.
 
@@ -181,16 +182,19 @@ Override display strings with `ToolDoc.QueryName` (name only) and [`ToolHelpLook
 
 ## OpenAPI
 
-`GET /api/openapi/{planId}` and `GET /api/openapi/{planId}/{version}` return OAS **3.1.0** JSON (`Content-Type: application/json`).
+`GET /api/openapi` returns the **catalog** OAS **3.1.0** (`Content-Type: application/json`). It always describes `GET /tools` (schema from go-sdk `mcp.ListToolsResult`). When plans are loaded, each latest execute path is a path-item `$ref` into that plan’s child spec (`./{planId}#/paths/...`). `POST /plans/query` is included only when `QueryMatcher` is set.
 
-Paths **inside** that document omit `Options.APIPrefix` (the REST mux is `StripPrefix`’d). With the default prefix:
+`GET /api/openapi/{planId}` and `GET /api/openapi/{planId}/{version}` return the **child** OAS **3.1.0** for that plan.
 
+Paths **inside** those documents omit `Options.APIPrefix` (the REST mux is `StripPrefix`’d). With the default prefix:
+
+- HTTP: `GET /api/openapi` → catalog index
 - HTTP: `GET /api/openapi/petstore`
 - Document path: `/plans/petstore/pingHealth` → real URL `POST /api/plans/petstore/pingHealth`
 
-Latest document: `/plans/{planId}/{workflowId}`. Versioned document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs`. **200** schema is an object with a property per Arazzo `outputs` name.
+Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs`. **200** schema is an object with a property per Arazzo `outputs` name.
 
-404 if the plan or version is missing. OpenAPI does **not** require an executor. The generated document describes execute routes, not `/plans/query`.
+404 if the plan or version is missing. OpenAPI does **not** require an executor. Child documents describe execute routes, not `/plans/query` (that lives on the catalog index).
 
 ## Tool documentation
 
@@ -222,7 +226,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 
 ## Checklist
 
-- Set `ArazzoLoaders`; otherwise plan routes and `run_*` tools do not exist.
+- Set `ArazzoLoaders`; otherwise plan execute routes and `run_*` tools do not exist. `GET /openapi` still describes `/tools`.
 - Point `FileLoader` at the plans dir only; OpenAPI sources stay beside it (`../sources/...`).
 - Optional [`PolicyLoader`](adapters.md#policyloader) for inbound/outbound OPA; keep `.rego` out of the Arazzo loader tree.
 - Implement [`Executor`](adapters.md#executor); nil is 501 on execute, OpenAPI still works.
@@ -230,7 +234,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
-- Generated OpenAPI `paths` keys omit `Options.APIPrefix`.
+- Generated OpenAPI `paths` keys omit `Options.APIPrefix`. Catalog plan paths `$ref` `GET /openapi/{planId}`.
 - Set `PublicBaseURL` if you want absolute URLs in REST descriptions.
 - Optional [`ToolHelpLookup`](adapters.md#toolhelplookup) for per-plan/query title and description.
 

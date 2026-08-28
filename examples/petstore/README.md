@@ -216,7 +216,7 @@ sourceDescriptions:
 | MCP tool | `run_petstore_v0.0.1` (default `run_{{.SafePlanID}}_v{{.SafeVersion}}`) |
 | REST latest | `POST /api/plans/petstore/{workflowId}` |
 | REST versioned | `POST /api/plans/petstore/v0.0.1/{workflowId}` |
-| Generated OpenAPI | `GET /api/openapi/petstore` |
+| Generated OpenAPI | `GET /api/openapi` (catalog), `GET /api/openapi/petstore` (plan) |
 
 `info.version` must be semver **without** a leading `v` (`0.0.1`, not `v0.0.1`). URL path tokens prepend `v`. See [Arazzo plans — spec requirements](../../docs/users/arazzo.md#spec-requirements).
 
@@ -725,7 +725,8 @@ When `ArazzoLoaders` is set, `New` registers:
 | --- | --- |
 | REST execute latest | `POST {APIPrefix}/plans/{planId}/{workflowId}` |
 | REST execute versioned | `POST {APIPrefix}/plans/{planId}/{version}/{workflowId}` |
-| REST OpenAPI | `GET {APIPrefix}/openapi/{planId}` |
+| REST OpenAPI catalog | `GET {APIPrefix}/openapi` |
+| REST OpenAPI plan | `GET {APIPrefix}/openapi/{planId}` |
 | REST tools | `GET {APIPrefix}/tools` (MCP `tools/list` envelope; REST descriptions) |
 | REST health | `GET {APIPrefix}/health` |
 | MCP `run_*` | only if MCP is mounted (`-dual` or `MCPOnly`) |
@@ -849,6 +850,7 @@ curl -s http://localhost:8091/health
 curl -s http://localhost:8092/health
 curl -s http://localhost:8080/api/health
 curl -s http://localhost:8080/api/tools
+curl -s http://localhost:8080/api/openapi
 curl -s http://localhost:8080/api/openapi/petstore
 ```
 

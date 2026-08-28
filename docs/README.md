@@ -54,7 +54,8 @@ SDK users should not need Path B to ship an app.
 | `/mcp`, `/mcp/` | MCP Streamable HTTP (POST, GET SSE, DELETE) | mounted when `DualMCPandREST` or `MCPOnly` |
 | `/api` (default `Options.APIPrefix`) | JSON REST | stdlib `ServeMux` + `api.Controller` |
 | `{APIPrefix}/tools` | JSON REST | always; MCP `tools/list` envelope, REST descriptions for Arazzo tools |
-| `{APIPrefix}/plans/...`, `{APIPrefix}/openapi/...` | JSON REST | registered only when `Options.ArazzoLoaders` is non-empty |
+| `{APIPrefix}/plans/...`, `{APIPrefix}/openapi/{planId}` | JSON REST | registered only when `Options.ArazzoLoaders` is non-empty |
+| `{APIPrefix}/openapi` | JSON REST | always; catalog OAS (`GET /tools` + `$ref` to latest plan specs) |
 
 Root mux: Go 1.22+ `net/http.ServeMux`. Do not put Gin/chi on the **root** listener.
 

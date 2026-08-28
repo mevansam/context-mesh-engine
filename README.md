@@ -61,7 +61,7 @@ One process, one TCP port:
 | MCP `run_*`  | `/mcp`                         | Direct execute of a known plan version. Arguments: `workflowId` + `inputs`.                                                                           |
 | REST `query` | `POST /api/plans/query`        | Same as MCP `query` (omitted without `QueryMatcher`). JSON body is `{ "query": "...", "data": { } }`. Success payload is the workflow outputs object. |
 | REST execute | `POST /api/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs.                                                                                                |
-| REST OpenAPI | `GET /api/openapi/{planId}`    | Generated OAS 3.1 for those execute paths (latest or a specific version).                                                                             |
+| REST OpenAPI | `GET /api/openapi`             | Catalog OAS 3.1 (`GET /tools` + `$ref` to each latest plan spec). Per-plan: `GET /api/openapi/{planId}`.                                              |
 | REST tools   | `GET /api/tools`               | MCP `tools/list` envelope (`ttlMs`, `cacheScope`, `tools`); Arazzo descriptions are REST-specific.                                                    |
 
 

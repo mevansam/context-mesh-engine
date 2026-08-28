@@ -28,7 +28,7 @@ context-mesh-engine/
     api/v1/router.go             REST ServeMux (mounted at Options.APIPrefix)
     api/v1/health.go             GET /health
     api/v1/tools.go              GET /tools (MCP envelope; REST descriptions for Arazzo tools)
-    api/v1/plans.go              POST /plans, GET /openapi
+    api/v1/plans.go              GET /openapi, POST /plans, GET /openapi/{planId}
     plans/                       Catalog, runner, MCP tools, OAS generator, OPA eval
     ttlcache/                    Generic singleflight TTL cache (help + policy)
 ```
@@ -78,14 +78,14 @@ context-mesh-engine/
 | `api/v1/router.go` | v1 `ServeMux` and `Register` |
 | `api/v1/health.go` | Default `GET /health` |
 | `api/v1/tools.go` | `GET /tools` (MCP envelope; REST descriptions for Arazzo tools) |
-| `api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; error mapping |
+| `api/v1/plans.go` | `GET /openapi` (always), `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; error mapping |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
 | `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; secrets inject; preprocessor enrich |
 | `plans/policy.go` | Compile/eval OPA; TTL cache via `internal/ttlcache`; `input.auth` / `input.headers` |
 | `plans/request.go` | HTTP/MCP → `RequestSource` |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
-| `plans/openapi.go` | OAS 3.1 JSON (paths **without** `APIPrefix`) |
+| `plans/openapi.go` | OAS 3.1 catalog index (`$ref` child specs + `ListToolsResult`) and per-plan JSON (paths **without** `APIPrefix`) |
 | `plans/mcp.go` | `query` + `run_*` tools |
 | `plans/help.go` | Help TTL cache + `tools/list` overlay (`internal/ttlcache`) |
 | `ttlcache/cache.go` | Generic singleflight TTL cache |
@@ -96,6 +96,7 @@ context-mesh-engine/
 | --- | --- |
 | `TestHandler_HealthJSON` | `{APIPrefix}/health` (default `/api/health`) is JSON |
 | `TestHandler_ToolsListJSON` | `{APIPrefix}/tools` lists MCP tools |
+| `TestHandler_ToolsListEmpty` | empty tools + `GET {APIPrefix}/openapi` describes `/tools` without plan `$ref`s |
 | `TestHandler_CustomAPIPrefix` | custom prefix serves health; default `/api` is 404 |
 | `TestNew_APIPrefixRejected` | `/`, `/mcp` fail `New` |
 | `TestNew_ServeModesMutuallyExclusive` | more than one of Dual/MCPOnly/RESTOnly fails `New` |
@@ -106,7 +107,7 @@ context-mesh-engine/
 | `TestHandler_MCPInitializeAndPing` | Streamable HTTP at `/mcp` |
 | `TestHandler_MCPGETRequiresSession` | GET `/mcp` without session is 400 (handler is mounted) |
 | `TestHandler_RESTNotMCP` | POST `/api/health` is REST 405, not MCP |
-| `TestArazzo_*` | plans, OpenAPI, 501, MCP `query`/`run_*`, `POST /plans/query` |
+| `TestArazzo_*` | plans, catalog/per-plan OpenAPI, 501, MCP `query`/`run_*`, `POST /plans/query` |
 | `internal/plans` tests | skip missing `x-planId`, reject `v`-prefixed / non-semver `info.version`, duplicate versions, latest `1.1.0` |
 
 ## What not to add here

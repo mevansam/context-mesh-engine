@@ -22,9 +22,9 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `internal/plans/policy.go` | Compile `data.plan.inbound` / `data.plan.outbound`; cache |
 | `internal/plans/redact.go` | RFC 6901 output redaction |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const |
-| `internal/plans/openapi.go` | OAS 3.1; paths without `APIPrefix` |
+| `internal/plans/openapi.go` | OAS 3.1 catalog index + per-plan specs; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | `query` + one `run_*` tool per catalog entry |
-| `internal/api/v1/plans.go` | `POST /plans/query`, `POST /plans/...`, `GET /openapi/...`; 400/403/404/500/501 |
+| `internal/api/v1/plans.go` | `GET /openapi`, `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; 400/403/404/500/501 |
 | `internal/api/v1/tools.go` | `GET /tools` (MCP `tools/list` envelope; REST descriptions for Arazzo tools) |
 | `engine/engine.go` | `New` wires loaders → catalog → MCP + REST |
 | `testdata/arazzo/` | Fixtures |
@@ -83,7 +83,7 @@ Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurr
 
 `Catalog.View()` is `arazzo.PlanCatalog`. It does not snapshot the catalog; `Get`/`Latest`/`Plans` copy metadata only when called. Matcher must not use a catalog miss as “no match”; the engine always verifies after `Match`.
 
-HTTP (`plans.go`): `POST /plans/query` is registered only when `Runner.QueryEnabled()`. It calls `Runner.Query`. Execute: `ErrNoExecutor` → 501; `ErrNotFound` → 404; `ErrPolicyDenied` → 403; `ErrPolicyLoad` → 500; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. HTTP **200** body is the outputs object.
+HTTP (`plans.go`): `GET /openapi` (catalog) is always registered. `POST /plans/query` is registered only when `Runner.QueryEnabled()`. Execute and per-plan OpenAPI routes are registered when catalog is non-nil. `ErrNoExecutor` → 501; `ErrNotFound` → 404; `ErrPolicyDenied` → 403; `ErrPolicyLoad` → 500; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. HTTP **200** body is the outputs object.
 
 MCP (`mcp.go`): `query` is added only when `QueryEnabled()`. It calls the same `Runner.Query`. Runner `error` on `query` or `run_*` becomes a tool error. Nil error + outputs map → structured content.
 
@@ -102,12 +102,46 @@ Query name and `run_*` name are `ToolDoc` recipes. Title and MCP/REST descriptio
 
 ## OpenAPI generator
 
-`OpenAPIJSON(entry, latest bool)`:
+Two layers. Both are OAS **3.1.0** JSON. Paths omit `APIPrefix` (REST mux is `StripPrefix`’d). Live URLs are `{APIPrefix}` + the document path.
+
+### Catalog index — `CatalogOpenAPIJSON`
+
+`GET /openapi` is **always** registered (`PlansController` with a nil catalog when there are no loaders).
+
+| Path in the document | When | What it describes |
+| --- | --- | --- |
+| `GET /tools` | always | MCP `tools/list`. 200 schema is `components.schemas.ListToolsResult`, inferred at runtime from go-sdk `mcp.ListToolsResult` (`jsonschema.For`). Optional query `cursor` is `ListToolsParams.cursor`. |
+| `POST /plans/query` | `QueryMatcher` set | MCP tool `query`. Body `{query, data}`; 200 is workflow outputs. |
+| `POST /plans/{planId}/{workflowId}` | latest entry for that `planId` | Path-item **`$ref`** to the child spec: `./{planId}#/paths/~1plans~1{planId}~1{workflowId}` |
+
+`$ref` is relative to the catalog document URL. With default prefix, `GET /api/openapi` plus `./petstore#/paths/~1plans~1petstore~1pingHealth` resolves to `GET /api/openapi/petstore` (the latest child spec). Versioned child specs (`GET /openapi/{planId}/v{version}`) are **not** inlined in the index.
+
+Do not copy backend OpenAPI (`sourceDescriptions`) into these documents. Those specs are for libopenapi step execution only.
+
+### Per-plan child — `OpenAPIJSON(entry, latest bool)`
 
 - `latest == true` → paths `/plans/{planId}/{workflowId}`
 - `latest == false` → `/plans/{planId}/{versionSegment}/{workflowId}`
 
-No `APIPrefix` on paths (matches `StripPrefix` on the REST mux). `info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema. **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types).
+`info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema. **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types).
+
+### REST resources vs MCP tools
+
+MCP granularity is **one tool per plan version** (`run_*`) plus optional `query`. REST granularity is **one URL per workflow** (and one list URL, one query URL). Same `Runner`.
+
+| REST (after `APIPrefix` strip) | HTTP | MCP | Body / args |
+| --- | --- | --- | --- |
+| `GET /tools` | list | JSON-RPC `tools/list` | Optional `?cursor=` = `ListToolsParams.cursor`. Envelope is `ListToolsResult` (`ttlMs`, `cacheScope`, `tools`). Arazzo `description` on REST is the REST template; MCP list keeps MCP text. |
+| `POST /plans/query` | match + execute | tool `query` | `{ "query", "data" }` both sides. 200 / structured content = workflow **outputs**. Route and tool omitted unless `QueryMatcher` is set. |
+| `POST /plans/{planId}/{workflowId}` | execute **latest** | `run_{plan}_v{latest}` with that `workflowId` | REST body **is** `inputs`. MCP args are `{ "workflowId", "inputs" }`. |
+| `POST /plans/{planId}/v{version}/{workflowId}` | execute that version | `run_{plan}_v{version}` | Same body split as latest. |
+| `GET /openapi` | catalog OAS | (none) | Index: `/tools` + `$ref`s to latest child specs. Always registered. |
+| `GET /openapi/{planId}` | latest child OAS | (none) | Describes latest execute paths for that plan. |
+| `GET /openapi/{planId}/v{version}` | versioned child OAS | (none) | Describes that version’s execute paths. |
+
+`run_*` `inputSchema` is JSON Schema `oneOf` with `workflowId` **const** per workflow. Generated plan OpenAPI does **not** use that wrapper: `operationId` is the `workflowId`, and the request schema is that workflow’s `inputs` only.
+
+`GET /tools` is implemented by opening an in-memory MCP session against the shared `mcp.Server` (`internal/api/v1/tools.go`), then overlaying REST descriptions. Catalog OpenAPI **documents** that route; it does not call `ListTools` when generating the spec.
 
 ## Templates
 
@@ -123,12 +157,14 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 2. Resolve sources before Validate.
 3. New libopenapi Engine per run.
 4. Nil executor: catalog + OpenAPI work; execute is 501 / MCP tool error.
-5. Nil `QueryMatcher`: do not register MCP `query` or `POST /plans/query`; after Match, missing loaded plan is 404.
+5. Nil `QueryMatcher`: do not register MCP `query` or `POST /plans/query`; omit `/plans/query` from the catalog OAS; after Match, missing loaded plan is 404.
 6. Nil `PolicyLoader`: skip inbound/outbound. Policy is on-demand, not at `New`. Fail closed on load/compile errors.
 7. Plan REST is under `Options.APIPrefix` only (default `/api`). Do not `StripPrefix` `/mcp`.
 8. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
 9. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
 10. Help `Lookup` is on `tools/list` / `GET /tools` only. Lookup errors must not fail the list.
+11. `GET /openapi` is always registered. Per-plan `GET /openapi/{planId}` and execute `POST /plans/...` are registered only when loaders produced a catalog.
+12. Keep OpenAPI paths unprefixed. Catalog plan paths must `$ref` `./{planId}#/paths/...`, not inline child operations.
 
 ## Tests to update when you change behavior
 
@@ -142,8 +178,9 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
-| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys |
-| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
+| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult` |
+| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
+| `engine/engine_test.go` | `GET /openapi` without loaders still describes `/tools` |
 
 Fixtures live under `testdata/arazzo/`. `FileLoader` must be pointed at **`plans/`**, not `testdata/arazzo/` (otherwise `sources/openapi.yaml` is parsed as Arazzo and fails). Latest petstore version in tests is `1.1.0`.
 
@@ -164,7 +201,7 @@ testdata/arazzo/
 - Do not import `internal/plans` from public packages except `engine` (already does).
 - Do not add a second `arazzo.Engine` cache.
 - Keep `FSRoots` covering `../sources`.
-- Keep OpenAPI paths unprefixed.
+- Keep OpenAPI paths unprefixed. Catalog index `$ref`s child specs; do not inline plan operations in `CatalogOpenAPIJSON`.
 - Keep `oneOf` at the tool-args object with `workflowId` const.
 - If you add a REST route, add it on the **v1** mux with a method pattern, and add an `engine` test.
 - If you change skip/fail rules, update `docs/users/arazzo.md` in the same change.

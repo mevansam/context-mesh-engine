@@ -5,6 +5,7 @@ package plans
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -413,6 +414,82 @@ func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `/plans/petstore/v1.1.0/echoName`) {
 		t.Fatalf("versioned paths: %s", b)
+	}
+}
+
+func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
+	c := loadPetstore(t)
+	b, err := CatalogOpenAPIJSON(c, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc["openapi"] != "3.1.0" {
+		t.Fatalf("openapi = %v", doc["openapi"])
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	if _, ok := paths["/tools"]; !ok {
+		t.Fatalf("missing /tools: %s", b)
+	}
+	if _, ok := paths["/plans/query"]; ok {
+		t.Fatalf("query path without queryEnabled: %s", b)
+	}
+	ping, _ := paths["/plans/petstore/pingHealth"].(map[string]any)
+	ref, _ := ping["$ref"].(string)
+	want := "./petstore#/paths/~1plans~1petstore~1pingHealth"
+	if ref != want {
+		t.Fatalf("pingHealth $ref = %q, want %q", ref, want)
+	}
+	echo, _ := paths["/plans/petstore/echoName"].(map[string]any)
+	if echo["$ref"] != "./petstore#/paths/~1plans~1petstore~1echoName" {
+		t.Fatalf("echoName $ref = %v", echo["$ref"])
+	}
+	if _, ok := paths["/plans/petstore/v1.1.0/echoName"]; ok {
+		t.Fatalf("catalog must $ref latest paths only: %s", b)
+	}
+	comps, _ := doc["components"].(map[string]any)
+	schemas, _ := comps["schemas"].(map[string]any)
+	ltr, _ := schemas["ListToolsResult"].(map[string]any)
+	props, _ := ltr["properties"].(map[string]any)
+	for _, name := range []string{"ttlMs", "cacheScope", "tools"} {
+		if _, ok := props[name]; !ok {
+			t.Fatalf("ListToolsResult missing %s: %#v", name, props)
+		}
+	}
+	tools, _ := props["tools"].(map[string]any)
+	items, _ := tools["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	if _, ok := itemProps["inputSchema"]; !ok {
+		t.Fatalf("Tool missing inputSchema: %#v", itemProps)
+	}
+	if _, ok := itemProps["name"]; !ok {
+		t.Fatalf("Tool missing name: %#v", itemProps)
+	}
+
+	b, err = CatalogOpenAPIJSON(c, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"/plans/query"`) {
+		t.Fatalf("queryEnabled missing /plans/query: %s", b)
+	}
+
+	b, err = CatalogOpenAPIJSON(nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ = doc["paths"].(map[string]any)
+	if _, ok := paths["/tools"]; !ok {
+		t.Fatal("nil catalog must still describe /tools")
+	}
+	if _, ok := paths["/plans/petstore/pingHealth"]; ok {
+		t.Fatal("nil catalog must not $ref plans")
 	}
 }
 

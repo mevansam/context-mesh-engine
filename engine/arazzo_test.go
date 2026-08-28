@@ -115,6 +115,30 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 		t.Fatalf("paths = %v", paths)
 	}
 
+	resp, err = http.Get(ts.URL + "/api/openapi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("catalog status = %d", resp.StatusCode)
+	}
+	var catalog map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
+		t.Fatal(err)
+	}
+	cpaths, _ := catalog["paths"].(map[string]any)
+	if _, ok := cpaths["/tools"]; !ok {
+		t.Fatalf("catalog missing /tools: %v", cpaths)
+	}
+	ping, _ := cpaths["/plans/petstore/pingHealth"].(map[string]any)
+	if ping["$ref"] != "./petstore#/paths/~1plans~1petstore~1pingHealth" {
+		t.Fatalf("catalog pingHealth $ref = %v", ping["$ref"])
+	}
+	if _, ok := cpaths["/plans/query"]; ok {
+		t.Fatal("catalog must omit /plans/query without QueryMatcher")
+	}
+
 	resp, err = http.Get(ts.URL + "/api/openapi/petstore/v1.0.0")
 	if err != nil {
 		t.Fatal(err)
@@ -315,6 +339,15 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("custom openapi status = %d", resp.StatusCode)
+	}
+
+	cat, err := http.Get(ts.URL + "/service/v2/openapi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cat.Body.Close()
+	if cat.StatusCode != http.StatusOK {
+		t.Fatalf("custom catalog status = %d", cat.StatusCode)
 	}
 
 	old, err := http.Get(ts.URL + "/api/openapi/petstore")
@@ -635,6 +668,20 @@ func TestArazzo_QueryMatcher(t *testing.T) {
 	}
 	if !foundQuery {
 		t.Fatal("query tool missing when QueryMatcher is set")
+	}
+
+	catResp, err := http.Get(ts.URL + "/api/openapi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catResp.Body.Close()
+	var catDoc map[string]any
+	if err := json.NewDecoder(catResp.Body).Decode(&catDoc); err != nil {
+		t.Fatal(err)
+	}
+	catPaths, _ := catDoc["paths"].(map[string]any)
+	if _, ok := catPaths["/plans/query"]; !ok {
+		t.Fatalf("catalog missing /plans/query: %v", catPaths)
 	}
 
 	e2, err := engine.New(engine.Options{

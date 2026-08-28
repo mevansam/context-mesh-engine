@@ -90,7 +90,8 @@ type Options struct {
 	RESTOnly bool
 
 	// ArazzoLoaders supply Arazzo documents. If empty, no plan tools or
-	// plan REST routes are registered.
+	// plan execute routes are registered. GET {APIPrefix}/openapi (catalog
+	// index) is still registered.
 	ArazzoLoaders []arazzo.Loader
 
 	// ArazzoExecutor performs backend HTTP calls for workflow steps.
@@ -172,11 +173,12 @@ type Engine struct {
 // New constructs an Engine with a shared MCP server and the default
 // health and tools controllers registered under [Options.APIPrefix].
 // GET {APIPrefix}/tools returns the MCP tools/list envelope with REST
-// descriptions for Arazzo plan/query tools (looked up on demand). When
-// [Options.ArazzoLoaders] is set, plans are loaded and MCP run_* tools
-// plus REST plan routes are registered. MCP query and
-// POST {APIPrefix}/plans/query are added only when [Options.QueryMatcher]
-// is set. [Options.PolicyLoader] is consulted on execute, not here.
+// descriptions for Arazzo plan/query tools (looked up on demand).
+// GET {APIPrefix}/openapi is always registered (catalog index, including
+// GET /tools). When [Options.ArazzoLoaders] is set, plans are loaded and
+// MCP run_* tools plus REST plan routes and per-plan OpenAPI are
+// registered. MCP query and POST {APIPrefix}/plans/query are added only
+// when [Options.QueryMatcher] is set. [Options.PolicyLoader] is consulted on execute, not here.
 // [Options.DualMCPandREST], [Options.MCPOnly], and
 // [Options.RESTOnly] control which HTTP surfaces [Engine.Handler]
 // mounts; all false serves REST only. Load or template errors fail
@@ -237,6 +239,8 @@ func New(opts Options) (*Engine, error) {
 		gw.Server().AddReceivingMiddleware(help.ReceivingMiddleware())
 		toolsCtrl.SetToolHelpOverlay(help.ApplyREST)
 		router.Register(apiv1.NewPlansController(catalog, runner))
+	} else {
+		router.Register(apiv1.NewPlansController(nil, nil))
 	}
 
 	return &Engine{

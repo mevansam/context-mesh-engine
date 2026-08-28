@@ -13,7 +13,9 @@ import (
 	"github.com/mevansam/context-mesh-engine/internal/plans"
 )
 
-// PlansController serves POST /plans/... and GET /openapi/...
+// PlansController serves POST /plans/... and GET /openapi.
+// GET /openapi (catalog index) is always registered. Plan execute
+// routes and per-plan OpenAPI are registered when catalog is non-nil.
 type PlansController struct {
 	catalog *plans.Catalog
 	runner  *plans.Runner
@@ -26,6 +28,10 @@ func NewPlansController(catalog *plans.Catalog, runner *plans.Runner) *PlansCont
 
 // Register implements api.Controller.
 func (c *PlansController) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /openapi", c.openapiCatalog)
+	if c.catalog == nil {
+		return
+	}
 	if c.runner != nil && c.runner.QueryEnabled() {
 		mux.HandleFunc("POST /plans/query", c.postQuery)
 	}
@@ -120,6 +126,16 @@ func decodeJSONObject(w http.ResponseWriter, r *http.Request) (map[string]any, e
 	return inputs, nil
 }
 
+func (c *PlansController) openapiCatalog(w http.ResponseWriter, r *http.Request) {
+	query := c.runner != nil && c.runner.QueryEnabled()
+	b, err := plans.CatalogOpenAPIJSON(c.catalog, query)
+	if err != nil {
+		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeOpenAPIBytes(w, b)
+}
+
 func (c *PlansController) openapiLatest(w http.ResponseWriter, r *http.Request) {
 	e, ok := c.catalog.Latest(r.PathValue("planId"))
 	if !ok {
@@ -144,6 +160,10 @@ func (c *PlansController) writeOpenAPI(w http.ResponseWriter, e *plans.Entry, la
 		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	writeOpenAPIBytes(w, b)
+}
+
+func writeOpenAPIBytes(w http.ResponseWriter, b []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(b)

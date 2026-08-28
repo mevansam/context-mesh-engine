@@ -87,6 +87,7 @@ go run ./examples/arazzo-fs -dual testdata/arazzo/plans
 ```
 
 ```bash
+curl -s http://localhost:8080/api/openapi
 curl -s http://localhost:8080/api/openapi/petstore
 curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'
@@ -123,7 +124,7 @@ Three processes plus a demo IdP:
 | [`SecretsProvider`](adapters.md#secretsprovider) | `MapSecrets{"downstream-hmac": ...}` |
 | [`QueryMatcher`](adapters.md#querymatcher) | **unset** — `query` is not registered; callers use `run_petstore_v0.0.1` or REST execute |
 
-Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. Generated `GET /api/openapi/petstore` describes those execute paths. `GET /api/tools` is the REST form of MCP `tools/list` (same names/schemas; REST-specific Arazzo descriptions).
+Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. `GET /api/openapi` is the catalog index (`$ref` to the petstore child spec). `GET /api/openapi/petstore` describes those execute paths. `GET /api/tools` is the REST form of MCP `tools/list` (same names/schemas; REST-specific Arazzo descriptions).
 
 **When to copy:** you are implementing an HTTP `Executor`, wiring `sourceDescriptions` to live origins, or showing an agent a real `run_*` tool. For natural-language `query`, start from [arazzo-fs](#arazzo-fs) and keep this executor.
 
