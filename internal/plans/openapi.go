@@ -164,7 +164,7 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool, meta OpenAPIMeta) ([]byte
 			"get": map[string]any{
 				"operationId": "listTools",
 				"summary":     "List tools",
-				"description": "REST equivalent of MCP JSON-RPC method tools/list. Response is mcp.ListToolsResult from the linked go-sdk (ttlMs, cacheScope, tools). Arazzo plan/query descriptions use REST templates.",
+				"description": "REST equivalent of MCP JSON-RPC method tools/list. Response shape matches ListToolsResult (ttlMs, cacheScope, tools) but omits MCP protocol fields such as _meta and resultType. Arazzo plan/query descriptions use REST templates.",
 				"parameters": []any{
 					map[string]any{
 						"name":        "cursor",
@@ -299,7 +299,36 @@ func listToolsResultSchema() (any, error) {
 			listToolsSchemaErr = err
 			return
 		}
+		pruneRESTToolsSchema(v)
 		listToolsSchema = v
 	})
 	return listToolsSchema, listToolsSchemaErr
+}
+
+func pruneRESTToolsSchema(v any) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	delete(m, "_meta")
+	delete(m, "resultType")
+	props, _ := m["properties"].(map[string]any)
+	if props == nil {
+		return
+	}
+	delete(props, "_meta")
+	delete(props, "resultType")
+	tools, _ := props["tools"].(map[string]any)
+	if tools == nil {
+		return
+	}
+	items, _ := tools["items"].(map[string]any)
+	if items == nil {
+		return
+	}
+	itemProps, _ := items["properties"].(map[string]any)
+	if itemProps == nil {
+		return
+	}
+	delete(itemProps, "_meta")
 }

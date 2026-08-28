@@ -667,6 +667,12 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 			t.Fatalf("ListToolsResult missing %s: %#v", name, props)
 		}
 	}
+	if _, ok := props["_meta"]; ok {
+		t.Fatalf("ListToolsResult schema must not include _meta: %#v", props)
+	}
+	if _, ok := props["resultType"]; ok {
+		t.Fatalf("ListToolsResult schema must not include resultType: %#v", props)
+	}
 	tools, _ := props["tools"].(map[string]any)
 	items, _ := tools["items"].(map[string]any)
 	itemProps, _ := items["properties"].(map[string]any)
@@ -675,6 +681,9 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 	}
 	if _, ok := itemProps["name"]; !ok {
 		t.Fatalf("Tool missing name: %#v", itemProps)
+	}
+	if _, ok := itemProps["_meta"]; ok {
+		t.Fatalf("Tool schema must not include _meta: %#v", itemProps)
 	}
 
 	b, err = CatalogOpenAPIJSON(c, true, OpenAPIMeta{})

@@ -54,7 +54,13 @@ func (c *ToolsController) Get(w http.ResponseWriter, r *http.Request) {
 	if c.overlay != nil {
 		c.overlay(r.Context(), res)
 	}
-	iapi.WriteJSON(w, http.StatusOK, res)
+	body, err := restToolsBody(res)
+	if err != nil {
+		c.logger.Error("tools/list encode failed", "err", err)
+		iapi.WriteError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	iapi.WriteJSON(w, http.StatusOK, body)
 }
 
 func listServerTools(ctx context.Context, server *mcp.Server, cursor string) (*mcp.ListToolsResult, error) {

@@ -29,6 +29,7 @@ import (
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/mevansam/context-mesh-engine/engine"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
@@ -81,6 +82,11 @@ func hostOptions(addr, asyncURL, petstoreBase, jwtSecret string, dual bool) engi
 
 	return engine.Options{
 		Addr: addr,
+
+		Implementation: &mcp.Implementation{
+			Name:    "petstore-mcp-server",
+			Version: "0.0.1",
+		},
 
 		// Loader: parse Arazzo from plans/. Engine indexes (x-planId, version),
 		// resolves sourceDescriptions, registers run_* and POST /plans/{planId}/….
