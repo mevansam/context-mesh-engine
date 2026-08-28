@@ -5,6 +5,7 @@ package plans
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -56,11 +57,11 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, cfg Regis
 		}, func(ctx context.Context, req *mcp.CallToolRequest, in queryArgs) (*mcp.CallToolResult, any, error) {
 			ctx, err := runner.EnrichContext(ctx, RequestSourceFromMCP(req))
 			if err != nil {
-				return nil, nil, err
+				return mcpPublicError(cfg.Logger, err)
 			}
 			res, err := runner.Query(ctx, in.Query, in.Data)
 			if err != nil {
-				return nil, nil, err
+				return mcpPublicError(cfg.Logger, err)
 			}
 			return nil, res, nil
 		})
@@ -104,14 +105,19 @@ func RegisterMCP(server *mcp.Server, catalog *Catalog, runner *Runner, cfg Regis
 		}, func(ctx context.Context, req *mcp.CallToolRequest, in runArgs) (*mcp.CallToolResult, any, error) {
 			ctx, err := runner.EnrichContext(ctx, RequestSourceFromMCP(req))
 			if err != nil {
-				return nil, nil, err
+				return mcpPublicError(cfg.Logger, err)
 			}
 			res, err := runner.Run(ctx, planID, version, in.WorkflowID, in.Inputs)
 			if err != nil {
-				return nil, nil, err
+				return mcpPublicError(cfg.Logger, err)
 			}
 			return nil, res, nil
 		})
 	}
 	return cache, nil
+}
+
+func mcpPublicError(logger *slog.Logger, err error) (*mcp.CallToolResult, any, error) {
+	pub := LogAndPublic(logger, err)
+	return nil, nil, errors.New(pub.Message)
 }

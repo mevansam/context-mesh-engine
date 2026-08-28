@@ -14,7 +14,11 @@ import (
 )
 
 func objectSchema() *jsonschema.Schema {
-	return &jsonschema.Schema{Type: "object"}
+	return &jsonschema.Schema{Type: "object", AdditionalProperties: schemaFalse()}
+}
+
+func schemaFalse() *jsonschema.Schema {
+	return &jsonschema.Schema{Not: &jsonschema.Schema{}}
 }
 
 func nodeToSchema(n *yaml.Node) (*jsonschema.Schema, error) {
@@ -38,13 +42,13 @@ func nodeToSchema(n *yaml.Node) (*jsonschema.Schema, error) {
 
 func nodeToJSON(n *yaml.Node) (any, error) {
 	if n == nil {
-		return map[string]any{"type": "object"}, nil
+		return closeConsumerInputSchema(map[string]any{"type": "object"}), nil
 	}
 	var v any
 	if err := n.Decode(&v); err != nil {
 		return nil, err
 	}
-	return stripReservedInputSchema(v), nil
+	return closeConsumerInputSchema(stripReservedInputSchema(v)), nil
 }
 
 // stripReservedInputSchema removes engine-injected input names from a JSON
@@ -85,6 +89,68 @@ func stripReservedInputSchema(v any) any {
 		}
 	}
 	return m
+}
+
+// closeConsumerInputSchema sets additionalProperties: false on this schema
+// object and combinators. Nested property schemas are not closed.
+func closeConsumerInputSchema(v any) any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	if isConsumerObjectSchema(m) {
+		m["additionalProperties"] = false
+	}
+	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+		if arr, ok := m[key].([]any); ok {
+			for i, item := range arr {
+				arr[i] = closeConsumerInputSchema(item)
+			}
+		}
+	}
+	for _, key := range []string{"not", "if", "then", "else"} {
+		if child, ok := m[key]; ok {
+			m[key] = closeConsumerInputSchema(child)
+		}
+	}
+	for _, key := range []string{"$defs", "definitions"} {
+		if defs, ok := m[key].(map[string]any); ok {
+			for k, def := range defs {
+				defs[k] = closeConsumerInputSchema(def)
+			}
+		}
+	}
+	return m
+}
+
+func isConsumerObjectSchema(m map[string]any) bool {
+	if t, ok := m["type"].(string); ok && t != "" && t != "object" {
+		return false
+	}
+	return true
+}
+
+func consumerInputKeys(schema any) map[string]struct{} {
+	m, ok := schema.(map[string]any)
+	if !ok {
+		return map[string]struct{}{}
+	}
+	keys := map[string]struct{}{}
+	if props, ok := m["properties"].(map[string]any); ok {
+		for k := range props {
+			keys[k] = struct{}{}
+		}
+	}
+	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+		if arr, ok := m[key].([]any); ok {
+			for _, item := range arr {
+				for k := range consumerInputKeys(item) {
+					keys[k] = struct{}{}
+				}
+			}
+		}
+	}
+	return keys
 }
 
 func filterReservedRequired(v any) any {
@@ -158,7 +224,8 @@ func InputSchema(doc *high.Arazzo) (*jsonschema.Schema, error) {
 				"workflowId": {Const: &id},
 				"inputs":     s,
 			},
-			Required: []string{"workflowId", "inputs"},
+			Required:             []string{"workflowId", "inputs"},
+			AdditionalProperties: schemaFalse(),
 		})
 	}
 	if len(oneOf) == 0 {

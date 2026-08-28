@@ -19,10 +19,11 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `internal/plans/help.go` | TTL cache (`internal/ttlcache`); MCP `tools/list` middleware; REST overlay |
 | `internal/ttlcache/` | Generic singleflight TTL cache |
 | `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest, `View()` |
-| `internal/plans/runner.go` | `NewEngine` per `Run`; inbound then workflow then outbound |
+| `internal/plans/runner.go` | `NewEngine` per `Run`; closed inputs; inbound then workflow then outbound |
 | `internal/plans/policy.go` | Compile `data.plan.inbound` / `data.plan.outbound`; cache |
 | `internal/plans/redact.go` | RFC 6901 output redaction |
-| `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const; strip reserved input keys |
+| `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const; strip reserved input keys; close consumer objects |
+| `internal/plans/public.go` | `ClassifyError` / `LogAndPublic` for REST and MCP |
 | `internal/plans/openapi.go` | OAS 3.1 catalog index + per-plan specs; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | `query` + one `run_*` tool per catalog entry |
 | `internal/api/v1/plans.go` | `GET /openapi`, `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; 400/403/404/500/501 |
@@ -84,11 +85,11 @@ Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurr
 
 `Catalog.View()` is `arazzo.PlanCatalog`. It does not snapshot the catalog; `Get`/`Latest`/`Plans` copy metadata only when called. Matcher must not use a catalog miss as “no match”; the engine always verifies after `Match`.
 
-HTTP (`plans.go`): `GET /openapi` (catalog) is always registered. `POST /plans/query` is registered only when `Runner.QueryEnabled()`. Execute and per-plan OpenAPI routes are registered when catalog is non-nil. `ErrNoExecutor` → 501; `ErrNotFound` → 404; `ErrPolicyDenied` → 403; `ErrPolicyLoad` → 500; other runner errors → 400. Invalid JSON body → 400 `invalid json body`. HTTP **200** body is the outputs object.
+HTTP (`plans.go`): `GET /openapi` (catalog) is always registered. `POST /plans/query` is registered only when `Runner.QueryEnabled()`. Execute and per-plan OpenAPI routes are registered when catalog is non-nil. Transport bodies use `ClassifyError` / `LogAndPublic` (`internal/plans/public.go`): log the full error; return a stable public string. `ErrNoExecutor` / `ErrQueryNotImplemented` → 501; `ErrNotFound` → 404 `plan not found`; `ErrUnauthorized` → 401 `unauthorized`; `ErrPolicyDenied` → 403 `policy denied` (OPA reason logged only); `ErrPolicyLoad` / `ErrInternal` → 500 `internal error`; `ErrUnexpectedInputs` → 400 `unexpected fields in inputs`; `ErrEmptyQuery` → 400; other runner errors → 400 `workflow failed`. Invalid JSON body → 400 `invalid json body` (not logged as a runner error). HTTP **200** body is the outputs object.
 
-MCP (`mcp.go`): `query` is added only when `QueryEnabled()`. It calls the same `Runner.Query`. Runner `error` on `query` or `run_*` becomes a tool error. Nil error + outputs map → structured content.
+MCP (`mcp.go`): `query` is added only when `QueryEnabled()`. It calls the same `Runner.Query`. Tool errors use the same public messages. Nil error + outputs map → structured content.
 
-POST body decoder allows unknown fields and empty body; cap 1 MiB. This is **not** `api.ReadJSON` (which rejects unknown fields).
+`Run` rejects caller keys that are not on the stripped workflow input schema (`ErrUnexpectedInputs`), including `policyHints` and `secrets`. Catalog `POST /plans/query` `data` stays an open object in OpenAPI; after match, `Run` applies the same closed check. Invalid JSON body → 400 `invalid json body`. Decoder cap 1 MiB.
 
 ## MCP tools
 
@@ -128,7 +129,7 @@ Do not copy backend OpenAPI (`sourceDescriptions`) into these documents. Those s
 - `latest == true` → paths `/plans/{planId}/{workflowId}`
 - `latest == false` → `/plans/{planId}/{versionSegment}/{workflowId}`
 
-`info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema after stripping reserved engine keys (`policyHints`, `secrets`, `policyHints.*`, `secrets.*`) from that schema’s `properties` / `required` (and combinators / `$defs`). Nested consumer fields with those names are kept. Summary and description are copied only when they do not name those keys. MCP `InputSchema` uses the same strip (`nodeToJSON` / `nodeToSchema`). **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types). `servers` as for the catalog. Do not copy Arazzo step parameters, source OpenAPI, or policy bundles into these documents.
+`info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema after stripping reserved engine keys (`policyHints`, `secrets`, `policyHints.*`, `secrets.*`) from that schema’s `properties` / `required` (and combinators / `$defs`). The consumer object is then closed (`additionalProperties: false`). Nested consumer fields with reserved names are kept and are not force-closed. Summary and description are copied only when they do not name those keys. MCP `InputSchema` uses the same strip and close (`nodeToJSON` / `nodeToSchema`); each `oneOf` branch is also closed. **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types). `servers` as for the catalog. Do not copy Arazzo step parameters, source OpenAPI, or policy bundles into these documents.
 
 ### REST resources vs MCP tools
 
@@ -183,7 +184,8 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
-| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip |
+| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs |
+| `internal/plans/public_test.go` | public error mapping |
 | `arazzo/inputs_test.go` | `ReservedInputKey` / `LeaksReservedInputs` |
 | `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
 | `engine/engine_test.go` | `GET /openapi` without loaders still describes `/tools` |

@@ -78,13 +78,14 @@ context-mesh-engine/
 | `api/v1/router.go` | v1 `ServeMux` and `Register` |
 | `api/v1/health.go` | Default `GET /health` |
 | `api/v1/tools.go` | `GET /tools` (MCP envelope; REST descriptions for Arazzo tools) |
-| `api/v1/plans.go` | `GET /openapi` (always), `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; error mapping |
+| `api/v1/plans.go` | `GET /openapi` (always), `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; sanitized errors |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
-| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; secrets inject; preprocessor enrich |
+| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; secrets inject; preprocessor enrich; closed inputs |
 | `plans/policy.go` | Compile/eval OPA; TTL cache via `internal/ttlcache`; `input.auth` / `input.headers` |
 | `plans/request.go` | HTTP/MCP → `RequestSource` |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
-| `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const |
+| `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const; strip/close consumer inputs |
+| `plans/public.go` | `ClassifyError` / `LogAndPublic` |
 | `plans/openapi.go` | OAS 3.1 catalog + per-plan JSON; prefix-absolute `$ref`; `servers` from PublicBaseURL+APIPrefix |
 | `plans/mcp.go` | `query` + `run_*` tools |
 | `plans/help.go` | Help TTL cache + `tools/list` overlay (`internal/ttlcache`) |

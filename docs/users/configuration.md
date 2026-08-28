@@ -135,7 +135,7 @@ Names stay on `ToolDoc.Name` / `QueryName`. They are never supplied by `ToolHelp
 | `SecretsProvider` | `arazzo.SecretsProvider` | `nil` | Named secrets for the host Executor (downstream JWT) and optional `$inputs.secrets.*`. |
 | `SecretInputs` | `[]string` | `nil` | Secret names to flatten onto workflow inputs. Empty means do not inject into `$inputs`. |
 | `MCPHandlerWrap` | `func(http.Handler) http.Handler` | `nil` | Wraps Streamable HTTP only. Use `auth.RequireBearerToken` for the calling-application JWT. |
-| `RESTHandlerWrap` | `func(http.Handler) http.Handler` | `nil` | Wraps REST after `APIPrefix` strip, before `APITimeout`. Paths are `/health`, `/plans/...`. |
+| `RESTHandlerWrap` | `func(http.Handler) http.Handler` | `nil` | Wraps REST after `APIPrefix` strip, before `APITimeout`. After the strip, paths are `/health`, `/tools`, `/openapi`, `/openapi/{planId}`, `/plans/…`. The engine does not require auth; the host chooses which paths to wrap. |
 
 ## Start the server
 
@@ -256,7 +256,7 @@ Custom HTTP clients talking to `/mcp` must send:
 
 ## Auth
 
-Calling-application OAuth (one `Authorization: Bearer` JWT) is `Options.MCPHandlerWrap` / `Options.RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/examples/server/auth-middleware/main.go). Wrap **child** handlers only, never the root mux.
+Calling-application OAuth (one `Authorization: Bearer` JWT) is `Options.MCPHandlerWrap` / `Options.RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/examples/server/auth-middleware/main.go). Wrap **child** handlers only, never the root mux. The engine does not require a token on REST; which paths need a bearer is a host wrap decision (see `RESTHandlerWrap` after `APIPrefix` strip).
 
 End-user JWTs on `x-*` headers, claim extraction, and remote enrichment are [`RequestPreprocessor`](adapters.md). OPA sees `input.auth` and allowlisted `input.headers`, not raw `Authorization`. Invalid preprocessor → **401**. Inbound deny → **403**.
 

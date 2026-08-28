@@ -631,7 +631,7 @@ The engine does **not** implement OAuth. It exposes four host-owned seams on [`e
 
 | Token | Who mints it | SDK seam | Where it is consumed |
 | --- | --- | --- | --- |
-| Calling-app JWT (`Authorization: Bearer`) | [`petstore-auth-server`](petstore-auth-server/) `client_credentials` | `MCPHandlerWrap` / `RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/auth/auth.go) | HTTP middleware **before** REST execute / MCP Streamable HTTP |
+| Calling-app JWT (`Authorization: Bearer`) | [`petstore-auth-server`](petstore-auth-server/) `client_credentials` | `MCPHandlerWrap` / `RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/auth/auth.go) | HTTP middleware **before** REST catalog + execute / MCP Streamable HTTP |
 | End-user JWT (`X-End-User-Token`) | auth-server `password` grant (`loginUser` + `getUserByName`) | `RequestPreprocessor` | `Runner.EnrichContext` on execute/`query`, **before** inbound OPA |
 | Downstream JWT (Petstore `Authorization`) | this host’s `Executor` | `SecretsProvider` (`Get("downstream-hmac")`) | Each OpenAPI step if the plan did not already set `Authorization` |
 
@@ -641,7 +641,7 @@ The engine does **not** implement OAuth. It exposes four host-owned seams on [`e
 
 From [`mcp-server/main.go`](mcp-server/main.go) and [`mcp-server/auth.go`](mcp-server/auth.go):
 
-1. **`MCPHandlerWrap` / `RESTHandlerWrap`** — wrap **child** handlers (`/mcp` and the REST mux after `APIPrefix` strip), never the root mux. The engine applies `RESTHandlerWrap` **before** `APITimeout`. Petstore wraps **all** MCP traffic (so `initialize` and `tools/list` need the client JWT). REST wrap is `wrapRESTPlans`: only `POST /plans/…`. `GET /health`, `GET /tools`, and `GET /openapi/…` stay open.
+1. **`MCPHandlerWrap` / `RESTHandlerWrap`** — wrap **child** handlers (`/mcp` and the REST mux after `APIPrefix` strip), never the root mux. The engine applies `RESTHandlerWrap` **before** `APITimeout`. Petstore wraps **all** MCP traffic (so `initialize` and `tools/list` need the client JWT). REST wrap is `wrapRESTPlans`: client JWT on `GET /tools`, `GET /openapi/…`, and `POST /plans/…`. `GET /health` and `GET /docs` stay open.
 2. **`RequestPreprocessor`** — `dualJWTPreprocessor` reads `X-End-User-Token`, verifies HS256 (`jwtx.ParseUser`), and returns `PolicyRequestContext`. `Auth.endUser` is `{username, userStatus, sub}`. `Auth.client` is copied from `RequestSource.ClientAuth` (go-sdk `TokenInfo` after the bearer wrap). Allowlisted headers only (`X-Request-Id` → `x-request-id`). Do not put raw `Authorization` or the user JWT into `Headers`.
 3. **`SecretsProvider`** — `arazzo.MapSecrets{"downstream-hmac": jwt-secret}` shared with the auth-server’s `-jwt-secret`. The same map is passed into `newHTTPExec`. **`SecretInputs` is empty**: the HMAC key is not flattened onto `$inputs.secrets.*`. Caller-supplied `secrets` / `secrets.*` keys are stripped either way.
 4. **`PolicyLoader`** — inbound reads `input.auth.endUser`, not `http.send`. Invalid preprocessor is **401**; inbound deny is **403**.
@@ -905,9 +905,9 @@ The sticky bar at the top is for **Try it out** on `POST /plans/…`. A `request
 2. Open [http://localhost:8080/api/docs](http://localhost:8080/api/docs) (needs network once for the CDN).
 3. Paste the client access token into **Client bearer** (`Authorization: Bearer`).
 4. Paste an end-user access token into **End-user JWT** (`X-End-User-Token`).
-5. Pick a spec in the dropdown. `GET /tools` and `GET /openapi` work with empty fields. Execute `retrievePet` / `purchasePet` / `checkOrderStatus` with the same token rules as curl (`browser` retrieve-only; `buyer` may purchase).
+5. Pick a spec in the dropdown. Paste the client token first: `GET /tools` and `GET /openapi` require it. Execute `retrievePet` / `purchasePet` / `checkOrderStatus` with the same token rules as curl (`browser` retrieve-only; `buyer` may purchase).
 
-`GET /health`, `GET /tools`, `GET /openapi`, and `GET /docs` stay unauthenticated. Only `POST /plans/` requires the two JWTs.
+`GET /health` and `GET /docs` stay unauthenticated. `GET /tools` and `GET /openapi/…` need the client JWT. `POST /plans/` needs both JWTs.
 
 ### REST: retrieve, purchase, check order
 

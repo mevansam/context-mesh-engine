@@ -116,7 +116,8 @@ func hostOptions(addr, asyncURL, petstoreBase, jwtSecret string, dual bool) engi
 
 		// Wraps apply to child handlers only, never the root mux.
 		// MCP: every Streamable HTTP request (initialize, tools/list, run_*).
-		// REST: wrapRESTPlans limits bearer to POST /plans/ after APIPrefix strip.
+		// REST: wrapRESTPlans requires bearer on GET /tools, GET /openapi/…, and POST /plans/.
+		// GET /health and GET /docs stay open.
 		MCPHandlerWrap:  bearer,
 		RESTHandlerWrap: func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
 	}

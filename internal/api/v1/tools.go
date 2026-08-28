@@ -20,11 +20,15 @@ type ToolHelpOverlay func(ctx context.Context, res *mcp.ListToolsResult)
 type ToolsController struct {
 	server  *mcp.Server
 	overlay ToolHelpOverlay
+	logger  *slog.Logger
 }
 
 // NewToolsController lists tools from the shared MCP server.
-func NewToolsController(server *mcp.Server) *ToolsController {
-	return &ToolsController{server: server}
+func NewToolsController(server *mcp.Server, logger *slog.Logger) *ToolsController {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &ToolsController{server: server, logger: logger}
 }
 
 // SetToolHelpOverlay sets the REST description overlay applied on GET /tools.
@@ -43,7 +47,8 @@ func (c *ToolsController) Register(mux *http.ServeMux) {
 func (c *ToolsController) Get(w http.ResponseWriter, r *http.Request) {
 	res, err := listServerTools(r.Context(), c.server, r.URL.Query().Get("cursor"))
 	if err != nil {
-		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
+		c.logger.Error("tools/list failed", "err", err)
+		iapi.WriteError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if c.overlay != nil {

@@ -110,12 +110,16 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		return nil, fmt.Errorf("%w: workflow %s", ErrNotFound, workflowID)
 	}
 
+	if err := rejectUnexpectedInputs(e, workflowID, inputs); err != nil {
+		return nil, err
+	}
+
 	runInputs := stripSecrets(stripPolicyHints(inputs))
 	if r.secrets != nil && len(r.secretInputs) > 0 {
 		var err error
 		runInputs, err = injectSecrets(ctx, runInputs, r.secrets, r.secretInputs)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrInternal, err)
 		}
 	}
 	var compiled compiledPolicy
@@ -235,4 +239,28 @@ func (r *Runner) Query(ctx context.Context, query string, data map[string]any) (
 		inputs = data
 	}
 	return r.Run(ctx, e.PlanID, e.Version, match.WorkflowID, inputs)
+}
+
+func rejectUnexpectedInputs(e *Entry, workflowID string, inputs map[string]any) error {
+	if e == nil || e.Doc == nil {
+		return nil
+	}
+	var wfInputs *yaml.Node
+	for _, wf := range e.Doc.Workflows {
+		if wf != nil && wf.WorkflowId == workflowID {
+			wfInputs = wf.Inputs
+			break
+		}
+	}
+	schema, err := nodeToJSON(wfInputs)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInternal, err)
+	}
+	allowed := consumerInputKeys(schema)
+	for k := range inputs {
+		if _, ok := allowed[k]; !ok {
+			return ErrUnexpectedInputs
+		}
+	}
+	return nil
 }

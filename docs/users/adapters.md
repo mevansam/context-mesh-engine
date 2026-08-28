@@ -467,7 +467,7 @@ func WriteError(w http.ResponseWriter, status int, msg string)
 func ReadJSON(w http.ResponseWriter, r *http.Request, v any) error
 ```
 
-`ReadJSON` rejects unknown JSON fields and caps the body at **1 MiB**. The `ResponseWriter` is passed to `http.MaxBytesReader` so an oversized body can close the connection. Plan execute POST does **not** use `ReadJSON` (unknown fields allowed; same 1 MiB cap).
+`ReadJSON` rejects unknown JSON fields and caps the body at **1 MiB**. The `ResponseWriter` is passed to `http.MaxBytesReader` so an oversized body can close the connection. Plan execute POST does **not** use `ReadJSON`. The body is a JSON object; `Runner.Run` rejects keys that are not on the workflow’s consumer input schema (**400** `unexpected fields in inputs`). Same 1 MiB cap.
 
 The mux passed to `Register` is already stripped of `Options.APIPrefix`. Pattern `GET /items` is `GET {APIPrefix}/items`.
 

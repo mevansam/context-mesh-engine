@@ -164,6 +164,29 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 	if resp.StatusCode != http.StatusNotImplemented {
 		t.Fatalf("execute without executor status = %d, want 501", resp.StatusCode)
 	}
+	var fail map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&fail); err != nil {
+		t.Fatal(err)
+	}
+	if fail["error"] != "executor not configured" {
+		t.Fatalf("501 body = %#v", fail)
+	}
+
+	resp, err = http.Post(ts.URL+"/api/plans/petstore/pingHealth", "application/json", strings.NewReader(`{"name":"x","extra":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("extra field status = %d, want 400", resp.StatusCode)
+	}
+	var extra map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&extra); err != nil {
+		t.Fatal(err)
+	}
+	if extra["error"] != "unexpected fields in inputs" {
+		t.Fatalf("extra field body = %#v", extra)
+	}
 }
 
 func TestArazzo_RESTExecuteLatestAndVersioned(t *testing.T) {
@@ -850,6 +873,13 @@ func TestArazzo_PolicyDeniedForbidden(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status = %d, want 403 body = %s", resp.StatusCode, b)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] != "policy denied" {
+		t.Fatalf("403 body = %#v", body)
 	}
 }
 

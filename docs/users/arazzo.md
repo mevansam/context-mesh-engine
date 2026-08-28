@@ -141,16 +141,20 @@ The body is the workflow **outputs** map from the Arazzo document (not the engin
 
 Generated OpenAPI `200` schemas use those output names as object properties.
 
-| HTTP status | When |
-| --- | --- |
-| 200 | Workflow succeeded; body is outputs |
-| 400 | Invalid JSON body, workflow failed, or other runner error |
-| 403 | Inbound or outbound OPA policy denied |
-| 404 | Unknown `planId`, version, or `workflowId` |
-| 500 | Policy bundle load/compile failed (fail closed) |
-| 501 | `ArazzoExecutor` is nil |
+| HTTP status | Public `error` | When |
+| --- | --- | --- |
+| 200 | (outputs body) | Workflow succeeded |
+| 400 | `invalid json body` | Malformed JSON |
+| 400 | `unexpected fields in inputs` | Extra keys, including `policyHints` / `secrets` |
+| 400 | `query is required` | Empty `query` |
+| 400 | `workflow failed` | Step/libopenapi failure (detail logged only) |
+| 401 | `unauthorized` | Preprocessor rejected the call |
+| 403 | `policy denied` | Inbound or outbound OPA deny (reason logged only) |
+| 404 | `plan not found` | Unknown `planId`, version, or `workflowId` |
+| 500 | `internal error` | Policy load/compile or host failure |
+| 501 | `executor not configured` | `ArazzoExecutor` is nil |
 
-Body on error: `{"error":"<message>"}`.
+Body on error: `{"error":"<message>"}`. The full internal error is logged, not returned.
 
 ## MCP and REST: `query`
 
@@ -192,7 +196,7 @@ Paths **inside** those documents omit `Options.APIPrefix` (the REST mux is `Stri
 - HTTP: `GET /api/openapi/petstore`
 - Document path: `/plans/petstore/pingHealth` → real URL `POST /api/plans/petstore/pingHealth`
 
-Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted. Workflow summary/description that name those keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped schema. **200** schema is an object with a property per Arazzo `outputs` name.
+Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted, then closed (`additionalProperties: false`). Extra caller fields, including reserved keys, are **400** `unexpected fields in inputs` on execute (REST, MCP `run_*`, and query after match). Workflow summary/description that name reserved keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped, closed schema. Catalog `POST /plans/query` `data` stays an open object; `Run` still closes it against the selected workflow. **200** schema is an object with a property per Arazzo `outputs` name.
 
 404 if the plan or version is missing. OpenAPI does **not** require an executor. Child documents describe execute routes, not `/plans/query` (that lives on the catalog index).
 
@@ -211,10 +215,12 @@ Help lookups run on `tools/list` / `GET /tools`, not at `New`. Lookup errors do 
 
 Optional inbound/outbound [OPA](https://www.openpolicyagent.org/) modules run on every execute path (`run_*`, REST, `query`). Wire [`PolicyLoader`](adapters.md#policyloader); do not put `.rego` files on `ArazzoLoaders`.
 
-- **Inbound** (`data.plan.inbound`) runs before the workflow. Allow may set `$inputs.policyHints` (nested object plus dotted keys for Arazzo `$inputs.policyHints.*`). Deny is **403** and the workflow does not run.
-- **Outbound** (`data.plan.outbound`) runs after success. Deny is **403** and outputs are not returned. `redact` / `outputs` may reshape the response.
+- **Inbound** (`data.plan.inbound`) runs before the workflow. Allow may set `$inputs.policyHints` (nested object plus dotted keys for Arazzo `$inputs.policyHints.*`). Deny is **403** `policy denied` (the OPA `reason` is logged, not returned). The workflow does not run.
+- **Outbound** (`data.plan.outbound`) runs after success. Deny is **403** `policy denied` and outputs are not returned. `redact` / `outputs` may reshape the response.
 
-A missing bundle for that `(planId, version)` skips both phases. Load/compile errors fail closed (**500**) unless a compiled bundle is still cached.
+REST and MCP execute errors use the same public strings (`plan not found`, `unauthorized`, `policy denied`, `unexpected fields in inputs`, `workflow failed`, `internal error`). The full error is logged only.
+
+A missing bundle for that `(planId, version)` skips both phases. Load/compile errors fail closed (**500** `internal error`) unless a compiled bundle is still cached.
 
 ## Sample binary
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 
 	iapi "github.com/mevansam/context-mesh-engine/internal/api"
@@ -20,11 +21,15 @@ type PlansController struct {
 	catalog *plans.Catalog
 	runner  *plans.Runner
 	meta    plans.OpenAPIMeta
+	logger  *slog.Logger
 }
 
 // NewPlansController returns a REST controller for Arazzo plans.
-func NewPlansController(catalog *plans.Catalog, runner *plans.Runner, meta plans.OpenAPIMeta) *PlansController {
-	return &PlansController{catalog: catalog, runner: runner, meta: meta}
+func NewPlansController(catalog *plans.Catalog, runner *plans.Runner, meta plans.OpenAPIMeta, logger *slog.Logger) *PlansController {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &PlansController{catalog: catalog, runner: runner, meta: meta, logger: logger}
 }
 
 // Register implements api.Controller.
@@ -60,12 +65,12 @@ func (c *PlansController) postQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, err := c.runner.EnrichContext(r.Context(), plans.RequestSourceFromHTTP(r))
 	if err != nil {
-		writeRunError(w, err)
+		c.writeRunError(w, err)
 		return
 	}
 	res, err := c.runner.Query(ctx, body.Query, body.Data)
 	if err != nil {
-		writeRunError(w, err)
+		c.writeRunError(w, err)
 		return
 	}
 	iapi.WriteJSON(w, http.StatusOK, res)
@@ -76,7 +81,7 @@ func (c *PlansController) postLatest(w http.ResponseWriter, r *http.Request) {
 	wf := r.PathValue("workflowId")
 	e, ok := c.catalog.Latest(planID)
 	if !ok {
-		iapi.WriteError(w, http.StatusNotFound, "plan not found")
+		iapi.WriteError(w, http.StatusNotFound, plans.ErrNotFound.Error())
 		return
 	}
 	c.execute(w, r, e.PlanID, e.Version, wf)
@@ -88,7 +93,7 @@ func (c *PlansController) postVersioned(w http.ResponseWriter, r *http.Request) 
 	wf := r.PathValue("workflowId")
 	e, ok := c.catalog.GetBySegment(planID, seg)
 	if !ok {
-		iapi.WriteError(w, http.StatusNotFound, "plan version not found")
+		iapi.WriteError(w, http.StatusNotFound, plans.ErrNotFound.Error())
 		return
 	}
 	c.execute(w, r, e.PlanID, e.Version, wf)
@@ -102,12 +107,12 @@ func (c *PlansController) execute(w http.ResponseWriter, r *http.Request, planID
 	}
 	ctx, err := c.runner.EnrichContext(r.Context(), plans.RequestSourceFromHTTP(r))
 	if err != nil {
-		writeRunError(w, err)
+		c.writeRunError(w, err)
 		return
 	}
 	res, err := c.runner.Run(ctx, planID, version, workflowID, inputs)
 	if err != nil {
-		writeRunError(w, err)
+		c.writeRunError(w, err)
 		return
 	}
 	iapi.WriteJSON(w, http.StatusOK, res)
@@ -131,7 +136,8 @@ func (c *PlansController) openapiCatalog(w http.ResponseWriter, r *http.Request)
 	query := c.runner != nil && c.runner.QueryEnabled()
 	b, err := plans.CatalogOpenAPIJSON(c.catalog, query, c.meta)
 	if err != nil {
-		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
+		c.logger.Error("openapi catalog generation failed", "err", err)
+		iapi.WriteError(w, http.StatusInternalServerError, plans.ErrInternal.Error())
 		return
 	}
 	writeOpenAPIBytes(w, b)
@@ -140,7 +146,7 @@ func (c *PlansController) openapiCatalog(w http.ResponseWriter, r *http.Request)
 func (c *PlansController) openapiLatest(w http.ResponseWriter, r *http.Request) {
 	e, ok := c.catalog.Latest(r.PathValue("planId"))
 	if !ok {
-		iapi.WriteError(w, http.StatusNotFound, "plan not found")
+		iapi.WriteError(w, http.StatusNotFound, plans.ErrNotFound.Error())
 		return
 	}
 	c.writeOpenAPI(w, e, true)
@@ -149,7 +155,7 @@ func (c *PlansController) openapiLatest(w http.ResponseWriter, r *http.Request) 
 func (c *PlansController) openapiVersioned(w http.ResponseWriter, r *http.Request) {
 	e, ok := c.catalog.GetBySegment(r.PathValue("planId"), r.PathValue("version"))
 	if !ok {
-		iapi.WriteError(w, http.StatusNotFound, "plan version not found")
+		iapi.WriteError(w, http.StatusNotFound, plans.ErrNotFound.Error())
 		return
 	}
 	c.writeOpenAPI(w, e, false)
@@ -158,7 +164,8 @@ func (c *PlansController) openapiVersioned(w http.ResponseWriter, r *http.Reques
 func (c *PlansController) writeOpenAPI(w http.ResponseWriter, e *plans.Entry, latest bool) {
 	b, err := plans.OpenAPIJSON(e, latest, c.meta)
 	if err != nil {
-		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
+		c.logger.Error("openapi generation failed", "err", err)
+		iapi.WriteError(w, http.StatusInternalServerError, plans.ErrInternal.Error())
 		return
 	}
 	writeOpenAPIBytes(w, b)
@@ -170,19 +177,7 @@ func writeOpenAPIBytes(w http.ResponseWriter, b []byte) {
 	_, _ = w.Write(b)
 }
 
-func writeRunError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, plans.ErrNoExecutor), errors.Is(err, plans.ErrQueryNotImplemented):
-		iapi.WriteError(w, http.StatusNotImplemented, err.Error())
-	case errors.Is(err, plans.ErrNotFound):
-		iapi.WriteError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, plans.ErrUnauthorized):
-		iapi.WriteError(w, http.StatusUnauthorized, err.Error())
-	case errors.Is(err, plans.ErrPolicyDenied):
-		iapi.WriteError(w, http.StatusForbidden, err.Error())
-	case errors.Is(err, plans.ErrPolicyLoad):
-		iapi.WriteError(w, http.StatusInternalServerError, err.Error())
-	default:
-		iapi.WriteError(w, http.StatusBadRequest, err.Error())
-	}
+func (c *PlansController) writeRunError(w http.ResponseWriter, err error) {
+	pub := plans.LogAndPublic(c.logger, err)
+	iapi.WriteError(w, pub.Status, pub.Message)
 }

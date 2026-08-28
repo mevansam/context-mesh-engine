@@ -77,8 +77,7 @@ hints := {"mode": "read", "petStatus": "available"} if allow
 `),
 	}}, time.Minute))
 	_, err := r.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{
-		"name":                "x",
-		arazzo.PolicyHintsKey: map[string]any{"mode": "forged"},
+		"name": "x",
 	})
 	if err != nil {
 		t.Fatal(err)

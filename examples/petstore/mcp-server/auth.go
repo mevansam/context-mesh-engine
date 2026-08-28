@@ -58,18 +58,31 @@ func clientBearer(secret []byte) func(http.Handler) http.Handler {
 }
 
 // wrapRESTPlans is Options.RESTHandlerWrap. After the engine StripPrefix of
-// APIPrefix, paths are /health, /tools, /openapi/…, /plans/…. Bearer is
-// required only on POST /plans/ (execute). Catalog GET stays unauthenticated.
+// APIPrefix, paths are /health, /tools, /openapi/…, /plans/…, /docs.
+// Client JWT is required on catalog reads (GET /tools, GET /openapi/…) and
+// execute (POST /plans/). GET /health and GET /docs stay open.
 func wrapRESTPlans(inner http.Handler, bearer func(http.Handler) http.Handler) http.Handler {
 	protected := bearer(inner)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/plans/") {
-			log.Printf("rest execute %s %s", r.Method, r.URL.Path)
+		if restRequiresClientJWT(r) {
+			log.Printf("rest %s %s", r.Method, r.URL.Path)
 			protected.ServeHTTP(w, r)
 			return
 		}
 		inner.ServeHTTP(w, r)
 	})
+}
+
+func restRequiresClientJWT(r *http.Request) bool {
+	p := r.URL.Path
+	switch r.Method {
+	case http.MethodPost:
+		return strings.HasPrefix(p, "/plans/")
+	case http.MethodGet:
+		return p == "/tools" || p == "/openapi" || strings.HasPrefix(p, "/openapi/")
+	default:
+		return false
+	}
 }
 
 // dualJWTPreprocessor is Options.RequestPreprocessor (arazzo.RequestPreprocessor).

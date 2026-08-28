@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | [`main.go`](main.go) | `engine.Options` | Loader, executor, policy, preprocessor, secrets, handler wraps |
 | [`docs.go`](docs.go) / [`docs/`](docs/) | `AddController` | Swagger UI at `GET /api/docs` |
-| [`auth.go`](auth.go) | `MCPHandlerWrap`, `RESTHandlerWrap`, `RequestPreprocessor` | Client JWT on MCP + `POST /plans/`; end-user JWT → OPA `input.auth` |
+| [`auth.go`](auth.go) | `MCPHandlerWrap`, `RESTHandlerWrap`, `RequestPreprocessor` | Client JWT on MCP + `GET /tools` + `GET /openapi` + `POST /plans/`; end-user JWT → OPA `input.auth` |
 | [`executor.go`](executor.go) | `ArazzoExecutor`, `SecretsProvider` | HTTP to Petstore / async adapter; **new** downstream JWT |
 | `plans/` | `ArazzoLoaders` | Arazzo document (`x-planId: petstore`) |
 | `policies/` | `PolicyLoader` | Inbound/outbound Rego (not passed to `FileLoader`) |

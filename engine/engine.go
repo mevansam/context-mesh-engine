@@ -155,7 +155,9 @@ type Options struct {
 	MCPHandlerWrap func(http.Handler) http.Handler
 
 	// RESTHandlerWrap wraps the REST mux after StripPrefix of APIPrefix
-	// and before APITimeout. Nil means no wrap. Paths are /health, /plans/...
+	// and before APITimeout. Nil means no wrap. After the strip, paths are
+	// /health, /tools, /openapi, /openapi/{planId}, /plans/.... The engine
+	// does not require auth on any of them; the host chooses which to wrap.
 	RESTHandlerWrap func(http.Handler) http.Handler
 }
 
@@ -200,7 +202,7 @@ func New(opts Options) (*Engine, error) {
 
 	router := apiv1.New()
 	router.Register(&apiv1.HealthController{})
-	toolsCtrl := apiv1.NewToolsController(gw.Server())
+	toolsCtrl := apiv1.NewToolsController(gw.Server(), opts.Logger)
 	router.Register(toolsCtrl)
 
 	if len(opts.ArazzoLoaders) > 0 {
@@ -238,9 +240,9 @@ func New(opts Options) (*Engine, error) {
 		}
 		gw.Server().AddReceivingMiddleware(help.ReceivingMiddleware())
 		toolsCtrl.SetToolHelpOverlay(help.ApplyREST)
-		router.Register(apiv1.NewPlansController(catalog, runner, openAPIMeta(opts)))
+		router.Register(apiv1.NewPlansController(catalog, runner, openAPIMeta(opts), opts.Logger))
 	} else {
-		router.Register(apiv1.NewPlansController(nil, nil, openAPIMeta(opts)))
+		router.Register(apiv1.NewPlansController(nil, nil, openAPIMeta(opts), opts.Logger))
 	}
 
 	return &Engine{

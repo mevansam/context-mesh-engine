@@ -11,9 +11,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/mevansam/context-mesh-engine/engine"
+	"github.com/mevansam/context-mesh-engine/examples/petstore/petstore-auth-server/jwtx"
 )
 
 func TestPetstorePlanLoads(t *testing.T) {
@@ -72,6 +74,9 @@ func TestPetstorePlanLoads(t *testing.T) {
 	if _, ok := rprops["policyHints"]; ok {
 		t.Fatalf("consumer schema leaked policyHints: %#v", rschema)
 	}
+	if rschema["additionalProperties"] != false {
+		t.Fatalf("retrievePet request schema should be closed: %#v", rschema)
+	}
 	if desc, _ := op["description"].(string); strings.Contains(desc, "policyHints") {
 		t.Fatalf("description leaked policyHints: %s", desc)
 	}
@@ -86,6 +91,77 @@ func TestPetstorePlanLoads(t *testing.T) {
 	}
 	if ct := docs.Header.Get("Content-Type"); ct != "text/html; charset=utf-8" {
 		t.Fatalf("docs Content-Type = %q", ct)
+	}
+}
+
+func TestPetstoreCatalogRequiresClientJWT(t *testing.T) {
+	secret := []byte("petstore-demo-hs256")
+	bearer := clientBearer(secret)
+	e, err := engine.New(engine.Options{
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:   []arazzo.Loader{arazzo.NewFileLoader(plansDir())},
+		RESTHandlerWrap: func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.AddController(docsController{})
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	get := func(path string, hdr http.Header) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, ts.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for k, vs := range hdr {
+			for _, v := range vs {
+				req.Header.Add(k, v)
+			}
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	health := get("/api/health", nil)
+	health.Body.Close()
+	if health.StatusCode != http.StatusOK {
+		t.Fatalf("health = %d", health.StatusCode)
+	}
+	docs := get("/api/docs", nil)
+	docs.Body.Close()
+	if docs.StatusCode != http.StatusOK {
+		t.Fatalf("docs = %d", docs.StatusCode)
+	}
+	unauth := get("/api/openapi/petstore", nil)
+	unauth.Body.Close()
+	if unauth.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("openapi without token = %d, want 401", unauth.StatusCode)
+	}
+	toolsUnauth := get("/api/tools", nil)
+	toolsUnauth.Body.Close()
+	if toolsUnauth.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("tools without token = %d, want 401", toolsUnauth.StatusCode)
+	}
+
+	tok, err := jwtx.SignClient(secret, "petstore-mcp", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hdr := http.Header{"Authorization": []string{"Bearer " + tok}}
+	authz := get("/api/openapi/petstore", hdr)
+	authz.Body.Close()
+	if authz.StatusCode != http.StatusOK {
+		t.Fatalf("openapi with token = %d", authz.StatusCode)
+	}
+	tools := get("/api/tools", hdr)
+	tools.Body.Close()
+	if tools.StatusCode != http.StatusOK {
+		t.Fatalf("tools with token = %d", tools.StatusCode)
 	}
 }
 

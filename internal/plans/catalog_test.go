@@ -217,6 +217,25 @@ func TestRunner_RunAndNoExecutor(t *testing.T) {
 	}
 }
 
+func TestRunner_RejectsUnexpectedInputs(t *testing.T) {
+	c := loadPetstore(t)
+	r := NewRunner(c, &stubExec{}, nil)
+	_, err := r.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{
+		"name":                "x",
+		arazzo.PolicyHintsKey: map[string]any{"mode": "forged"},
+	})
+	if !errors.Is(err, ErrUnexpectedInputs) {
+		t.Fatalf("policyHints err = %v", err)
+	}
+	_, err = r.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{
+		"name":  "x",
+		"extra": 1,
+	})
+	if !errors.Is(err, ErrUnexpectedInputs) {
+		t.Fatalf("extra err = %v", err)
+	}
+}
+
 func TestQueryEnabled_NilRunner(t *testing.T) {
 	var r *Runner
 	if r.QueryEnabled() {
@@ -373,6 +392,9 @@ func TestInputSchema_EmptyAndNilNode(t *testing.T) {
 	if m["type"] != "object" {
 		t.Fatalf("nil node json = %#v", v)
 	}
+	if m["additionalProperties"] != false {
+		t.Fatalf("nil node should be closed: %#v", v)
+	}
 }
 
 func yamlMapping(t *testing.T, src string) *yaml.Node {
@@ -447,6 +469,15 @@ oneOf:
 	if _, ok := bprops["name"]; !ok {
 		t.Fatalf("oneOf name missing: %#v", bprops)
 	}
+	if m["additionalProperties"] != false {
+		t.Fatalf("root should be closed: %#v", m)
+	}
+	if branch["additionalProperties"] != false {
+		t.Fatalf("oneOf branch should be closed: %#v", branch)
+	}
+	if _, ok := vault["additionalProperties"]; ok {
+		t.Fatalf("nested vault should not be force-closed: %#v", vault)
+	}
 }
 
 func TestInputSchema_StripsReservedInputs(t *testing.T) {
@@ -473,6 +504,12 @@ properties:
 	}
 	if _, ok := in.Properties["policyHints"]; ok {
 		t.Fatalf("leaked policyHints: %#v", in.Properties)
+	}
+	if in.AdditionalProperties == nil || in.AdditionalProperties.Not == nil {
+		t.Fatal("inputs schema should be closed")
+	}
+	if s.OneOf[0].AdditionalProperties == nil || s.OneOf[0].AdditionalProperties.Not == nil {
+		t.Fatal("oneOf branch should be closed")
 	}
 }
 
@@ -512,6 +549,9 @@ properties:
 	if !strings.Contains(raw, `"Find a pet by status"`) {
 		t.Fatalf("missing summary: %s", raw)
 	}
+	if !strings.Contains(raw, `"additionalProperties":false`) {
+		t.Fatalf("request schema should be closed: %s", raw)
+	}
 }
 
 func TestOutputsToJSONSchema(t *testing.T) {
@@ -549,6 +589,9 @@ func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `"url":"/api"`) {
 		t.Fatalf("latest missing default servers url: %s", b)
+	}
+	if !strings.Contains(string(b), `"additionalProperties":false`) {
+		t.Fatalf("latest request schema should be closed: %s", b)
 	}
 	b, err = OpenAPIJSON(latest, false, OpenAPIMeta{ServerURL: "http://example.test/api"})
 	if err != nil {
