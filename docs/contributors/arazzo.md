@@ -129,7 +129,11 @@ Do not copy backend OpenAPI (`sourceDescriptions`) into these documents. Those s
 - `latest == true` → paths `/plans/{planId}/{workflowId}`
 - `latest == false` → `/plans/{planId}/{versionSegment}/{workflowId}`
 
-`info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema after stripping reserved engine keys (`policyHints`, `secrets`, `policyHints.*`, `secrets.*`) from that schema’s `properties` / `required` (and combinators / `$defs`). The consumer object is then closed (`additionalProperties: false`). Nested consumer fields with reserved names are kept and are not force-closed. Summary and description are copied only when they do not name those keys. MCP `InputSchema` uses the same strip and close (`nodeToJSON` / `nodeToSchema`); each `oneOf` branch is also closed. **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types). `servers` as for the catalog. Do not copy Arazzo step parameters, source OpenAPI, or policy bundles into these documents.
+`info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema after stripping reserved engine keys (`policyHints`, `secrets`, `policyHints.*`, `secrets.*`) from that schema’s `properties` / `required` (and combinators / `$defs`). The consumer object is then closed (`additionalProperties: false`). Nested consumer fields with reserved names are kept and are not force-closed.
+
+Top-level input properties with `x-source` (`interface`, `protocol`, `in`, `name`) are lifted into OpenAPI `parameters` when `interface` is `rest`, `protocol` is `http` (omitted means http), and `in` is `header` / `cookie` / `path` / `query`. `name` defaults to the property key. Path parameters are appended to the path key in YAML property order; catalog `$ref`s use that same path. `interface: mcp` and invalid `in`/`protocol` stay on the JSON body. `x-source` is stripped from parameter schemas, leftover body schemas, and MCP `InputSchema`. If every remaining consumer property is lifted, `requestBody` is omitted. REST execute still reads a JSON body only.
+
+Summary and description are copied only when they do not name reserved keys. MCP `InputSchema` uses the same strip and close (`nodeToJSON` / `nodeToSchema`); each `oneOf` branch is also closed. **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types). `servers` as for the catalog. Do not copy Arazzo step parameters, source OpenAPI, or policy bundles into these documents.
 
 ### REST resources vs MCP tools
 
@@ -184,7 +188,7 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
-| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs |
+| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs; `x-source` REST/HTTP lift |
 | `internal/plans/public_test.go` | public error mapping |
 | `arazzo/inputs_test.go` | `ReservedInputKey` / `LeaksReservedInputs` |
 | `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |

@@ -5,6 +5,7 @@ package plans
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/mevansam/context-mesh-engine/arazzo"
@@ -12,6 +13,21 @@ import (
 	"github.com/pb33f/libopenapi/orderedmap"
 	"go.yaml.in/yaml/v4"
 )
+
+const (
+	inputSourceExt      = "x-source"
+	sourceInterfaceREST = "rest"
+	sourceProtocolHTTP  = "http"
+)
+
+// restHTTPParam is an OpenAPI parameter lifted from a workflow input
+// property whose x-source is interface=rest, protocol=http.
+type restHTTPParam struct {
+	Name     string
+	In       string
+	Required bool
+	Schema   map[string]any
+}
 
 func objectSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "object", AdditionalProperties: schemaFalse()}
@@ -41,6 +57,14 @@ func nodeToSchema(n *yaml.Node) (*jsonschema.Schema, error) {
 }
 
 func nodeToJSON(n *yaml.Node) (any, error) {
+	v, err := decodeConsumerInputSchema(n)
+	if err != nil {
+		return nil, err
+	}
+	return stripVendorInputAttrs(v), nil
+}
+
+func decodeConsumerInputSchema(n *yaml.Node) (any, error) {
 	if n == nil {
 		return closeConsumerInputSchema(map[string]any{"type": "object"}), nil
 	}
@@ -49,6 +73,322 @@ func nodeToJSON(n *yaml.Node) (any, error) {
 		return nil, err
 	}
 	return closeConsumerInputSchema(stripReservedInputSchema(v)), nil
+}
+
+// stripVendorInputAttrs removes x-source from consumer JSON Schema so MCP
+// inputSchema and leftover OAS body schemas stay plain JSON Schema.
+func stripVendorInputAttrs(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		delete(t, inputSourceExt)
+		if props, ok := t["properties"].(map[string]any); ok {
+			for k, p := range props {
+				props[k] = stripVendorInputAttrs(p)
+			}
+		}
+		if items, ok := t["items"]; ok {
+			t["items"] = stripVendorInputAttrs(items)
+		}
+		if ap, ok := t["additionalProperties"]; ok {
+			t["additionalProperties"] = stripVendorInputAttrs(ap)
+		}
+		for _, key := range []string{"oneOf", "anyOf", "allOf", "prefixItems"} {
+			if arr, ok := t[key].([]any); ok {
+				for i, item := range arr {
+					arr[i] = stripVendorInputAttrs(item)
+				}
+			}
+		}
+		for _, key := range []string{"not", "if", "then", "else"} {
+			if child, ok := t[key]; ok {
+				t[key] = stripVendorInputAttrs(child)
+			}
+		}
+		for _, key := range []string{"$defs", "definitions"} {
+			if defs, ok := t[key].(map[string]any); ok {
+				for k, def := range defs {
+					defs[k] = stripVendorInputAttrs(def)
+				}
+			}
+		}
+		return t
+	case []any:
+		for i, item := range t {
+			t[i] = stripVendorInputAttrs(item)
+		}
+		return t
+	default:
+		return v
+	}
+}
+
+// splitOpenAPIInputs lifts top-level REST/HTTP x-source properties into
+// OpenAPI parameters. Remaining properties stay on the JSON body schema.
+func splitOpenAPIInputs(n *yaml.Node) (any, []restHTTPParam, error) {
+	v, err := decodeConsumerInputSchema(n)
+	if err != nil {
+		return nil, nil, err
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return stripVendorInputAttrs(v), nil, nil
+	}
+	props, _ := m["properties"].(map[string]any)
+	if len(props) == 0 {
+		return stripVendorInputAttrs(v), nil, nil
+	}
+	drop := map[string]struct{}{}
+	var params []restHTTPParam
+	seen := map[string]struct{}{}
+	for _, key := range schemaPropertyKeys(n) {
+		seen[key] = struct{}{}
+		prop, exists := props[key]
+		if !exists {
+			continue
+		}
+		param, lifted := liftRESTParam(key, prop, requiredHas(m["required"], key))
+		if !lifted {
+			continue
+		}
+		params = append(params, param)
+		delete(props, key)
+		drop[key] = struct{}{}
+	}
+	for key, prop := range props {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		param, lifted := liftRESTParam(key, prop, requiredHas(m["required"], key))
+		if !lifted {
+			continue
+		}
+		params = append(params, param)
+		delete(props, key)
+		drop[key] = struct{}{}
+	}
+	if len(drop) > 0 {
+		if req, ok := m["required"]; ok {
+			m["required"] = filterRequiredKeys(req, drop)
+		}
+	}
+	if len(props) == 0 {
+		delete(m, "properties")
+	}
+	if req, ok := m["required"]; ok && requiredEmpty(req) {
+		delete(m, "required")
+	}
+	return stripVendorInputAttrs(m), params, nil
+}
+
+func liftRESTParam(key string, prop any, required bool) (restHTTPParam, bool) {
+	pm, ok := prop.(map[string]any)
+	if !ok {
+		return restHTTPParam{}, false
+	}
+	src, ok := parseInputSource(pm[inputSourceExt])
+	if !ok || src.Interface != sourceInterfaceREST {
+		return restHTTPParam{}, false
+	}
+	protocol := src.Protocol
+	if protocol == "" {
+		protocol = sourceProtocolHTTP
+	}
+	if protocol != sourceProtocolHTTP {
+		return restHTTPParam{}, false
+	}
+	switch src.In {
+	case "header", "cookie", "path", "query":
+	default:
+		return restHTTPParam{}, false
+	}
+	name := src.Name
+	if name == "" {
+		name = key
+	}
+	if src.In == "path" {
+		required = true
+		if reservedExecutePathName(name) {
+			if reservedExecutePathName(key) {
+				return restHTTPParam{}, false
+			}
+			name = key
+		}
+	}
+	delete(pm, inputSourceExt)
+	schema, _ := stripVendorInputAttrs(pm).(map[string]any)
+	if schema == nil {
+		schema = map[string]any{}
+	}
+	return restHTTPParam{Name: name, In: src.In, Required: required, Schema: schema}, true
+}
+
+type inputSource struct {
+	Interface string
+	Protocol  string
+	In        string
+	Name      string
+}
+
+func parseInputSource(v any) (inputSource, bool) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return inputSource{}, false
+	}
+	return inputSource{
+		Interface: strings.ToLower(strings.TrimSpace(asString(m["interface"]))),
+		Protocol:  strings.ToLower(strings.TrimSpace(asString(m["protocol"]))),
+		In:        strings.ToLower(strings.TrimSpace(asString(m["in"]))),
+		Name:      strings.TrimSpace(asString(m["name"])),
+	}, true
+}
+
+func asString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func reservedExecutePathName(name string) bool {
+	switch name {
+	case "planId", "workflowId", "version":
+		return true
+	default:
+		return false
+	}
+}
+
+func schemaPropertyKeys(n *yaml.Node) []string {
+	content := yamlMappingContent(n)
+	for i := 0; i+1 < len(content); i += 2 {
+		if yamlScalar(content[i]) != "properties" {
+			continue
+		}
+		pc := yamlMappingContent(content[i+1])
+		keys := make([]string, 0, len(pc)/2)
+		for j := 0; j+1 < len(pc); j += 2 {
+			keys = append(keys, yamlScalar(pc[j]))
+		}
+		return keys
+	}
+	return nil
+}
+
+func yamlMappingContent(n *yaml.Node) []*yaml.Node {
+	if n == nil {
+		return nil
+	}
+	if n.Kind == yaml.DocumentNode && len(n.Content) > 0 {
+		n = n.Content[0]
+	}
+	if n.Kind != yaml.MappingNode {
+		return nil
+	}
+	return n.Content
+}
+
+func yamlScalar(n *yaml.Node) string {
+	if n == nil {
+		return ""
+	}
+	if n.Kind == yaml.ScalarNode {
+		return n.Value
+	}
+	var s string
+	if err := n.Decode(&s); err == nil {
+		return s
+	}
+	return ""
+}
+
+func requiredHas(v any, key string) bool {
+	switch req := v.(type) {
+	case []any:
+		for _, item := range req {
+			if s, ok := item.(string); ok && s == key {
+				return true
+			}
+		}
+	case []string:
+		for _, s := range req {
+			if s == key {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func filterRequiredKeys(v any, drop map[string]struct{}) any {
+	switch req := v.(type) {
+	case []any:
+		out := make([]any, 0, len(req))
+		for _, item := range req {
+			s, ok := item.(string)
+			if ok {
+				if _, ok := drop[s]; ok {
+					continue
+				}
+			}
+			out = append(out, item)
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(req))
+		for _, s := range req {
+			if _, ok := drop[s]; ok {
+				continue
+			}
+			out = append(out, s)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func requiredEmpty(v any) bool {
+	switch req := v.(type) {
+	case []any:
+		return len(req) == 0
+	case []string:
+		return len(req) == 0
+	default:
+		return false
+	}
+}
+
+func pathParamNames(params []restHTTPParam) []string {
+	var names []string
+	for _, p := range params {
+		if p.In == "path" {
+			names = append(names, p.Name)
+		}
+	}
+	return names
+}
+
+func restParamsJSON(params []restHTTPParam) []any {
+	out := make([]any, 0, len(params))
+	for _, p := range params {
+		out = append(out, map[string]any{
+			"name":     p.Name,
+			"in":       p.In,
+			"required": p.Required,
+			"schema":   p.Schema,
+		})
+	}
+	return out
+}
+
+func hasJSONRequestBody(body any, lifted bool) bool {
+	if !lifted {
+		return true
+	}
+	m, ok := body.(map[string]any)
+	if !ok {
+		return true
+	}
+	props, _ := m["properties"].(map[string]any)
+	return len(props) > 0
 }
 
 // stripReservedInputSchema removes engine-injected input names from a JSON

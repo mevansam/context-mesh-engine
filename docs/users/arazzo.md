@@ -196,7 +196,22 @@ Paths **inside** those documents omit `Options.APIPrefix` (the REST mux is `Stri
 - HTTP: `GET /api/openapi/petstore`
 - Document path: `/plans/petstore/pingHealth` → real URL `POST /api/plans/petstore/pingHealth`
 
-Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted, then closed (`additionalProperties: false`). Extra caller fields, including reserved keys, are **400** `unexpected fields in inputs` on execute (REST, MCP `run_*`, and query after match). Workflow summary/description that name reserved keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped, closed schema. Catalog `POST /plans/query` `data` stays an open object; `Run` still closes it against the selected workflow. **200** schema is an object with a property per Arazzo `outputs` name.
+Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted, then closed (`additionalProperties: false`). Top-level input properties may set `x-source` to bind a REST/HTTP location:
+
+```yaml
+inputs:
+  type: object
+  properties:
+    requestId:
+      type: string
+      x-source:
+        interface: rest
+        protocol: http
+        in: header
+        name: x-request-id
+```
+
+`interface` is `rest` or `mcp`. Only `interface: rest` with `protocol: http` (or omitted `protocol`) and `in` of `header`, `cookie`, `path`, or `query` is lifted onto the generated operation as an OpenAPI parameter. `name` is the parameter name (default: the property key). Path parameters are appended to the execute path in property order (`/plans/{planId}/{workflowId}/{petId}`). `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute still reads a JSON body only — this mapping is generated OpenAPI today, not runtime binding. Extra caller fields, including reserved keys, are **400** `unexpected fields in inputs` on execute (REST, MCP `run_*`, and query after match). Workflow summary/description that name reserved keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped, closed schema. Catalog `POST /plans/query` `data` stays an open object; `Run` still closes it against the selected workflow. **200** schema is an object with a property per Arazzo `outputs` name.
 
 404 if the plan or version is missing. OpenAPI does **not** require an executor. Child documents describe execute routes, not `/plans/query` (that lives on the catalog index).
 

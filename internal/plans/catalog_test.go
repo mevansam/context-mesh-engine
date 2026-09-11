@@ -554,6 +554,291 @@ properties:
 	}
 }
 
+func TestNodeToJSON_StripsXSource(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+properties:
+  requestId:
+    type: string
+    x-source:
+      interface: rest
+      protocol: http
+      in: header
+      name: x-request-id
+  status:
+    type: string
+`)
+	v, err := nodeToJSON(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := v.(map[string]any)
+	props, _ := m["properties"].(map[string]any)
+	reqID, _ := props["requestId"].(map[string]any)
+	if _, ok := reqID["x-source"]; ok {
+		t.Fatalf("MCP schema leaked x-source: %#v", reqID)
+	}
+	if reqID["type"] != "string" {
+		t.Fatalf("requestId = %#v", reqID)
+	}
+	if _, ok := props["status"]; !ok {
+		t.Fatalf("status missing: %#v", props)
+	}
+}
+
+func TestInputSchema_KeepsRESTSourcedProperties(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+properties:
+  requestId:
+    type: string
+    x-source:
+      interface: rest
+      protocol: http
+      in: header
+      name: x-request-id
+`)
+	s, err := InputSchema(&high.Arazzo{
+		Workflows: []*high.Workflow{{
+			WorkflowId: "retrievePet",
+			Inputs:     n,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := s.OneOf[0].Properties["inputs"]
+	if _, ok := in.Properties["requestId"]; !ok {
+		t.Fatalf("requestId missing from MCP schema: %#v", in.Properties)
+	}
+}
+
+func TestOpenAPIJSON_MapsRESTSource(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+required: [petId, status, note]
+properties:
+  requestId:
+    type: string
+    x-source:
+      interface: rest
+      protocol: http
+      in: header
+      name: x-request-id
+  session:
+    type: string
+    x-source:
+      interface: rest
+      in: cookie
+      name: sid
+  petId:
+    type: string
+    x-source:
+      interface: rest
+      protocol: http
+      in: path
+  status:
+    type: string
+    enum: [available, pending, sold]
+    x-source:
+      interface: rest
+      protocol: http
+      in: query
+  note:
+    type: string
+  mcpOnly:
+    type: string
+    x-source:
+      interface: mcp
+      protocol: http
+      in: header
+      name: x-mcp
+`)
+	e := &Entry{
+		PlanID:  "petstore",
+		Version: "0.0.1",
+		Doc: &high.Arazzo{
+			Workflows: []*high.Workflow{{
+				WorkflowId: "retrievePet",
+				Inputs:     n,
+			}},
+		},
+	}
+	b, err := OpenAPIJSON(e, true, OpenAPIMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	item, ok := paths["/plans/petstore/retrievePet/{petId}"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing path with petId: %s", b)
+	}
+	post, _ := item["post"].(map[string]any)
+	params, _ := post["parameters"].([]any)
+	if len(params) != 4 {
+		t.Fatalf("parameters = %#v", params)
+	}
+	got := map[string]map[string]any{}
+	for _, p := range params {
+		pm, _ := p.(map[string]any)
+		name, _ := pm["name"].(string)
+		got[name] = pm
+	}
+	if got["x-request-id"]["in"] != "header" || got["x-request-id"]["required"] != false {
+		t.Fatalf("header = %#v", got["x-request-id"])
+	}
+	if got["sid"]["in"] != "cookie" {
+		t.Fatalf("cookie = %#v", got["sid"])
+	}
+	if got["petId"]["in"] != "path" || got["petId"]["required"] != true {
+		t.Fatalf("path = %#v", got["petId"])
+	}
+	if got["status"]["in"] != "query" || got["status"]["required"] != true {
+		t.Fatalf("query = %#v", got["status"])
+	}
+	schema, _ := got["status"]["schema"].(map[string]any)
+	if _, ok := schema["x-source"]; ok {
+		t.Fatalf("parameter schema leaked x-source: %#v", schema)
+	}
+	rb, _ := post["requestBody"].(map[string]any)
+	content, _ := rb["content"].(map[string]any)
+	app, _ := content["application/json"].(map[string]any)
+	rschema, _ := app["schema"].(map[string]any)
+	rprops, _ := rschema["properties"].(map[string]any)
+	if _, ok := rprops["note"]; !ok {
+		t.Fatalf("body missing note: %#v", rschema)
+	}
+	if _, ok := rprops["mcpOnly"]; !ok {
+		t.Fatalf("mcp source should stay in body: %#v", rschema)
+	}
+	mcpOnly, _ := rprops["mcpOnly"].(map[string]any)
+	if _, ok := mcpOnly["x-source"]; ok {
+		t.Fatalf("body leaked x-source: %#v", mcpOnly)
+	}
+	for _, k := range []string{"requestId", "session", "petId", "status"} {
+		if _, ok := rprops[k]; ok {
+			t.Fatalf("lifted %s still in body: %#v", k, rschema)
+		}
+	}
+	req, _ := rschema["required"].([]any)
+	if len(req) != 1 || req[0] != "note" {
+		t.Fatalf("body required = %#v", req)
+	}
+	c := &Catalog{
+		byKey:  map[string]*Entry{key(e.PlanID, e.Version): e},
+		latest: map[string]string{e.PlanID: e.Version},
+	}
+	cb, err := CatalogOpenAPIJSON(c, false, OpenAPIMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cdoc map[string]any
+	if err := json.Unmarshal(cb, &cdoc); err != nil {
+		t.Fatal(err)
+	}
+	cpaths, _ := cdoc["paths"].(map[string]any)
+	refItem, _ := cpaths["/plans/petstore/retrievePet/{petId}"].(map[string]any)
+	want := "/api/openapi/petstore#/paths/~1plans~1petstore~1retrievePet~1{petId}"
+	if refItem["$ref"] != want {
+		t.Fatalf("catalog $ref = %v, want %q", refItem["$ref"], want)
+	}
+}
+
+func TestOpenAPIJSON_OmitsRequestBodyWhenAllLifted(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+properties:
+  petId:
+    type: string
+    x-source:
+      interface: rest
+      protocol: http
+      in: path
+`)
+	e := &Entry{
+		PlanID:  "petstore",
+		Version: "0.0.1",
+		Doc: &high.Arazzo{
+			Workflows: []*high.Workflow{{
+				WorkflowId: "getPet",
+				Inputs:     n,
+			}},
+		},
+	}
+	b, err := OpenAPIJSON(e, true, OpenAPIMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	item, _ := paths["/plans/petstore/getPet/{petId}"].(map[string]any)
+	post, _ := item["post"].(map[string]any)
+	if _, ok := post["requestBody"]; ok {
+		t.Fatalf("requestBody should be omitted: %s", b)
+	}
+}
+
+func TestOpenAPIJSON_InvalidSourceStaysInBody(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+properties:
+  badIn:
+    type: string
+    x-source:
+      interface: rest
+      protocol: http
+      in: body
+  badProto:
+    type: string
+    x-source:
+      interface: rest
+      protocol: grpc
+      in: header
+`)
+	e := &Entry{
+		PlanID:  "petstore",
+		Version: "0.0.1",
+		Doc: &high.Arazzo{
+			Workflows: []*high.Workflow{{
+				WorkflowId: "retrievePet",
+				Inputs:     n,
+			}},
+		},
+	}
+	b, err := OpenAPIJSON(e, true, OpenAPIMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	item, _ := paths["/plans/petstore/retrievePet"].(map[string]any)
+	post, _ := item["post"].(map[string]any)
+	if _, ok := post["parameters"]; ok {
+		t.Fatalf("invalid sources should not lift: %s", b)
+	}
+	rb, _ := post["requestBody"].(map[string]any)
+	content, _ := rb["content"].(map[string]any)
+	app, _ := content["application/json"].(map[string]any)
+	schema, _ := app["schema"].(map[string]any)
+	props, _ := schema["properties"].(map[string]any)
+	if _, ok := props["badIn"]; !ok {
+		t.Fatalf("badIn missing: %#v", schema)
+	}
+	if _, ok := props["badProto"]; !ok {
+		t.Fatalf("badProto missing: %#v", schema)
+	}
+}
+
 func TestOutputsToJSONSchema(t *testing.T) {
 	empty := outputsToJSONSchema(nil)
 	if empty["type"] != "object" {

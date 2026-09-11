@@ -92,6 +92,7 @@ var (
 // OpenAPIJSON builds an OAS 3.1 document describing POST execute paths.
 // versioned: paths include /plans/{planId}/{versionSegment}/{workflowId}
 // latest: paths use /plans/{planId}/{workflowId}
+// REST/HTTP x-source path parameters are appended as /{name}.
 func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 	title := e.PlanID
 	if e.Doc.Info != nil && e.Doc.Info.Title != "" {
@@ -103,20 +104,12 @@ func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 		if wf == nil || wf.WorkflowId == "" {
 			continue
 		}
-		schema, err := nodeToJSON(wf.Inputs)
+		schema, params, err := splitOpenAPIInputs(wf.Inputs)
 		if err != nil {
 			return nil, err
 		}
 		post := map[string]any{
 			"operationId": wf.WorkflowId,
-			"requestBody": map[string]any{
-				"required": true,
-				"content": map[string]any{
-					"application/json": map[string]any{
-						"schema": schema,
-					},
-				},
-			},
 			"responses": map[string]any{
 				"200": map[string]any{
 					"description": "workflow outputs",
@@ -128,13 +121,26 @@ func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 				},
 			},
 		}
+		if len(params) > 0 {
+			post["parameters"] = restParamsJSON(params)
+		}
+		if hasJSONRequestBody(schema, len(params) > 0) {
+			post["requestBody"] = map[string]any{
+				"required": true,
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": schema,
+					},
+				},
+			}
+		}
 		if s := consumerFacingText(wf.Summary); s != "" {
 			post["summary"] = s
 		}
 		if d := consumerFacingText(wf.Description); d != "" {
 			post["description"] = d
 		}
-		p := executePath(e.PlanID, wf.WorkflowId, e.VersionSegment(), latest)
+		p := executePath(e.PlanID, wf.WorkflowId, e.VersionSegment(), latest, pathParamNames(params))
 		paths[p] = map[string]any{"post": post}
 	}
 	doc := map[string]any{
@@ -238,7 +244,11 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool, meta OpenAPIMeta) ([]byte
 				if wf == nil || wf.WorkflowId == "" {
 					continue
 				}
-				p := executePath(e.PlanID, wf.WorkflowId, e.VersionSegment(), true)
+				_, params, err := splitOpenAPIInputs(wf.Inputs)
+				if err != nil {
+					return nil, err
+				}
+				p := executePath(e.PlanID, wf.WorkflowId, e.VersionSegment(), true, pathParamNames(params))
 				paths[p] = map[string]any{
 					"$ref": meta.planSpecRef(planID, p),
 				}
@@ -263,11 +273,17 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool, meta OpenAPIMeta) ([]byte
 	return json.Marshal(doc)
 }
 
-func executePath(planID, workflowID, versionSegment string, latest bool) string {
+func executePath(planID, workflowID, versionSegment string, latest bool, pathParams []string) string {
+	var p string
 	if latest {
-		return "/plans/" + planID + "/" + workflowID
+		p = "/plans/" + planID + "/" + workflowID
+	} else {
+		p = "/plans/" + planID + "/" + versionSegment + "/" + workflowID
 	}
-	return "/plans/" + planID + "/" + versionSegment + "/" + workflowID
+	for _, name := range pathParams {
+		p += "/{" + name + "}"
+	}
+	return p
 }
 
 func jsonPointerEscape(s string) string {
