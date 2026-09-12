@@ -23,7 +23,8 @@ const (
 // restHTTPParam is an OpenAPI parameter lifted from a workflow input
 // property whose x-source is interface=rest, protocol=http.
 type restHTTPParam struct {
-	Name     string
+	Key      string // Arazzo property name ($inputs.{Key})
+	Name     string // HTTP parameter name (x-source.name, or Key)
 	In       string
 	Required bool
 	Schema   map[string]any
@@ -210,7 +211,7 @@ func liftRESTParam(key string, prop any, required bool) (restHTTPParam, bool) {
 	if schema == nil {
 		schema = map[string]any{}
 	}
-	return restHTTPParam{Name: name, In: src.In, Required: required, Schema: schema}, true
+	return restHTTPParam{Key: key, Name: name, In: src.In, Required: required, Schema: schema}, true
 }
 
 type inputSource struct {
