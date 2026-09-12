@@ -117,12 +117,17 @@ Successful `run_*` returns structured content that **is** the workflow outputs o
 
 ### REST execute
 
-POST body is the workflow **inputs object** (no `workflowId` wrapper). `workflowId` is the path. Empty body is allowed (`{}` or no body).
+POST body is the workflow **inputs object** (no `workflowId` wrapper). `workflowId` is the path. Empty body is allowed (`{}` or no body). Properties with REST/HTTP `x-source` are **not** in the body: they come from the header, cookie, or query named by `x-source.name` (or the property key) and are copied onto `$inputs.{property}`. Sending those keys in the JSON body is **400** `unexpected fields in inputs`. A missing required REST/HTTP input is **400** `missing required input`. MCP `run_*` still sends those fields in `inputs` JSON.
 
 ```bash
 curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
   -H 'Content-Type: application/json' \
   -d '{"name":"demo"}'
+
+curl -s -X POST 'http://localhost:8080/api/plans/petstore/retrievePet?status=available' \
+  -H 'Content-Type: application/json' \
+  -H 'x-request-id: demo-1' \
+  -d '{"note":"ok"}'
 
 curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
   -H 'Content-Type: application/json' \
@@ -145,7 +150,8 @@ Generated OpenAPI `200` schemas use those output names as object properties.
 | --- | --- | --- |
 | 200 | (outputs body) | Workflow succeeded |
 | 400 | `invalid json body` | Malformed JSON |
-| 400 | `unexpected fields in inputs` | Extra keys, including `policyHints` / `secrets` |
+| 400 | `unexpected fields in inputs` | Extra keys, including `policyHints` / `secrets`, or a REST/HTTP `x-source` key in the JSON body |
+| 400 | `missing required input` | Required REST/HTTP `x-source` header, cookie, or query is absent |
 | 400 | `query is required` | Empty `query` |
 | 400 | `workflow failed` | Step/libopenapi failure (detail logged only) |
 | 401 | `unauthorized` | Preprocessor rejected the call |
@@ -169,7 +175,7 @@ Same job on both surfaces: the caller sends a simple natural-language question p
 { "query": "natural language", "data": { } }
 ```
 
-`data` is the input outline (optional object). Used as workflow inputs when the matcher does not set `Inputs`.
+`data` is the input outline (optional object). Used as workflow inputs when the matcher does not set `Inputs`. On REST `POST /plans/query`, header/cookie/query `x-source` bindings are applied after match, same as execute.
 
 | Matcher / catalog | REST | MCP |
 | --- | --- | --- |
@@ -211,7 +217,7 @@ inputs:
         name: x-request-id
 ```
 
-`interface` is `rest` or `mcp`. Only `interface: rest` with `protocol: http` (or omitted `protocol`) and `in` of `header`, `cookie`, or `query` is lifted onto the generated operation as an OpenAPI parameter. `name` is the parameter name (default: the property key). Execute paths stay `POST /plans/{planId}/{workflowId}` (and the versioned form); `in: path` is not supported and stays on the JSON body. `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute still reads a JSON body only — this mapping is generated OpenAPI today, not runtime binding. Extra caller fields, including reserved keys, are **400** `unexpected fields in inputs` on execute (REST, MCP `run_*`, and query after match). Workflow summary/description that name reserved keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped, closed schema. Catalog `POST /plans/query` `data` stays an open object; `Run` still closes it against the selected workflow. **200** schema is an object with a property per Arazzo `outputs` name.
+`interface` is `rest` or `mcp`. Only `interface: rest` with `protocol: http` (or omitted `protocol`) and `in` of `header`, `cookie`, or `query` is lifted onto the generated operation as an OpenAPI parameter. `name` is the parameter name (default: the property key). Execute paths stay `POST /plans/{planId}/{workflowId}` (and the versioned form); `in: path` is not supported and stays on the JSON body. `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute binds those parameters from the request onto `$inputs.{property}` before `Run`; `POST /plans/query` does the same after match. Extra caller fields, including reserved keys, are **400** `unexpected fields in inputs` on execute (REST, MCP `run_*`, and query after match). Workflow summary/description that name reserved keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped, closed schema. Catalog `POST /plans/query` `data` stays an open object; `Run` still closes it against the selected workflow. **200** schema is an object with a property per Arazzo `outputs` name.
 
 404 if the plan or version is missing. OpenAPI does **not** require an executor. Child documents describe execute routes, not `/plans/query` (that lives on the catalog index).
 
@@ -233,7 +239,7 @@ Optional inbound/outbound [OPA](https://www.openpolicyagent.org/) modules run on
 - **Inbound** (`data.plan.inbound`) runs before the workflow. Allow may set `$inputs.policyHints` (nested object plus dotted keys for Arazzo `$inputs.policyHints.*`). Deny is **403** `policy denied` (the OPA `reason` is logged, not returned). The workflow does not run.
 - **Outbound** (`data.plan.outbound`) runs after success. Deny is **403** `policy denied` and outputs are not returned. `redact` / `outputs` may reshape the response.
 
-REST and MCP execute errors use the same public strings (`plan not found`, `unauthorized`, `policy denied`, `unexpected fields in inputs`, `workflow failed`, `internal error`). The full error is logged only.
+REST and MCP execute errors use the same public strings (`plan not found`, `unauthorized`, `policy denied`, `unexpected fields in inputs`, `missing required input`, `workflow failed`, `internal error`). The full error is logged only.
 
 A missing bundle for that `(planId, version)` skips both phases. Load/compile errors fail closed (**500** `internal error`) unless a compiled bundle is still cached.
 
@@ -252,7 +258,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Optional [`PolicyLoader`](adapters.md#policyloader) for inbound/outbound OPA; keep `.rego` out of the Arazzo loader tree.
 - Implement [`Executor`](adapters.md#executor); nil is 501 on execute, OpenAPI still works.
 - Implement [`QueryMatcher`](adapters.md#querymatcher) to publish MCP `query` / `POST /plans/query`; nil omits both.
-- MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body **is** `inputs`.
+- MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body is remaining JSON `inputs`. REST/HTTP `x-source` fields come from header, cookie, or query.
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
 - Generated OpenAPI `paths` keys omit `Options.APIPrefix`. Catalog plan paths `$ref` `{APIPrefix}/openapi/{planId}`. `servers` is `PublicBaseURL` + `APIPrefix`.

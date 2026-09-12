@@ -68,6 +68,7 @@ func (c *PlansController) postQuery(w http.ResponseWriter, r *http.Request) {
 		c.writeRunError(w, err)
 		return
 	}
+	ctx = plans.WithRESTRequest(ctx, r)
 	res, err := c.runner.Query(ctx, body.Query, body.Data)
 	if err != nil {
 		c.writeRunError(w, err)
@@ -110,6 +111,7 @@ func (c *PlansController) execute(w http.ResponseWriter, r *http.Request, planID
 		c.writeRunError(w, err)
 		return
 	}
+	ctx = plans.WithRESTRequest(ctx, r)
 	res, err := c.runner.Run(ctx, planID, version, workflowID, inputs)
 	if err != nil {
 		c.writeRunError(w, err)

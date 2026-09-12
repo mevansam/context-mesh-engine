@@ -13,6 +13,9 @@ var (
 	// ErrUnexpectedInputs is returned when the caller sends fields that are
 	// not in the workflow's consumer input schema (including policyHints and secrets).
 	ErrUnexpectedInputs = errors.New("unexpected fields in inputs")
+	// ErrMissingInput is returned when a required REST/HTTP x-source input
+	// is absent from the header, cookie, or query.
+	ErrMissingInput = errors.New("missing required input")
 	// ErrInternal is a host/config failure that must not leak to the caller.
 	ErrInternal = errors.New("internal error")
 )
@@ -43,6 +46,8 @@ func ClassifyError(err error) PublicError {
 		return PublicError{Status: http.StatusBadRequest, Message: ErrEmptyQuery.Error()}
 	case errors.Is(err, ErrUnexpectedInputs):
 		return PublicError{Status: http.StatusBadRequest, Message: ErrUnexpectedInputs.Error()}
+	case errors.Is(err, ErrMissingInput):
+		return PublicError{Status: http.StatusBadRequest, Message: ErrMissingInput.Error()}
 	case errors.Is(err, ErrPolicyLoad), errors.Is(err, ErrInternal):
 		return PublicError{Status: http.StatusInternalServerError, Message: ErrInternal.Error()}
 	default:

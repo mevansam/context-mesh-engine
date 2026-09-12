@@ -84,6 +84,7 @@ context-mesh-engine/
 | `plans/policy.go` | Compile/eval OPA; TTL cache via `internal/ttlcache`; `input.auth` / `input.headers` |
 | `plans/request.go` | HTTP/MCP → `RequestSource` |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
+| `plans/bind.go` | REST/HTTP `x-source` merge onto `$inputs.{property}` |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const; strip/close consumer inputs; REST/HTTP `x-source` lift |
 | `plans/public.go` | `ClassifyError` / `LogAndPublic` |
 | `plans/openapi.go` | OAS 3.1 catalog + per-plan JSON; prefix-absolute `$ref`; `servers` from PublicBaseURL+APIPrefix |

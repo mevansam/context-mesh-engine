@@ -4,12 +4,34 @@
 package plans
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+type restRequestCtxKey struct{}
+
+// WithRESTRequest stores r so [Runner.Run] can bind REST/HTTP x-source inputs.
+func WithRESTRequest(ctx context.Context, r *http.Request) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if r == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, restRequestCtxKey{}, r)
+}
+
+func restRequestFrom(ctx context.Context) *http.Request {
+	if ctx == nil {
+		return nil
+	}
+	r, _ := ctx.Value(restRequestCtxKey{}).(*http.Request)
+	return r
+}
 
 // RequestSourceFromHTTP builds a preprocessor source from a REST request.
 func RequestSourceFromHTTP(r *http.Request) arazzo.RequestSource {

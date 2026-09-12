@@ -110,6 +110,14 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		return nil, fmt.Errorf("%w: workflow %s", ErrNotFound, workflowID)
 	}
 
+	if r := restRequestFrom(ctx); r != nil {
+		var err error
+		inputs, err = bindRESTInputs(e, workflowID, inputs, r)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if err := rejectUnexpectedInputs(e, workflowID, inputs); err != nil {
 		return nil, err
 	}
@@ -245,14 +253,7 @@ func rejectUnexpectedInputs(e *Entry, workflowID string, inputs map[string]any) 
 	if e == nil || e.Doc == nil {
 		return nil
 	}
-	var wfInputs *yaml.Node
-	for _, wf := range e.Doc.Workflows {
-		if wf != nil && wf.WorkflowId == workflowID {
-			wfInputs = wf.Inputs
-			break
-		}
-	}
-	schema, err := nodeToJSON(wfInputs)
+	schema, err := nodeToJSON(workflowInputs(e, workflowID))
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInternal, err)
 	}

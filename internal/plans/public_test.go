@@ -23,6 +23,7 @@ func TestClassifyError(t *testing.T) {
 		{fmt.Errorf("%w: inbound compile", ErrPolicyLoad), http.StatusInternalServerError, "internal error"},
 		{fmt.Errorf("%w: secret hmac", ErrInternal), http.StatusInternalServerError, "internal error"},
 		{ErrUnexpectedInputs, http.StatusBadRequest, "unexpected fields in inputs"},
+		{ErrMissingInput, http.StatusBadRequest, "missing required input"},
 		{ErrEmptyQuery, http.StatusBadRequest, "query is required"},
 		{errors.New("step getPet failed: $inputs.policyHints.petStatus"), http.StatusBadRequest, "workflow failed"},
 	}
