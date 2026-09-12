@@ -137,6 +137,11 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		if err != nil {
 			return nil, err
 		}
+		if compiled.sharedInbound != nil {
+			if err := evalAllowOnly(ctx, compiled.sharedInbound, "inbound", planID, version, workflowID, runInputs, nil); err != nil {
+				return nil, err
+			}
+		}
 		if compiled.inbound != nil {
 			runInputs, err = applyInbound(ctx, compiled.inbound, planID, version, workflowID, runInputs)
 			if err != nil {
@@ -160,6 +165,11 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		return nil, fmt.Errorf("workflow %s failed", workflowID)
 	}
 	out := nativeOutputs(res.Outputs)
+	if compiled.sharedOutbound != nil {
+		if err := evalAllowOnly(ctx, compiled.sharedOutbound, "outbound", planID, version, workflowID, runInputs, out); err != nil {
+			return nil, err
+		}
+	}
 	if compiled.outbound != nil {
 		out, err = applyOutbound(ctx, compiled.outbound, planID, version, workflowID, runInputs, out)
 		if err != nil {

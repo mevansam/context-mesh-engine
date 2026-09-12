@@ -131,6 +131,8 @@ type Options struct {
 	// PolicyLoader returns optional OPA inbound/outbound modules for a
 	// plan version. Lookups run on execute, not during [New]. Nil skips
 	// all policy checks. Do not load .rego files through [Loader].
+	// If the value also implements [arazzo.SharedPolicySource], org-wide
+	// modules are loaded separately and interned.
 	PolicyLoader arazzo.PolicyLoader
 
 	// PolicyCacheTTL is how long a compiled policy bundle is reused.

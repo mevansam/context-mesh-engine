@@ -435,13 +435,16 @@ Packages **must** be `plan.inbound` and `plan.outbound`. The engine evaluates `d
 
 ### Layout and wiring
 
-`FilePolicyLoader` reads `{Dir}/{planId}/{version}/`:
+`FilePolicyLoader` reads `{Dir}/{planId}/{version}/` and `{Dir}/_shared/`:
 
 ```text
 mcp-server/policies/
+  _shared/
+    lib/
+      enduser.rego          # package lib.enduser
   petstore/
     0.0.1/
-      inbound.rego
+      inbound.rego          # import data.lib.enduser
       outbound.rego
 ```
 
@@ -500,7 +503,7 @@ Outbound adds `"outputs": { ... }` (the Arazzo workflow outputs map) and sees `i
 
 ### Inbound (`inbound.rego`)
 
-File: [`inbound.rego`](mcp-server/policies/petstore/0.0.1/inbound.rego).
+File: [`inbound.rego`](mcp-server/policies/petstore/0.0.1/inbound.rego). End-user claims are read via [`enduser.rego`](mcp-server/policies/_shared/lib/enduser.rego) (`package lib.enduser`).
 
 1. Read `input.auth.endUser` (`username`, `userStatus`). Missing user JWT is **401** before OPA (preprocessor). Empty username in claims is deny.
 2. `user_status` is `to_number` of that claim (default 1).
@@ -611,7 +614,7 @@ type PolicyLoader interface {
 }
 ```
 
-`PolicyRequest` is `{PlanID, Version}`. Nil `*PolicyBundle` means no policy for that key (not an error). Implement this if policies live in a DB or sidecar; `FilePolicyLoader` is the filesystem default.
+`PolicyRequest` is `{PlanID, Version}`. Nil `*PolicyBundle` means no plan policy for that key (not an error). Implement this if policies live in a DB or sidecar; `FilePolicyLoader` is the filesystem default. Org-wide modules use optional [`SharedPolicySource`](../../docs/users/adapters.md#sharedpolicysource) (`LoadShared`) on the same value — do not return them from `Load`.
 
 Rego decision objects:
 
@@ -769,7 +772,7 @@ That is the pattern for any non-OpenAPI backend: publish a small OpenAPI documen
 2. Put OpenAPI (and adapter OpenAPI) beside the plan; use relative `sourceDescriptions` URLs.
 3. Point `FileLoader` at the **plans directory only**.
 4. Implement `Executor`: map `operationId` / `operationPath` to your origins; set `StatusCode` and JSON `Body`. Mint a **new** downstream JWT from `SecretsProvider` (do not forward the caller’s bearer).
-5. Optional: `{policies}/{planId}/{version}/inbound.rego` and `outbound.rego`; pass `FilePolicyLoader{Dir, Data}`. Inbound reads `input.auth` from `RequestPreprocessor`, not `http.send`.
+5. Optional: `{policies}/{planId}/{version}/inbound.rego` and `outbound.rego`; optional `{policies}/_shared/lib/*.rego` and `_shared/inbound.rego`; pass `FilePolicyLoader{Dir, Data}`. Inbound reads `input.auth` from `RequestPreprocessor`, not `http.send`.
 6. `engine.New` + `ListenAndServe` (or `Handler()` on your `http.Server`). Wire `MCPHandlerWrap` / `RESTHandlerWrap` for the client JWT; preprocessor for extra `x-*` JWTs.
 7. Default REST; `-dual` when an MCP client needs `/mcp`.
 8. Leave `QueryMatcher` nil until you have a real matcher; agents call `run_*` or REST execute.

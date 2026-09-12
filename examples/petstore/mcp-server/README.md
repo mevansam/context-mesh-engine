@@ -15,7 +15,7 @@ Field-by-field notes: comments on `hostOptions` in `main.go`. How to run all pro
 
 Plan: `plans/petstore.arazzo.yaml` (`x-planId: petstore`, version `0.0.1`). Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. First step is `getUserByName` (`$inputs.policyHints.username` from the end-user JWT).
 
-Inbound (`policies/petstore/0.0.1/inbound.rego`) reads `input.auth.endUser`. It does **not** `http.send`. `userStatus` **1** may only `retrievePet`; **2** may also purchase/check order.
+Inbound (`policies/petstore/0.0.1/inbound.rego`) imports `data.lib.enduser` from `policies/_shared/lib/enduser.rego`. It reads `input.auth.endUser`. It does **not** `http.send`. `userStatus` **1** may only `retrievePet`; **2** may also purchase/check order.
 
 Tokens: [`../auth-server`](../auth-server/). Share `-jwt-secret`. Petstore: `-petstore local` (default) or `-hosted`. Override `-petstore-url`.
 

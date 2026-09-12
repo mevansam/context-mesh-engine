@@ -131,7 +131,7 @@ Names stay on `ToolDoc.Name` / `QueryName`. They are never supplied by `ToolHelp
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `PolicyLoader` | `arazzo.PolicyLoader` | `nil` | Optional OPA inbound/outbound modules per plan version. Looked up on execute, not during `New`. Nil skips all policy checks. See [`PolicyLoader`](adapters.md#policyloader). Do not load `.rego` through `ArazzoLoaders`. |
+| `PolicyLoader` | `arazzo.PolicyLoader` | `nil` | Optional OPA inbound/outbound modules per plan version. Looked up on execute, not during `New`. Nil skips all policy checks. If the value also implements [`SharedPolicySource`](adapters.md#sharedpolicysource), org-wide modules are loaded separately. See [`PolicyLoader`](adapters.md#policyloader). Do not load `.rego` through `ArazzoLoaders`. |
 | `PolicyCacheTTL` | `time.Duration` | `5m` (`arazzo.DefaultPolicyCacheTTL`) | How long a compiled bundle is reused. Zero in `Options` means that default. A **negative** duration disables caching (every `Run` loads and compiles). |
 | `RequestPreprocessor` | `arazzo.RequestPreprocessor` | `nil` | Builds OPA `input.headers` / `input.auth` from HTTP or MCP headers (end-user JWTs, remote claim enrichment). Nil skips. |
 | `SecretsProvider` | `arazzo.SecretsProvider` | `nil` | Named secrets for the host Executor (downstream JWT) and optional `$inputs.secrets.*`. |

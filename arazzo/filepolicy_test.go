@@ -35,6 +35,9 @@ func TestFilePolicyLoader_InboundOutboundAndData(t *testing.T) {
 	if !b.HasInbound() || !b.HasOutbound() {
 		t.Fatalf("bundle = %#v", b)
 	}
+	if b.Revision == "" {
+		t.Fatal("expected revision")
+	}
 	var data map[string]any
 	if err := json.Unmarshal(b.Data, &data); err != nil {
 		t.Fatal(err)
@@ -87,9 +90,65 @@ func TestFilePolicyLoader_RejectsUnsafeSegments(t *testing.T) {
 		{PlanID: "p/q", Version: "1"},
 		{PlanID: "p", Version: ".."},
 		{PlanID: "", Version: "1"},
+		{PlanID: "_shared", Version: "1"},
 	} {
 		if _, err := l.Load(context.Background(), req); err == nil {
 			t.Fatalf("expected error for %+v", req)
 		}
+	}
+}
+
+func TestFilePolicyLoader_LoadShared(t *testing.T) {
+	root := t.TempDir()
+	lib := filepath.Join(root, "_shared", "lib", "rbac")
+	if err := os.MkdirAll(lib, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "_shared", "inbound.rego"), []byte("package shared.inbound\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lib, "roles.rego"), []byte("package lib.rbac\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := NewFilePolicyLoader(root).LoadShared(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.HasInbound() || s.HasOutbound() || !s.HasLibraries() {
+		t.Fatalf("shared = %#v", s)
+	}
+	if s.Revision == "" {
+		t.Fatal("expected revision")
+	}
+	got := string(s.Libraries["lib/rbac/roles.rego"])
+	if got != "package lib.rbac" {
+		t.Fatalf("library = %q", got)
+	}
+}
+
+func TestFilePolicyLoader_LoadSharedMissingIsNil(t *testing.T) {
+	s, err := NewFilePolicyLoader(t.TempDir()).LoadShared(context.Background())
+	if err != nil || s != nil {
+		t.Fatalf("got %#v %v", s, err)
+	}
+}
+
+func TestFilePolicyLoader_PetstoreSharedLib(t *testing.T) {
+	dir := filepath.Join("..", "examples", "petstore", "mcp-server", "policies")
+	l := NewFilePolicyLoader(dir)
+	s, err := l.LoadShared(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s == nil || !s.HasLibraries() || string(s.Libraries["lib/enduser.rego"]) == "" {
+		t.Fatalf("shared = %#v", s)
+	}
+	b, err := l.Load(context.Background(), PolicyRequest{PlanID: "petstore", Version: "0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.HasInbound() || !b.HasOutbound() {
+		t.Fatalf("bundle = %#v", b)
 	}
 }

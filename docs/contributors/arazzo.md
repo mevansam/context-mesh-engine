@@ -9,18 +9,18 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `arazzo/loader.go` | `Loader`, `Source`, `Executor` aliases |
 | `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
 | `arazzo/fileloader.go` | Recursive `.yaml/.yml/.json`; `BaseURL` **must** end with `/` |
-| `arazzo/policy.go` | `PolicyLoader`, `PolicyBundle`, `PolicyHintsKey` |
+| `arazzo/policy.go` | `PolicyLoader`, `SharedPolicySource`, `PolicyBundle`, `SharedPolicy`, `PolicyHintsKey` |
 | `arazzo/inputs.go` | `ReservedInputKey`, `LeaksReservedInputs` (omit from generated schemas/docs) |
 | `arazzo/request.go` | `RequestPreprocessor`, `PolicyRequestContext`, `RequestSource` |
 | `arazzo/secrets.go` | `SecretsProvider`, `MapSecrets`, `SecretInputs` flattening keys |
-| `arazzo/filepolicy.go` | `{planId}/{version}/inbound.rego` + `outbound.rego` |
+| `arazzo/filepolicy.go` | `{planId}/{version}/inbound.rego` + `outbound.rego`; `{Dir}/_shared` via `LoadShared` |
 | `arazzo/tooldoc.go` | Recipes vs `ToolDocContext`; `SanitizeToolName` |
 | `arazzo/toolhelp.go` | `ToolHelpLookup`; overlay; default lookup |
 | `internal/plans/help.go` | TTL cache (`internal/ttlcache`); MCP `tools/list` middleware; REST overlay |
 | `internal/ttlcache/` | Generic singleflight TTL cache |
 | `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest, `View()` |
 | `internal/plans/runner.go` | `NewEngine` per `Run`; closed inputs; inbound then workflow then outbound |
-| `internal/plans/policy.go` | Compile `data.plan.inbound` / `data.plan.outbound`; cache |
+| `internal/plans/policy.go` | Compile shared + plan inbound/outbound; libraries; cache |
 | `internal/plans/redact.go` | RFC 6901 output redaction |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const; strip reserved input keys; close consumer objects |
 | `internal/plans/public.go` | `ClassifyError` / `LogAndPublic` for REST and MCP |
@@ -62,13 +62,13 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 
 1. Catalog `Get(planID, rawVersion)` — not found → `ErrNotFound`
 2. Workflow id must exist on that entry — else `ErrNotFound`
-3. If `PolicyCache` is set, load/compile the bundle for `(planId, version)` (TTL cache, on demand). Load error without a cached module bundle → `ErrPolicyLoad`.
-4. If inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On allow, copy inputs, drop caller `policyHints` and `policyHints.*` keys, set `$inputs.policyHints` from `hints` when present, and flatten leaves to dotted keys (`policyHints.petStatus`) so stock libopenapi `$inputs` lookup (single key, not nested walk) can resolve `$inputs.policyHints.petStatus`. `input.headers` / `input.auth` come from `PolicyRequestContext` (preprocessor), not from Rego `http.send`.
+3. If `PolicyCache` is set, load/compile shared modules (if `PolicyLoader` implements `SharedPolicySource`) then the bundle for `(planId, version)` (TTL cache, on demand). Shared libraries are parsed once and compiled into each plan. Load error without a cached bundle → `ErrPolicyLoad`.
+4. If shared inbound compiled: eval `data.shared.inbound` (`allow` only; hints ignored). Then if plan inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On plan allow, copy inputs, drop caller `policyHints` and `policyHints.*` keys, set `$inputs.policyHints` from plan `hints` when present, and flatten leaves to dotted keys (`policyHints.petStatus`) so stock libopenapi `$inputs` lookup (single key, not nested walk) can resolve `$inputs.policyHints.petStatus`. `input.headers` / `input.auth` come from `PolicyRequestContext` (preprocessor), not from Rego `http.send`.
 5. If `SecretsProvider` is set, strip caller `secrets` / `secrets.*`, then flatten `Options.SecretInputs` names onto `$inputs.secrets.<name>`.
 6. Nil executor → `ErrNoExecutor` (`executor not configured`)
 7. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
 8. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.
-9. If outbound compiled: eval `data.plan.outbound` on `{inputs, outputs}`. Deny → `ErrPolicyDenied` (no outputs returned). Else replace `outputs` or apply `redact`/`mask`.
+9. If shared outbound compiled: eval `data.shared.outbound` (`allow` only). Then if plan outbound compiled: eval `data.plan.outbound` on `{inputs, outputs}`. Deny → `ErrPolicyDenied` (no outputs returned). Else replace `outputs` or apply `redact`/`mask`.
 
 Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurrency-safe). Cache `*high.Arazzo` and `[]*ResolvedSource` on `Entry` only. Do **not** parse `.rego` in `FileLoader` / `catalog.addSource`.
 
@@ -184,9 +184,9 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `arazzo/toolhelp_test.go` | Default lookup; REST falls back to Description; distinct RESTDescription; query overlay |
 | `internal/plans/help_test.go` | Cache TTL / always-refresh; stale-on-error; singleflight; REST surface; middleware skips non-list |
 | `internal/ttlcache/cache_test.go` | Generic TTL / stale-on-error / singleflight |
-| `internal/plans/policy_test.go` | Inbound deny skips executor; outbound deny hides outputs; redact/replace; fail closed; `input.auth` / flatten hints |
+| `internal/plans/policy_test.go` | Inbound deny skips executor; outbound deny hides outputs; redact/replace; fail closed; `input.auth` / flatten hints; shared AND; libraries |
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
-| `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments |
+| `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments; LoadShared |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
 | `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs; `x-source` REST/HTTP lift |
 | `internal/plans/bind_test.go` | REST/HTTP header/cookie/query merge; body conflict; missing required; MCP JSON still accepted |

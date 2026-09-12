@@ -17,7 +17,7 @@ context-mesh-engine/
     petstore/                    Petstore e2e: mcp-server + async-order-server
   engine/                        Public facade: New, Handler, ListenAndServe
   api/                           Public facade: Controller, JSON helpers, HealthResponse
-  arazzo/                        Public Loader, FileLoader, PolicyLoader, Executor, QueryMatcher, ToolDoc, ToolHelpLookup
+  arazzo/                        Public Loader, FileLoader, PolicyLoader, SharedPolicySource, Executor, QueryMatcher, ToolDoc, ToolHelpLookup
   testdata/arazzo/
     plans/                       Arazzo fixtures (FileLoader root; not testdata/arazzo/)
     sources/openapi.yaml         OpenAPI referenced as ../sources/openapi.yaml
@@ -60,10 +60,10 @@ context-mesh-engine/
 | `api/health.go` | `HealthResponse` |
 | `arazzo/loader.go` | `Loader`, `Source`, `Executor` / request / response aliases |
 | `arazzo/fileloader.go` | Recursive filesystem loader; `BaseURL` trailing slash |
-| `arazzo/policy.go` | `PolicyLoader`, `PolicyBundle`, `PolicyHintsKey` |
+| `arazzo/policy.go` | `PolicyLoader`, `SharedPolicySource`, `PolicyBundle`, `SharedPolicy`, `PolicyHintsKey` |
 | `arazzo/request.go` | `RequestPreprocessor`, `PolicyRequestContext` |
 | `arazzo/secrets.go` | `SecretsProvider`, `MapSecrets` |
-| `arazzo/filepolicy.go` | Filesystem policy layout `{planId}/{version}/*.rego` |
+| `arazzo/filepolicy.go` | Filesystem policy layout `{planId}/{version}/*.rego` and `{Dir}/_shared` |
 | `arazzo/tooldoc.go` | Templates + `ToolDocContext` |
 | `arazzo/toolhelp.go` | `ToolHelpLookup` + overlay |
 | `arazzo/matcher.go` | `QueryMatcher`, `PlanCatalog`, `QueryMatch` |
@@ -81,7 +81,7 @@ context-mesh-engine/
 | `api/v1/plans.go` | `GET /openapi` (always), `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; sanitized errors |
 | `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
 | `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; secrets inject; preprocessor enrich; closed inputs |
-| `plans/policy.go` | Compile/eval OPA; TTL cache via `internal/ttlcache`; `input.auth` / `input.headers` |
+| `plans/policy.go` | Compile/eval OPA (shared AND plan, libraries); TTL cache via `internal/ttlcache`; `input.auth` / `input.headers` |
 | `plans/request.go` | HTTP/MCP → `RequestSource` |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
 | `plans/bind.go` | REST/HTTP `x-source` merge onto `$inputs.{property}` |

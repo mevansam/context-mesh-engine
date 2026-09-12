@@ -6,17 +6,32 @@ package arazzo
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-// FilePolicyLoader loads OPA modules from
-// {Dir}/{planId}/{version}/inbound.rego and outbound.rego.
+// sharedPolicyDirName is the FilePolicyLoader directory for [SharedPolicySource].
+// It is not a planId; [PolicyLoader.Load] rejects it.
+const sharedPolicyDirName = "_shared"
+
+var (
+	_ PolicyLoader       = (*FilePolicyLoader)(nil)
+	_ SharedPolicySource = (*FilePolicyLoader)(nil)
+)
+
+// FilePolicyLoader loads OPA modules from a directory tree.
+// Plan modules: {Dir}/{planId}/{version}/inbound.rego and outbound.rego.
 // Optional data.json in that directory is merged with [FilePolicyLoader.Data]
 // (struct fields override file keys) and returned as [PolicyBundle.Data].
+// Shared modules: {Dir}/_shared/inbound.rego, outbound.rego, and
+// {Dir}/_shared/lib/**/*.rego (libraries).
 type FilePolicyLoader struct {
 	Dir  string
 	Data map[string]any
@@ -29,10 +44,14 @@ func NewFilePolicyLoader(dir string) *FilePolicyLoader {
 
 // Load implements [PolicyLoader]. Missing directories or modules are not
 // an error: a nil bundle means no policy. Invalid planId/version (path
-// separators or "..") is an error.
+// separators or "..") is an error. planId "_shared" is reserved for
+// [FilePolicyLoader.LoadShared].
 func (l *FilePolicyLoader) Load(ctx context.Context, req PolicyRequest) (*PolicyBundle, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if req.PlanID == sharedPolicyDirName {
+		return nil, fmt.Errorf("policy planId %q is reserved by FilePolicyLoader", sharedPolicyDirName)
 	}
 	dir, err := policyDir(l.Dir, req.PlanID, req.Version)
 	if err != nil {
@@ -61,7 +80,127 @@ func (l *FilePolicyLoader) Load(ctx context.Context, req PolicyRequest) (*Policy
 	if err != nil {
 		return nil, err
 	}
-	return &PolicyBundle{Inbound: inbound, Outbound: outbound, Data: data}, nil
+	return &PolicyBundle{
+		Inbound:  inbound,
+		Outbound: outbound,
+		Data:     data,
+		Revision: contentRevision(map[string][]byte{
+			"inbound.rego":  inbound,
+			"outbound.rego": outbound,
+			"data.json":     data,
+		}),
+	}, nil
+}
+
+// LoadShared implements [SharedPolicySource]. Missing _shared is not an
+// error: a nil result means no shared modules.
+func (l *FilePolicyLoader) LoadShared(ctx context.Context) (*SharedPolicy, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	root, err := filepath.Abs(l.Dir)
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(root, sharedPolicyDirName)
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("policy path escapes root")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	inbound, err := readOptional(filepath.Join(dir, "inbound.rego"))
+	if err != nil {
+		return nil, err
+	}
+	outbound, err := readOptional(filepath.Join(dir, "outbound.rego"))
+	if err != nil {
+		return nil, err
+	}
+	libs, err := readSharedLibraries(dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(inbound) == 0 && len(outbound) == 0 && len(libs) == 0 {
+		return nil, nil
+	}
+
+	named := map[string][]byte{
+		"inbound.rego":  inbound,
+		"outbound.rego": outbound,
+	}
+	for k, v := range libs {
+		named[k] = v
+	}
+	return &SharedPolicy{
+		Inbound:   inbound,
+		Outbound:  outbound,
+		Libraries: libs,
+		Revision:  contentRevision(named),
+	}, nil
+}
+
+func readSharedLibraries(sharedDir string) (map[string][]byte, error) {
+	libDir := filepath.Join(sharedDir, "lib")
+	if _, err := os.Stat(libDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := map[string][]byte{}
+	err := filepath.WalkDir(libDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.ToLower(filepath.Ext(path)) != ".rego" {
+			return nil
+		}
+		rel, err := filepath.Rel(libDir, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("policy path escapes root")
+		}
+		src, err := readOptional(path)
+		if err != nil {
+			return err
+		}
+		if len(src) == 0 {
+			return nil
+		}
+		out["lib/"+filepath.ToSlash(rel)] = src
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func contentRevision(named map[string][]byte) string {
+	keys := make([]string, 0, len(named))
+	for k := range named {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	for _, k := range keys {
+		_, _ = h.Write([]byte(k))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write(named[k])
+		_, _ = h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func policyDir(root, planID, version string) (string, error) {

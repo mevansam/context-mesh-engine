@@ -7,7 +7,7 @@ The engine is a host. You supply the pieces that talk to **your** catalogs, back
 | [`Loader`](#loader) | `ArazzoLoaders` | For plans | Produce Arazzo document bytes |
 | [`Executor`](#executor) | `ArazzoExecutor` | For execute | Perform one backend HTTP call per workflow step |
 | [`QueryMatcher`](#querymatcher) | `QueryMatcher` | For `query` | Select a plan from a (usually global) registry |
-| [`PolicyLoader`](#policyloader) | `PolicyLoader` | No | Optional OPA inbound/outbound modules per plan version |
+| [`PolicyLoader`](#policyloader) | `PolicyLoader` | No | Optional OPA inbound/outbound modules per plan version; optional org-wide [SharedPolicySource](#sharedpolicysource) |
 | [`RequestPreprocessor`](#requestpreprocessor) | `RequestPreprocessor` | No | Headers + extra JWTs → OPA `input.headers` / `input.auth` |
 | [`SecretsProvider`](#secretsprovider) | `SecretsProvider` | No | Named secrets for Executor JWT minting and optional `$inputs.secrets.*` |
 | [`ToolHelpLookup`](#toolhelplookup) | `ToolHelpLookup` | No | Per-plan / query title and description templates at list time |
@@ -358,12 +358,37 @@ type PolicyBundle struct {
     Inbound  []byte // package plan.inbound; empty = no inbound
     Outbound []byte // package plan.outbound; empty = no outbound
     Data     []byte // optional JSON object for OPA document data
+    Revision string // opaque etag / hash; empty = TTL only
 }
 ```
 
-Nil `*PolicyBundle` → skip both phases for that key. Nil `Options.PolicyLoader` → skip policy for every plan.
+Nil `*PolicyBundle` → skip **plan** inbound/outbound for that key. Nil `Options.PolicyLoader` → skip policy for every plan. `Load` is plan-scoped only: tenant, DB handles, and catalog URLs belong on the loader value.
 
 Do **not** return `.rego` files from [`Loader`](#loader). Keep Arazzo specs and policy modules in separate trees.
+
+A control-plane database loader implements this interface with `SELECT … WHERE plan_id=? AND version=?`. It does not ship org-wide blobs on every row; see [SharedPolicySource](#sharedpolicysource).
+
+### SharedPolicySource
+
+Optional interface on the **same** `Options.PolicyLoader` value. There is no separate Options field. Loaders with only per-plan rows omit it.
+
+```go
+type SharedPolicySource interface {
+    LoadShared(ctx context.Context) (*SharedPolicy, error)
+}
+
+type SharedPolicy struct {
+    Inbound   []byte            // package shared.inbound; empty = skip shared inbound
+    Outbound  []byte            // package shared.outbound
+    Libraries map[string][]byte // extra modules; keys are OPA module names
+    Revision  string            // opaque etag / hash
+}
+```
+
+Nil `*SharedPolicy` → no org-wide modules. The engine loads this independently of `Load` and interns it:
+
+- Shared inbound/outbound are compiled **once**. `allow` is **AND**ed with the plan decision. Shared `hints` / `redact` / `outputs` / `mask` are ignored.
+- `Libraries` are parsed once and compiled into the shared queries and each plan query (`import data.lib.*`). Keys must not be `inbound.rego` or `outbound.rego`.
 
 ### Built-in filesystem loader
 
@@ -374,13 +399,27 @@ Do **not** return `.rego` files from [`Loader`](#loader). Keep Arazzo specs and 
 }
 ```
 
-Layout: `{Dir}/{planId}/{version}/inbound.rego` and/or `outbound.rego`, optional `data.json`. `Data` overlay keys win over `data.json`. `planId` and `version` must be single path segments (no `..` or slashes). Missing directory or modules → nil bundle, not an error.
+Layout:
 
-Successful compiles are cached for `Options.PolicyCacheTTL` (default **5m**). Zero in `Options` means that default. A **negative** duration disables caching. Load/compile errors fail the request (**500**) unless a previously compiled bundle with modules is still in cache. Deny is **403** and does not return workflow outputs.
+```text
+{Dir}/
+  _shared/
+    inbound.rego      # optional, package shared.inbound
+    outbound.rego     # optional, package shared.outbound
+    lib/**/*.rego     # optional libraries (module name lib/<rel>)
+  {planId}/{version}/
+    inbound.rego
+    outbound.rego
+    data.json
+```
+
+`Data` overlay keys win over `data.json`. `planId` and `version` must be single path segments (no `..` or slashes). `planId` `_shared` is reserved by this adapter. Missing directory or modules → nil bundle / nil shared, not an error.
+
+Successful compiles are cached for `Options.PolicyCacheTTL` (default **5m**). Zero in `Options` means that default. A **negative** duration disables caching. Load/compile errors fail the request (**500**) unless a previously compiled bundle is still in cache. Deny is **403** and does not return workflow outputs.
 
 ### Inbound and outbound
 
-Query `data.plan.inbound` before the workflow runs, and `data.plan.outbound` after success. Decisions are objects:
+Query `data.shared.inbound` (if present) then `data.plan.inbound` before the workflow, and `data.shared.outbound` then `data.plan.outbound` after success. Plan decisions are objects:
 
 ```json
 { "allow": true, "hints": { "petStatus": "available" } }
@@ -393,7 +432,7 @@ Query `data.plan.inbound` before the workflow runs, and `data.plan.outbound` aft
 - Default **deny**: missing or non-boolean `allow` is deny. Use `default allow := false` in Rego.
 - On inbound allow, `hints` (if present) is written to workflow input `$inputs.policyHints` (nested object). Leaves are also copied as dotted keys (`policyHints.petStatus`) because Arazzo `$inputs.a.b` is a single input name in libopenapi, not a nested path. Caller-supplied `policyHints` and `policyHints.*` keys are discarded. Generated OpenAPI and MCP `inputSchema` omit `policyHints` and `secrets`; declare them in the Arazzo file for execution only.
 - If [`RequestPreprocessor`](#requestpreprocessor) ran, OPA also receives `input.headers` (allowlisted) and `input.auth` (client + end-user claims). These are not workflow `$inputs`.
-- If there is no inbound module, `policyHints` is not injected.
+- If there is no **plan** inbound module, `policyHints` is not injected (shared inbound cannot set hints).
 - Outbound deny → **403**; outputs are not returned (the workflow has already run).
 - Outbound `outputs` object, if present, **replaces** workflow outputs and ignores `redact`.
 - Otherwise `redact` is RFC 6901 JSON Pointers into outputs. Missing pointers are skipped; malformed pointers deny. Default `mask` is JSON `null`.

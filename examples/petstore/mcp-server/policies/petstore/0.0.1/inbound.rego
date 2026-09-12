@@ -1,12 +1,12 @@
 package plan.inbound
 
 import rego.v1
+import data.lib.enduser
 
 default allow := false
 
-end_user := object.get(input.auth, "endUser", {})
-user_status := to_number(object.get(end_user, "userStatus", 1))
-username := object.get(end_user, "username", "")
+username := data.lib.enduser.username
+user_status := data.lib.enduser.user_status
 
 browse := {"retrievePet"}
 buy := {"retrievePet", "purchasePet", "checkOrderStatus"}

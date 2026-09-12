@@ -236,8 +236,8 @@ Help lookups run on `tools/list` / `GET /tools`, not at `New`. Lookup errors do 
 
 Optional inbound/outbound [OPA](https://www.openpolicyagent.org/) modules run on every execute path (`run_*`, REST, `query`). Wire [`PolicyLoader`](adapters.md#policyloader); do not put `.rego` files on `ArazzoLoaders`.
 
-- **Inbound** (`data.plan.inbound`) runs before the workflow. Allow may set `$inputs.policyHints` (nested object plus dotted keys for Arazzo `$inputs.policyHints.*`). Deny is **403** `policy denied` (the OPA `reason` is logged, not returned). The workflow does not run.
-- **Outbound** (`data.plan.outbound`) runs after success. Deny is **403** `policy denied` and outputs are not returned. `redact` / `outputs` may reshape the response.
+- **Inbound** (`data.shared.inbound` if the loader implements [`SharedPolicySource`](adapters.md#sharedpolicysource), then `data.plan.inbound`) runs before the workflow. Shared `allow` is ANDed with the plan; only the plan may set `$inputs.policyHints`. Deny is **403** `policy denied` (the OPA `reason` is logged, not returned). The workflow does not run.
+- **Outbound** (`data.shared.outbound` then `data.plan.outbound`) runs after success. Deny is **403** `policy denied` and outputs are not returned. Plan `redact` / `outputs` may reshape the response.
 
 REST and MCP execute errors use the same public strings (`plan not found`, `unauthorized`, `policy denied`, `unexpected fields in inputs`, `missing required input`, `workflow failed`, `internal error`). The full error is logged only.
 

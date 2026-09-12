@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,6 +37,21 @@ func (s *staticPolicyLoader) Load(_ context.Context, req arazzo.PolicyRequest) (
 		return nil, s.err
 	}
 	return s.bundle, nil
+}
+
+type sharedStaticLoader struct {
+	staticPolicyLoader
+	shared    *arazzo.SharedPolicy
+	sharedErr error
+	sharedN   atomic.Int32
+}
+
+func (s *sharedStaticLoader) LoadShared(context.Context) (*arazzo.SharedPolicy, error) {
+	s.sharedN.Add(1)
+	if s.sharedErr != nil {
+		return nil, s.sharedErr
+	}
+	return s.shared, nil
 }
 
 func testPolicyCache(t *testing.T, l arazzo.PolicyLoader, ttl time.Duration) *PolicyCache {
@@ -442,5 +458,171 @@ func TestInjectSecrets_StripsCallerAndFlattens(t *testing.T) {
 	bag, ok := out[arazzo.SecretsKey].(map[string]any)
 	if !ok || bag["hmac"] != "k" {
 		t.Fatalf("bag = %#v", out[arazzo.SecretsKey])
+	}
+}
+
+func TestPolicy_SharedInboundDenySkipsExecutor(t *testing.T) {
+	c := loadPetstore(t)
+	exec := &stubExec{}
+	r := NewRunner(c, exec, nil)
+	r.SetPolicy(testPolicyCache(t, &sharedStaticLoader{
+		staticPolicyLoader: staticPolicyLoader{bundle: &arazzo.PolicyBundle{Inbound: []byte(`
+package plan.inbound
+import rego.v1
+default allow := false
+allow if true
+`)}},
+		shared: &arazzo.SharedPolicy{Inbound: []byte(`
+package shared.inbound
+import rego.v1
+default allow := false
+`)},
+	}, time.Minute))
+	_, err := r.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{"name": "x"})
+	if !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("err = %v", err)
+	}
+	if exec.n != 0 {
+		t.Fatalf("executor calls = %d", exec.n)
+	}
+}
+
+func TestPolicy_SharedInboundIgnoresHints(t *testing.T) {
+	ctx := context.Background()
+	sh, err := compileShared(ctx, &arazzo.SharedPolicy{Inbound: []byte(`
+package shared.inbound
+import rego.v1
+default allow := false
+allow if true
+hints := {"mode": "shared"}
+`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := compilePlan(ctx, &arazzo.PolicyBundle{Inbound: []byte(`
+package plan.inbound
+import rego.v1
+default allow := false
+allow if true
+hints := {"mode": "plan"}
+`)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := evalAllowOnly(ctx, sh.inbound, "inbound", "p", "1", "wf", map[string]any{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	in, err := applyInbound(ctx, cp.inbound, "p", "1", "wf", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hints := in[arazzo.PolicyHintsKey].(map[string]any)
+	if hints["mode"] != "plan" {
+		t.Fatalf("hints = %#v", hints)
+	}
+}
+
+func TestPolicy_LibraryImport(t *testing.T) {
+	ctx := context.Background()
+	sh, err := compileShared(ctx, &arazzo.SharedPolicy{
+		Libraries: map[string][]byte{
+			"lib/auth.rego": []byte(`
+package lib.auth
+import rego.v1
+allow if object.get(object.get(input.auth, "endUser", {}), "username", "") == "buyer"
+`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := compilePlan(ctx, &arazzo.PolicyBundle{Inbound: []byte(`
+package plan.inbound
+import rego.v1
+import data.lib.auth
+default allow := false
+allow if data.lib.auth.allow
+`)}, sh.libs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	denyCtx := context.Background()
+	if _, err := applyInbound(denyCtx, cp.inbound, "p", "1", "wf", nil); !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("anonymous: %v", err)
+	}
+	allowCtx := arazzo.WithPolicyRequest(ctx, &arazzo.PolicyRequestContext{
+		Auth: map[string]any{"endUser": map[string]any{"username": "buyer"}},
+	})
+	if _, err := applyInbound(allowCtx, cp.inbound, "p", "1", "wf", nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPolicy_ReservedLibraryName(t *testing.T) {
+	_, err := compileShared(context.Background(), &arazzo.SharedPolicy{
+		Libraries: map[string][]byte{"inbound.rego": []byte("package lib.x\n")},
+	})
+	if err == nil {
+		t.Fatal("expected reserved name error")
+	}
+}
+
+func TestPolicy_SharedLoadErrorFailClosed(t *testing.T) {
+	c := loadPetstore(t)
+	r := NewRunner(c, &stubExec{}, nil)
+	r.SetPolicy(testPolicyCache(t, &sharedStaticLoader{
+		staticPolicyLoader: staticPolicyLoader{bundle: &arazzo.PolicyBundle{Inbound: []byte(`
+package plan.inbound
+import rego.v1
+default allow := false
+allow if true
+`)}},
+		sharedErr: errors.New("control plane down"),
+	}, time.Minute))
+	_, err := r.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{"name": "x"})
+	if !errors.Is(err, ErrPolicyLoad) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPolicy_SharedOnlyInbound(t *testing.T) {
+	c := loadPetstore(t)
+	exec := &stubExec{}
+	r := NewRunner(c, exec, nil)
+	r.SetPolicy(testPolicyCache(t, &sharedStaticLoader{
+		shared: &arazzo.SharedPolicy{Inbound: []byte(`
+package shared.inbound
+import rego.v1
+default allow := false
+allow if input.workflowId == "pingHealth"
+`)},
+	}, time.Minute))
+	if _, err := r.Run(context.Background(), "petstore", "1.1.0", "pingHealth", map[string]any{"name": "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if exec.n != 1 {
+		t.Fatalf("executor calls = %d", exec.n)
+	}
+}
+
+func TestPolicy_PetstoreFileLoaderCompiles(t *testing.T) {
+	dir := filepath.Join("..", "..", "examples", "petstore", "mcp-server", "policies")
+	cache := testPolicyCache(t, arazzo.NewFilePolicyLoader(dir), time.Minute)
+	ctx := arazzo.WithPolicyRequest(context.Background(), &arazzo.PolicyRequestContext{
+		Auth: map[string]any{"endUser": map[string]any{"username": "buyer", "userStatus": 2}},
+	})
+	cp, err := cache.get(ctx, "petstore", "0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.inbound == nil || cp.outbound == nil {
+		t.Fatalf("compiled = %#v", cp)
+	}
+	in, err := applyInbound(ctx, cp.inbound, "petstore", "0.0.1", "purchasePet", map[string]any{"status": "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in[arazzo.PolicyHintsKey+".mode"] != "buy" || in[arazzo.PolicyHintsKey+".username"] != "buyer" {
+		t.Fatalf("hints = %#v", in)
 	}
 }
