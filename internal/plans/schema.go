@@ -197,22 +197,13 @@ func liftRESTParam(key string, prop any, required bool) (restHTTPParam, bool) {
 		return restHTTPParam{}, false
 	}
 	switch src.In {
-	case "header", "cookie", "path", "query":
+	case "header", "cookie", "query":
 	default:
 		return restHTTPParam{}, false
 	}
 	name := src.Name
 	if name == "" {
 		name = key
-	}
-	if src.In == "path" {
-		required = true
-		if reservedExecutePathName(name) {
-			if reservedExecutePathName(key) {
-				return restHTTPParam{}, false
-			}
-			name = key
-		}
 	}
 	delete(pm, inputSourceExt)
 	schema, _ := stripVendorInputAttrs(pm).(map[string]any)
@@ -245,15 +236,6 @@ func parseInputSource(v any) (inputSource, bool) {
 func asString(v any) string {
 	s, _ := v.(string)
 	return s
-}
-
-func reservedExecutePathName(name string) bool {
-	switch name {
-	case "planId", "workflowId", "version":
-		return true
-	default:
-		return false
-	}
 }
 
 func schemaPropertyKeys(n *yaml.Node) []string {
@@ -354,16 +336,6 @@ func requiredEmpty(v any) bool {
 	default:
 		return false
 	}
-}
-
-func pathParamNames(params []restHTTPParam) []string {
-	var names []string
-	for _, p := range params {
-		if p.In == "path" {
-			names = append(names, p.Name)
-		}
-	}
-	return names
 }
 
 func restParamsJSON(params []restHTTPParam) []any {

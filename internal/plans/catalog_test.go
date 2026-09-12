@@ -616,7 +616,7 @@ properties:
 func TestOpenAPIJSON_MapsRESTSource(t *testing.T) {
 	n := yamlMapping(t, `
 type: object
-required: [petId, status, note]
+required: [status, note]
 properties:
   requestId:
     type: string
@@ -631,12 +631,6 @@ properties:
       interface: rest
       in: cookie
       name: sid
-  petId:
-    type: string
-    x-source:
-      interface: rest
-      protocol: http
-      in: path
   status:
     type: string
     enum: [available, pending, sold]
@@ -673,13 +667,13 @@ properties:
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	item, ok := paths["/plans/petstore/retrievePet/{petId}"].(map[string]any)
+	item, ok := paths["/plans/petstore/retrievePet"].(map[string]any)
 	if !ok {
-		t.Fatalf("missing path with petId: %s", b)
+		t.Fatalf("missing retrievePet path: %s", b)
 	}
 	post, _ := item["post"].(map[string]any)
 	params, _ := post["parameters"].([]any)
-	if len(params) != 4 {
+	if len(params) != 3 {
 		t.Fatalf("parameters = %#v", params)
 	}
 	got := map[string]map[string]any{}
@@ -693,9 +687,6 @@ properties:
 	}
 	if got["sid"]["in"] != "cookie" {
 		t.Fatalf("cookie = %#v", got["sid"])
-	}
-	if got["petId"]["in"] != "path" || got["petId"]["required"] != true {
-		t.Fatalf("path = %#v", got["petId"])
 	}
 	if got["status"]["in"] != "query" || got["status"]["required"] != true {
 		t.Fatalf("query = %#v", got["status"])
@@ -719,7 +710,7 @@ properties:
 	if _, ok := mcpOnly["x-source"]; ok {
 		t.Fatalf("body leaked x-source: %#v", mcpOnly)
 	}
-	for _, k := range []string{"requestId", "session", "petId", "status"} {
+	for _, k := range []string{"requestId", "session", "status"} {
 		if _, ok := rprops[k]; ok {
 			t.Fatalf("lifted %s still in body: %#v", k, rschema)
 		}
@@ -741,8 +732,8 @@ properties:
 		t.Fatal(err)
 	}
 	cpaths, _ := cdoc["paths"].(map[string]any)
-	refItem, _ := cpaths["/plans/petstore/retrievePet/{petId}"].(map[string]any)
-	want := "/api/openapi/petstore#/paths/~1plans~1petstore~1retrievePet~1{petId}"
+	refItem, _ := cpaths["/plans/petstore/retrievePet"].(map[string]any)
+	want := "/api/openapi/petstore#/paths/~1plans~1petstore~1retrievePet"
 	if refItem["$ref"] != want {
 		t.Fatalf("catalog $ref = %v, want %q", refItem["$ref"], want)
 	}
@@ -752,12 +743,12 @@ func TestOpenAPIJSON_OmitsRequestBodyWhenAllLifted(t *testing.T) {
 	n := yamlMapping(t, `
 type: object
 properties:
-  petId:
+  status:
     type: string
     x-source:
       interface: rest
       protocol: http
-      in: path
+      in: query
 `)
 	e := &Entry{
 		PlanID:  "petstore",
@@ -778,7 +769,7 @@ properties:
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	item, _ := paths["/plans/petstore/getPet/{petId}"].(map[string]any)
+	item, _ := paths["/plans/petstore/getPet"].(map[string]any)
 	post, _ := item["post"].(map[string]any)
 	if _, ok := post["requestBody"]; ok {
 		t.Fatalf("requestBody should be omitted: %s", b)
@@ -795,6 +786,12 @@ properties:
       interface: rest
       protocol: http
       in: body
+  pathIn:
+    type: string
+    x-source:
+      interface: rest
+      protocol: http
+      in: path
   badProto:
     type: string
     x-source:
@@ -833,6 +830,9 @@ properties:
 	props, _ := schema["properties"].(map[string]any)
 	if _, ok := props["badIn"]; !ok {
 		t.Fatalf("badIn missing: %#v", schema)
+	}
+	if _, ok := props["pathIn"]; !ok {
+		t.Fatalf("pathIn missing: %#v", schema)
 	}
 	if _, ok := props["badProto"]; !ok {
 		t.Fatalf("badProto missing: %#v", schema)
