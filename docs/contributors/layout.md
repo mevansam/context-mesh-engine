@@ -52,7 +52,7 @@ context-mesh-engine/
 
 | File | Responsibility |
 | --- | --- |
-| `engine/engine.go` | `Options` (incl. `APIPrefix`, `DualMCPandREST`, `MCPOnly`, `RESTOnly`), `New` (`error`), `MCP`, `AddController`, `APIPrefix`, `Handler`, `ListenAndServe` |
+| `engine/engine.go` | `Options` (incl. `APIPrefix`, serve modes, `CommonRESTParams`), `New` (`error`), `MCP`, `AddController`, `APIPrefix`, `Handler`, `ListenAndServe` |
 | `engine/engine_test.go` | Mux contract: health JSON, custom prefix, MCP handshake, SSE GET 400, REST ≠ MCP |
 | `engine/arazzo_test.go` | Plan MCP tools, REST execute, OpenAPI, query matcher, 501 |
 | `api/controller.go` | `Controller` |
@@ -85,9 +85,9 @@ context-mesh-engine/
 | `plans/request.go` | HTTP/MCP → `RequestSource`; `WithRESTRequest` bind box |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
 | `plans/bind.go` | REST/HTTP `x-source` merge onto `$inputs.{property}`; `SplitRESTOutputs` header lift |
-| `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const; strip/close consumer inputs; REST/HTTP `x-source` / `x-outputs` lift |
+| `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const; strip/close consumer inputs; REST/HTTP `x-source` / `x-outputs` lift; `CommonRESTParams` normalize + collision |
 | `plans/public.go` | `ClassifyError` / `LogAndPublic` |
-| `plans/openapi.go` | OAS 3.1 catalog + per-plan JSON; prefix-absolute `$ref`; `servers` from PublicBaseURL+APIPrefix |
+| `plans/openapi.go` | OAS 3.1 catalog + per-plan JSON; prefix-absolute `$ref`; `servers` from PublicBaseURL+APIPrefix; merge `CommonParams` |
 | `plans/mcp.go` | `query` + `run_*` tools |
 | `plans/help.go` | Help TTL cache + `tools/list` overlay (`internal/ttlcache`) |
 | `ttlcache/cache.go` | Generic singleflight TTL cache |

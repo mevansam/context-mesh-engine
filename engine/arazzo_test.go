@@ -246,6 +246,110 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 	}
 }
 
+func TestArazzo_CommonRESTParamsInOpenAPI(t *testing.T) {
+	e, err := engine.New(engine.Options{
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:  []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		PublicBaseURL:  "http://example.test",
+		DualMCPandREST: true,
+		QueryMatcher:   pingMatcher{planID: "petstore", workflowID: "pingHealth"},
+		CommonRESTParams: []engine.CommonRESTParam{
+			{Name: "X-End-User-Token", In: "header", Required: true, Description: "end-user JWT"},
+			{Name: "sid", In: "cookie"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	hasParam := func(params []any, in, name string) bool {
+		for _, p := range params {
+			m, _ := p.(map[string]any)
+			if m["in"] == in && m["name"] == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	resp, err := http.Get(ts.URL + "/api/openapi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var catalog map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := catalog["paths"].(map[string]any)
+	tools, _ := paths["/tools"].(map[string]any)
+	get, _ := tools["get"].(map[string]any)
+	params, _ := get["parameters"].([]any)
+	if !hasParam(params, "header", "X-End-User-Token") || !hasParam(params, "cookie", "sid") {
+		t.Fatalf("catalog /tools params = %#v", params)
+	}
+	query, _ := paths["/plans/query"].(map[string]any)
+	qpost, _ := query["post"].(map[string]any)
+	params, _ = qpost["parameters"].([]any)
+	if !hasParam(params, "header", "X-End-User-Token") {
+		t.Fatalf("catalog query params = %#v", params)
+	}
+
+	resp, err = http.Get(ts.URL + "/api/openapi/petstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var child map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&child); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ = child["paths"].(map[string]any)
+	item, _ := paths["/plans/petstore/pingHealth"].(map[string]any)
+	post, _ := item["post"].(map[string]any)
+	params, _ = post["parameters"].([]any)
+	if !hasParam(params, "header", "X-End-User-Token") || !hasParam(params, "cookie", "sid") {
+		t.Fatalf("child execute params = %#v", params)
+	}
+
+	_, err = engine.New(engine.Options{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders: []arazzo.Loader{yamlLoader{dir: plansDir(t), data: []byte(`
+arazzo: 1.0.1
+info:
+  title: t
+  version: "1.0.0"
+  x-planId: p
+sourceDescriptions:
+  - name: petstoreApi
+    url: ../sources/openapi.yaml
+    type: openapi
+workflows:
+  - workflowId: ping
+    inputs:
+      type: object
+      properties:
+        requestId:
+          type: string
+          x-source:
+            interface: rest
+            in: header
+            name: x-request-id
+    steps:
+      - stepId: s
+        operationId: getHealth
+        successCriteria:
+          - condition: $statusCode == 200
+`)}},
+		CommonRESTParams: []engine.CommonRESTParam{{Name: "X-Request-Id", In: "header"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "collides") {
+		t.Fatalf("x-source collision: %v", err)
+	}
+}
+
 func TestArazzo_RESTExecuteLatestAndVersioned(t *testing.T) {
 	exec := &countingExec{}
 	e := newArazzoEngine(t, exec)

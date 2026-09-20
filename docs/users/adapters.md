@@ -431,7 +431,7 @@ Query `data.shared.inbound` (if present) then `data.plan.inbound` before the wor
 
 - Default **deny**: missing or non-boolean `allow` is deny. Use `default allow := false` in Rego.
 - On inbound allow, `hints` (if present) is written to workflow input `$inputs.policyHints` (nested object). Leaves are also copied as dotted keys (`policyHints.petStatus`) because Arazzo `$inputs.a.b` is a single input name in libopenapi, not a nested path. Caller-supplied `policyHints` and `policyHints.*` keys are discarded. Generated OpenAPI and MCP `inputSchema` omit `policyHints` and `secrets`; declare them in the Arazzo file for execution only.
-- If [`RequestPreprocessor`](#requestpreprocessor) ran, OPA also receives `input.headers` (allowlisted) and `input.auth` (client + end-user claims). These are not workflow `$inputs`.
+- If [`RequestPreprocessor`](#requestpreprocessor) ran, OPA also receives `input.headers` (allowlisted) and `input.auth` (client + end-user claims). These are not workflow `$inputs`. Raw request headers reach the preprocessor as `RequestSource.Header`; only the maps it returns are on the OPA input. See [Request identity](configuration.md#request-identity).
 - If there is no **plan** inbound module, `policyHints` is not injected (shared inbound cannot set hints).
 - Outbound deny → **403**; outputs are not returned (the workflow has already run).
 - Outbound `outputs` object, if present, **replaces** workflow outputs and ignores `redact`.
@@ -441,15 +441,27 @@ Query `data.shared.inbound` (if present) then `data.plan.inbound` before the wor
 
 ## RequestPreprocessor
 
-Optional. Runs on REST execute/`query` and MCP `run_*`/`query` **before** inbound OPA. Verify extra JWTs (`x-*` headers), call a remote user-info service, and return a JSON-friendly `Auth` object plus allowlisted `Headers`.
+Optional. Runs on REST execute/`query` and MCP `run_*`/`query` **before** inbound OPA. It does **not** run on `GET /tools`, `GET /openapi`, or `GET /health`. Verify extra JWTs (`x-*` headers), parse cookies from the `Cookie` header, call a remote user-info service, and return a JSON-friendly `Auth` object plus allowlisted `Headers`.
 
 ```go
 type RequestPreprocessor interface {
     Process(ctx context.Context, src RequestSource) (*PolicyRequestContext, error)
 }
+
+type RequestSource struct {
+    Header     http.Header
+    ClientAuth map[string]any
+}
+
+type PolicyRequestContext struct {
+    Headers map[string]string
+    Auth    map[string]any
+}
 ```
 
-`RequestSource.ClientAuth` is filled when `auth.RequireBearerToken` already verified the calling-application bearer token. Error from `Process` is **401**.
+REST: `Header` is a clone of the incoming `*http.Request` header map (`Cookie` is in that map). MCP: `Header` is `req.Extra.Header` from Streamable HTTP. `ClientAuth` is filled when `auth.RequireBearerToken` already verified the calling-application bearer. Error from `Process` is **401**.
+
+The returned maps are stored on `ctx` and copied into OPA as `input.headers` / `input.auth`. They are not merged into `$inputs`. Host-wide OpenAPI documentation for those headers/cookies is [`Options.CommonRESTParams`](configuration.md#request-identity). The wrap still sees the raw `*http.Request` on every REST path, including `GET /tools`.
 
 Do not put `Authorization` or raw user JWTs in `Headers`. Petstore: [`mcp-server/auth.go`](../../examples/petstore/mcp-server/auth.go).
 

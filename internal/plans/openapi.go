@@ -31,6 +31,10 @@ type OpenAPIMeta struct {
 	CatalogTitle string
 	// CatalogVersion is info.version on GET /openapi. Empty uses "1.0.0".
 	CatalogVersion string
+	// CommonParams are header/cookie parameters documented on GET /tools,
+	// POST /plans/query, and execute operations. They are not bound to
+	// Arazzo $inputs. Empty means none.
+	CommonParams []RESTCommonParam
 }
 
 func (m OpenAPIMeta) prefix() string {
@@ -98,6 +102,10 @@ func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 		title = e.Doc.Info.Title
 	}
 	version := e.Version
+	common, err := meta.normalizedCommonParams()
+	if err != nil {
+		return nil, err
+	}
 	paths := map[string]any{}
 	for _, wf := range e.Doc.Workflows {
 		if wf == nil || wf.WorkflowId == "" {
@@ -131,6 +139,7 @@ func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 		if len(params) > 0 {
 			post["parameters"] = restParamsJSON(params)
 		}
+		withCommonParameters(post, common)
 		if hasJSONRequestBody(schema, len(params) > 0) {
 			post["requestBody"] = map[string]any{
 				"required": true,
@@ -172,69 +181,75 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool, meta OpenAPIMeta) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	paths := map[string]any{
-		"/tools": map[string]any{
-			"get": map[string]any{
-				"operationId": "listTools",
-				"summary":     "List tools",
-				"description": "REST equivalent of MCP JSON-RPC method tools/list. Response shape matches ListToolsResult (ttlMs, cacheScope, tools) but omits MCP protocol fields such as _meta and resultType. Arazzo plan/query descriptions use REST templates.",
-				"parameters": []any{
-					map[string]any{
-						"name":        "cursor",
-						"in":          "query",
-						"required":    false,
-						"description": "MCP tools/list pagination cursor (ListToolsParams.cursor).",
-						"schema":      map[string]any{"type": "string"},
-					},
-				},
-				"responses": map[string]any{
-					"200": map[string]any{
-						"description": "MCP ListToolsResult",
-						"content": map[string]any{
-							"application/json": map[string]any{
-								"schema": map[string]any{
-									"$ref": "#/components/schemas/ListToolsResult",
-								},
-							},
+	common, err := meta.normalizedCommonParams()
+	if err != nil {
+		return nil, err
+	}
+	toolsGet := map[string]any{
+		"operationId": "listTools",
+		"summary":     "List tools",
+		"description": "REST equivalent of MCP JSON-RPC method tools/list. Response shape matches ListToolsResult (ttlMs, cacheScope, tools) but omits MCP protocol fields such as _meta and resultType. Arazzo plan/query descriptions use REST templates.",
+		"parameters": []any{
+			map[string]any{
+				"name":        "cursor",
+				"in":          "query",
+				"required":    false,
+				"description": "MCP tools/list pagination cursor (ListToolsParams.cursor).",
+				"schema":      map[string]any{"type": "string"},
+			},
+		},
+		"responses": map[string]any{
+			"200": map[string]any{
+				"description": "MCP ListToolsResult",
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{
+							"$ref": "#/components/schemas/ListToolsResult",
 						},
 					},
 				},
 			},
 		},
 	}
+	withCommonParameters(toolsGet, common)
+	paths := map[string]any{
+		"/tools": map[string]any{
+			"get": toolsGet,
+		},
+	}
 	if queryEnabled {
-		paths["/plans/query"] = map[string]any{
-			"post": map[string]any{
-				"operationId": "queryPlans",
-				"summary":     "Query and execute a plan",
-				"description": "REST equivalent of MCP tool query. Body is {query, data}; 200 is the selected workflow's outputs.",
-				"requestBody": map[string]any{
-					"required": true,
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": map[string]any{
-								"type":     "object",
-								"required": []any{"query"},
-								"properties": map[string]any{
-									"query": map[string]any{"type": "string"},
-									"data":  map[string]any{"type": "object", "additionalProperties": true},
-								},
-							},
-						},
-					},
-				},
-				"responses": map[string]any{
-					"200": map[string]any{
-						"description": "workflow outputs",
-						"content": map[string]any{
-							"application/json": map[string]any{
-								"schema": map[string]any{"type": "object"},
+		queryPost := map[string]any{
+			"operationId": "queryPlans",
+			"summary":     "Query and execute a plan",
+			"description": "REST equivalent of MCP tool query. Body is {query, data}; 200 is the selected workflow's outputs.",
+			"requestBody": map[string]any{
+				"required": true,
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{
+							"type":     "object",
+							"required": []any{"query"},
+							"properties": map[string]any{
+								"query": map[string]any{"type": "string"},
+								"data":  map[string]any{"type": "object", "additionalProperties": true},
 							},
 						},
 					},
 				},
 			},
+			"responses": map[string]any{
+				"200": map[string]any{
+					"description": "workflow outputs",
+					"content": map[string]any{
+						"application/json": map[string]any{
+							"schema": map[string]any{"type": "object"},
+						},
+					},
+				},
+			},
 		}
+		withCommonParameters(queryPost, common)
+		paths["/plans/query"] = map[string]any{"post": queryPost}
 	}
 	if c != nil {
 		ids := make([]string, 0, len(c.latest))

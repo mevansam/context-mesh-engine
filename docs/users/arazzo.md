@@ -204,6 +204,8 @@ Paths **inside** those documents omit `Options.APIPrefix` (the REST mux is `Stri
 
 Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted, then closed (`additionalProperties: false`).
 
+Host-wide headers and cookies (`Options.CommonRESTParams`) are OpenAPI **parameters** on `GET /tools`, `POST /plans/query`, and execute operations. They are **not** Arazzo `$inputs` and are **not** on `GET /health`. How wraps, the preprocessor, and OPA read them: [Request identity](configuration.md#request-identity). A name that collides with a workflow REST/HTTP `x-source` lift fails `engine.New`.
+
 ### `x-source` (REST vs MCP)
 
 `x-source` is a vendor object on a **top-level** JSON Schema property. Nested `x-source` (inside another property, `items`, `$defs`, combinators of a nested schema, or on the schema root) **fails catalog load**.
@@ -231,7 +233,7 @@ inputs:
         name: x-request-id
 ```
 
-Only `interface: rest` with `protocol: http` (or omitted) and `in` of `header`, `cookie`, or `query` is lifted onto the generated operation as an OpenAPI **request** parameter. `name` is the parameter name (default: the property key). Execute paths stay `POST /plans/{planId}/{workflowId}` (and the versioned form). `in: path` is not lifted and stays on the JSON body. `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute binds those parameters from the request onto `$inputs.{property}` before `Run`; `POST /plans/query` does the same after match. Sending a lifted key in the JSON body is **400** `unexpected fields in inputs`. A missing required REST/HTTP input is **400** `missing required input`. Bound values are strings (no JSON Schema type coercion).
+Only `interface: rest` with `protocol: http` (or omitted) and `in` of `header`, `cookie`, or `query` is lifted onto the generated operation as an OpenAPI **request** parameter. `name` is the parameter name (default: the property key). Execute paths stay `POST /plans/{planId}/{workflowId}` (and the versioned form). `in: path` is not lifted and stays on the JSON body. `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute binds those parameters from the request onto `$inputs.{property}` before `Run`; `POST /plans/query` does the same after match. Sending a lifted key in the JSON body is **400** `unexpected fields in inputs`. A missing required REST/HTTP input is **400** `missing required input`. Bound values are strings (no JSON Schema type coercion). A host `CommonRESTParam` that uses the same `in`+name fails `engine.New`.
 
 **Outputs** — Arazzo `outputs` stay `name: expression`. Optional workflow extension `x-outputs` is a JSON Schema whose property names **must** be workflow output names:
 
@@ -297,7 +299,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Optional [`PolicyLoader`](adapters.md#policyloader) for inbound/outbound OPA; keep `.rego` out of the Arazzo loader tree.
 - Implement [`Executor`](adapters.md#executor); nil is 501 on execute, OpenAPI still works.
 - Implement [`QueryMatcher`](adapters.md#querymatcher) to publish MCP `query` / `POST /plans/query`; nil omits both.
-- MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body is remaining JSON `inputs`. REST/HTTP `x-source` input fields come from header, cookie, or query. REST/HTTP `x-source` **output** fields (`x-outputs`, `in: header` only) are response headers and are omitted from the REST JSON body.
+- MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body is remaining JSON `inputs`. REST/HTTP `x-source` input fields come from header, cookie, or query. REST/HTTP `x-source` **output** fields (`x-outputs`, `in: header` only) are response headers and are omitted from the REST JSON body. Host-wide headers/cookies are [`CommonRESTParams`](configuration.md#request-identity), not `$inputs`.
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
 - Generated OpenAPI `paths` keys omit `Options.APIPrefix`. Catalog plan paths `$ref` `{APIPrefix}/openapi/{planId}`. `servers` is `PublicBaseURL` + `APIPrefix`.

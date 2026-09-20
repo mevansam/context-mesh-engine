@@ -22,16 +22,29 @@ const (
 	sourceInterfaceMCP  = "mcp"
 	sourceProtocolHTTP  = "http"
 	sourceInHeader      = "header"
+	sourceInCookie      = "cookie"
 )
 
+// RESTCommonParam is a header or cookie documented on generated REST
+// OpenAPI. It is not bound to Arazzo $inputs.
+type RESTCommonParam struct {
+	Name        string
+	In          string // header or cookie
+	Required    bool
+	Description string
+	Schema      map[string]any
+}
+
 // restHTTPParam is an OpenAPI parameter lifted from a workflow input
-// property whose x-source is interface=rest, protocol=http.
+// property whose x-source is interface=rest, protocol=http, or from
+// [RESTCommonParam].
 type restHTTPParam struct {
-	Key      string // Arazzo property name ($inputs.{Key})
-	Name     string // HTTP parameter name (x-source.name, or Key)
-	In       string
-	Required bool
-	Schema   map[string]any
+	Key         string // Arazzo property name ($inputs.{Key}); empty for common params
+	Name        string // HTTP parameter name (x-source.name, or Key)
+	In          string
+	Required    bool
+	Description string
+	Schema      map[string]any
 }
 
 func objectSchema() *jsonschema.Schema {
@@ -346,14 +359,120 @@ func requiredEmpty(v any) bool {
 func restParamsJSON(params []restHTTPParam) []any {
 	out := make([]any, 0, len(params))
 	for _, p := range params {
-		out = append(out, map[string]any{
+		item := map[string]any{
 			"name":     p.Name,
 			"in":       p.In,
 			"required": p.Required,
 			"schema":   p.Schema,
-		})
+		}
+		if d := strings.TrimSpace(p.Description); d != "" {
+			item["description"] = d
+		}
+		out = append(out, item)
 	}
 	return out
+}
+
+func restCommonParamKey(in, name string) string {
+	in = strings.ToLower(strings.TrimSpace(in))
+	name = strings.TrimSpace(name)
+	if in == sourceInHeader {
+		return in + ":" + strings.ToLower(name)
+	}
+	return in + ":" + name
+}
+
+// NormalizeRESTCommonParams validates host-configured header/cookie params
+// for OpenAPI. Name is required. In must be header or cookie. Duplicate
+// names fail (headers compared case-insensitively). Empty Schema becomes
+// {type: string}. These params are not bound to $inputs.
+func NormalizeRESTCommonParams(params []RESTCommonParam) ([]restHTTPParam, error) {
+	out := make([]restHTTPParam, 0, len(params))
+	seen := map[string]string{}
+	for i, p := range params {
+		name := strings.TrimSpace(p.Name)
+		in := strings.ToLower(strings.TrimSpace(p.In))
+		if name == "" {
+			return nil, fmt.Errorf("CommonRESTParams[%d]: name is required", i)
+		}
+		if in != sourceInHeader && in != sourceInCookie {
+			return nil, fmt.Errorf("CommonRESTParams[%d]: in must be header or cookie", i)
+		}
+		key := restCommonParamKey(in, name)
+		if prev, ok := seen[key]; ok {
+			return nil, fmt.Errorf("CommonRESTParams: duplicate %s %q (also %q)", in, name, prev)
+		}
+		seen[key] = name
+		schema := p.Schema
+		if schema == nil {
+			schema = map[string]any{"type": "string"}
+		} else {
+			schema = cloneMap(schema)
+			if schema == nil {
+				schema = map[string]any{"type": "string"}
+			}
+		}
+		out = append(out, restHTTPParam{
+			Name:        name,
+			In:          in,
+			Required:    p.Required,
+			Description: strings.TrimSpace(p.Description),
+			Schema:      schema,
+		})
+	}
+	return out, nil
+}
+
+// CheckCommonParamCollisions fails when a common REST param uses the same
+// in+name as a workflow x-source REST/HTTP lift.
+func CheckCommonParamCollisions(c *Catalog, params []RESTCommonParam) error {
+	if c == nil || len(params) == 0 {
+		return nil
+	}
+	common, err := NormalizeRESTCommonParams(params)
+	if err != nil {
+		return err
+	}
+	keys := map[string]string{}
+	for _, p := range common {
+		keys[restCommonParamKey(p.In, p.Name)] = p.Name
+	}
+	for _, e := range c.Entries() {
+		if e == nil || e.Doc == nil {
+			continue
+		}
+		for _, wf := range e.Doc.Workflows {
+			if wf == nil || wf.WorkflowId == "" {
+				continue
+			}
+			_, lifted, err := splitOpenAPIInputs(wf.Inputs)
+			if err != nil {
+				return fmt.Errorf("%s %s: %w", e.PlanID, wf.WorkflowId, err)
+			}
+			for _, p := range lifted {
+				key := restCommonParamKey(p.In, p.Name)
+				if prev, ok := keys[key]; ok {
+					return fmt.Errorf("workflow %s: x-source %s %q collides with CommonRESTParams %q", wf.WorkflowId, p.In, p.Name, prev)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func withCommonParameters(op map[string]any, common []restHTTPParam) {
+	if op == nil || len(common) == 0 {
+		return
+	}
+	existing, _ := op["parameters"].([]any)
+	op["parameters"] = append(restParamsJSON(common), existing...)
+}
+
+func (m OpenAPIMeta) normalizedCommonParams() ([]restHTTPParam, error) {
+	if len(m.CommonParams) == 0 {
+		return nil, nil
+	}
+	return NormalizeRESTCommonParams(m.CommonParams)
 }
 
 func hasJSONRequestBody(body any, lifted bool) bool {

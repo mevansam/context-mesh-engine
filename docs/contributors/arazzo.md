@@ -121,7 +121,7 @@ Two layers. Both are OAS **3.1.0** JSON. Paths omit `APIPrefix` (REST mux is `St
 
 Both catalog and child documents set `servers: [{ url: PublicBaseURL + APIPrefix }]`. Empty `PublicBaseURL` → `{APIPrefix}` only (`/api`). That is the Try-it-out origin; path keys stay unprefixed.
 
-`OpenAPIMeta` / `OpenAPIServerURL` live in `internal/plans/openapi.go`. `PlansController` gets them from `engine.New`.
+`OpenAPIMeta` / `OpenAPIServerURL` live in `internal/plans/openapi.go`. `PlansController` gets them from `engine.New`. `OpenAPIMeta.CommonParams` (`engine.Options.CommonRESTParams`) are merged onto `GET /tools`, `POST /plans/query`, and child execute operations (`withCommonParameters`). They are not bound in `bind.go`. `NormalizeRESTCommonParams` / `CheckCommonParamCollisions` run in `engine.New`. `GET /health` is not in these documents.
 
 Do not copy backend OpenAPI (`sourceDescriptions`) into these documents. Those specs are for libopenapi step execution only.
 
@@ -138,7 +138,7 @@ Arazzo `outputs` is `name → runtime expression`, not JSON Schema, so output ty
 
 `walkXSource` (`schema.go`) runs at catalog load. `x-source` is legal only on **top-level** `properties` of that schema (`schemaLocTopProp`). Root, nested properties, `items`, `$defs`/`definitions`, and nested combinators fail with `x-source is only allowed on top-level properties`. Combinators (`oneOf`/`anyOf`/`allOf`/`not`/`if`/`then`/`else`) at the schema root keep the current loc so a top-level property still lifts.
 
-**Inputs** (`splitOpenAPIInputs` / `liftRESTParam`): `interface: rest` + `protocol: http` (omitted = http) + `in` `header`/`cookie`/`query` → OpenAPI request `parameters`. Other values (including `path`, non-http protocol, `interface: mcp`) stay on the JSON body. `x-source` is stripped from parameter schemas, leftover body schemas, and MCP `InputSchema`. If every remaining consumer property is lifted, `requestBody` is omitted. REST execute and `POST /plans/query` bind those parameters from the HTTP request onto `$inputs.{property}` (`bind.go`). MCP `run_*` still accepts the same keys in JSON `inputs`.
+**Inputs** (`splitOpenAPIInputs` / `liftRESTParam`): `interface: rest` + `protocol: http` (omitted = http) + `in` `header`/`cookie`/`query` → OpenAPI request `parameters`. Other values (including `path`, non-http protocol, `interface: mcp`) stay on the JSON body. `x-source` is stripped from parameter schemas, leftover body schemas, and MCP `InputSchema`. If every remaining consumer property is lifted, `requestBody` is omitted. REST execute and `POST /plans/query` bind those parameters from the HTTP request onto `$inputs.{property}` (`bind.go`). MCP `run_*` still accepts the same keys in JSON `inputs`. A `CommonRESTParam` with the same `in`+name fails `engine.New`.
 
 **Outputs** (`splitOpenAPIOutputs` / `liftOutputRESTParam`): `x-outputs.properties` keys and `required` entries must be names from `workflow.outputs`. REST lift is **header only**. `interface: rest` requires `protocol: http` (or omitted) and `in: header`; any other `in` (query, cookie, path, missing) fails load. `interface: mcp` stays on the JSON body. Duplicate header names fail load. Lifted fields become `responses.200.headers` and are dropped from the 200 JSON schema. After outbound OPA, REST `writeRunResult` calls `SplitRESTOutputs`: copy the value onto that header (JSON-marshal non-scalars), omit it from the body. Missing **required** lifted outputs → `ErrInternal` (500). MCP structured content is the full outputs map.
 
@@ -199,12 +199,12 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments; LoadShared |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
-| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs; `x-source` REST/HTTP lift; nested `x-source` fail; `x-outputs` header lift / `in` must be header |
-| `internal/plans/bind_test.go` | REST/HTTP header/cookie/query merge; body conflict; missing required input; MCP JSON still accepted; `SplitRESTOutputs` header lift and missing required output |
+| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs; `x-source` REST/HTTP lift; nested `x-source` fail; `x-outputs` header lift / `in` must be header; `CommonRESTParams` on `/tools` + query + execute |
+| `internal/plans/bind_test.go` | REST/HTTP header/cookie/query merge; body conflict; missing required input; MCP JSON still accepted; `SplitRESTOutputs` header lift and missing required output; unlisted headers/cookies not bound |
 | `internal/plans/public_test.go` | public error mapping |
 | `arazzo/inputs_test.go` | `ReservedInputKey` / `LeaksReservedInputs` |
-| `engine/arazzo_test.go` | invalid templates fail `New`; nested `x-source` fails `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
-| `engine/engine_test.go` | `GET /openapi` without loaders still describes `/tools` |
+| `engine/arazzo_test.go` | invalid templates fail `New`; nested `x-source` fails `New`; `CommonRESTParams` on catalog `/tools` + query + child execute; collision with `x-source` fails `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
+| `engine/engine_test.go` | `GET /openapi` without loaders still describes `/tools`; invalid `CommonRESTParams` fail `New` |
 
 Fixtures live under `testdata/arazzo/`. `FileLoader` must be pointed at **`plans/`**, not `testdata/arazzo/` (otherwise `sources/openapi.yaml` is parsed as Arazzo and fails). Latest petstore version in tests is `1.1.0`.
 

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mevansam/context-mesh-engine/api"
@@ -266,6 +267,24 @@ func TestNew_ServeModesMutuallyExclusive(t *testing.T) {
 		if _, err := engine.New(opts); err == nil {
 			t.Fatalf("combo %d: expected mutually exclusive error", i)
 		}
+	}
+}
+
+func TestNew_CommonRESTParamsRejected(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	_, err := engine.New(engine.Options{
+		Logger:           log,
+		CommonRESTParams: []engine.CommonRESTParam{{In: "header"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "name is required") {
+		t.Fatalf("empty name: %v", err)
+	}
+	_, err = engine.New(engine.Options{
+		Logger:           log,
+		CommonRESTParams: []engine.CommonRESTParam{{Name: "X-End-User-Token", In: "query"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "in must be header or cookie") {
+		t.Fatalf("query: %v", err)
 	}
 }
 

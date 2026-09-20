@@ -169,6 +169,29 @@ type Options struct {
 	// /health, /tools, /openapi, /openapi/{planId}, /plans/.... The engine
 	// does not require auth on any of them; the host chooses which to wrap.
 	RESTHandlerWrap func(http.Handler) http.Handler
+
+	// CommonRESTParams are header and cookie parameters documented on
+	// generated OpenAPI for GET {APIPrefix}/tools, POST {APIPrefix}/plans/query,
+	// and execute POSTs. They are not bound to Arazzo $inputs. The host
+	// wrap and RequestPreprocessor read them from the HTTP request.
+	// Empty means none. In must be "header" or "cookie".
+	CommonRESTParams []CommonRESTParam
+}
+
+// CommonRESTParam is a header or cookie documented on generated REST OpenAPI.
+// It is not mapped onto workflow $inputs.
+type CommonRESTParam struct {
+	// Name is the HTTP header or cookie name.
+	Name string
+	// In is "header" or "cookie".
+	In string
+	// Required is OpenAPI documentation only; the engine does not 400 if
+	// the value is missing. Enforce in RESTHandlerWrap or RequestPreprocessor.
+	Required bool
+	// Description is copied onto the OpenAPI parameter when non-empty.
+	Description string
+	// Schema defaults to {type: string} when nil.
+	Schema map[string]any
 }
 
 // Engine is a thin facade over internal/mcpgw, internal/httpserver,
@@ -194,13 +217,19 @@ type Engine struct {
 // [Options.DualMCPandREST], [Options.MCPOnly], and
 // [Options.RESTOnly] control which HTTP surfaces [Engine.Handler]
 // mounts; all false serves REST only. Load or template errors fail
-// construction. Help registry I/O is deferred until tools/list.
+// construction. Invalid [Options.CommonRESTParams] or a name that collides
+// with a workflow x-source REST lift also fail construction. Help registry
+// I/O is deferred until tools/list.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
 	if err := validateServeMode(opts); err != nil {
 		return nil, err
 	}
 	if err := validateAPIPrefix(opts.APIPrefix); err != nil {
+		return nil, err
+	}
+	common := restCommonParams(opts)
+	if _, err := plans.NormalizeRESTCommonParams(common); err != nil {
 		return nil, err
 	}
 
@@ -231,6 +260,9 @@ func New(opts Options) (*Engine, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := plans.CheckCommonParamCollisions(catalog, common); err != nil {
+			return nil, err
+		}
 		runner := plans.NewRunner(catalog, opts.ArazzoExecutor, opts.QueryMatcher)
 		if opts.PolicyLoader != nil {
 			runner.SetPolicy(plans.NewPolicyCache(opts.PolicyLoader, opts.PolicyCacheTTL, opts.Logger))
@@ -250,9 +282,9 @@ func New(opts Options) (*Engine, error) {
 		}
 		gw.Server().AddReceivingMiddleware(help.ReceivingMiddleware())
 		toolsCtrl.SetToolHelpOverlay(help.ApplyREST)
-		router.Register(apiv1.NewPlansController(catalog, runner, openAPIMeta(opts), opts.Logger))
+		router.Register(apiv1.NewPlansController(catalog, runner, openAPIMeta(opts, common), opts.Logger))
 	} else {
-		router.Register(apiv1.NewPlansController(nil, nil, openAPIMeta(opts), opts.Logger))
+		router.Register(apiv1.NewPlansController(nil, nil, openAPIMeta(opts, common), opts.Logger))
 	}
 
 	return &Engine{
@@ -294,13 +326,31 @@ func applyDefaults(opts Options) Options {
 	return opts
 }
 
-func openAPIMeta(opts Options) plans.OpenAPIMeta {
+func openAPIMeta(opts Options, common []plans.RESTCommonParam) plans.OpenAPIMeta {
 	return plans.OpenAPIMeta{
 		ServerURL:      plans.OpenAPIServerURL(opts.PublicBaseURL, opts.APIPrefix),
 		APIPrefix:      opts.APIPrefix,
 		CatalogTitle:   opts.OpenAPICatalogTitle,
 		CatalogVersion: opts.OpenAPICatalogVersion,
+		CommonParams:   common,
 	}
+}
+
+func restCommonParams(opts Options) []plans.RESTCommonParam {
+	if len(opts.CommonRESTParams) == 0 {
+		return nil
+	}
+	out := make([]plans.RESTCommonParam, len(opts.CommonRESTParams))
+	for i, p := range opts.CommonRESTParams {
+		out[i] = plans.RESTCommonParam{
+			Name:        p.Name,
+			In:          p.In,
+			Required:    p.Required,
+			Description: p.Description,
+			Schema:      p.Schema,
+		}
+	}
+	return out
 }
 
 func normalizeAPIPrefix(p string) string {

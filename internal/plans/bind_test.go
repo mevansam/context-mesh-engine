@@ -100,6 +100,32 @@ properties:
 	}
 }
 
+func TestBindRESTInputs_IgnoresUnlistedHeaders(t *testing.T) {
+	e := &Entry{
+		Doc: &high.Arazzo{
+			Workflows: []*high.Workflow{{
+				WorkflowId: "ping",
+				Inputs: yamlMapping(t, `
+type: object
+properties:
+  name:
+    type: string
+`),
+			}},
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/plans/p/ping", nil)
+	req.Header.Set("X-End-User-Token", "tok")
+	req.AddCookie(&http.Cookie{Name: "sid", Value: "sess"})
+	got, err := bindRESTInputs(e, "ping", map[string]any{"name": "x"}, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["name"] != "x" || len(got) != 1 {
+		t.Fatalf("common transport fields must not bind: %#v", got)
+	}
+}
+
 func TestRunner_BindsRESTSources(t *testing.T) {
 	c := loadPetstore(t)
 	e, ok := c.Get("petstore", "1.1.0")

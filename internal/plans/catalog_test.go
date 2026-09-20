@@ -1034,6 +1034,144 @@ properties:
 	}
 }
 
+func TestNormalizeRESTCommonParams(t *testing.T) {
+	_, err := NormalizeRESTCommonParams([]RESTCommonParam{{In: "header"}})
+	if err == nil || !strings.Contains(err.Error(), "name is required") {
+		t.Fatalf("empty name: %v", err)
+	}
+	_, err = NormalizeRESTCommonParams([]RESTCommonParam{{Name: "X-End-User-Token", In: "query"}})
+	if err == nil || !strings.Contains(err.Error(), "in must be header or cookie") {
+		t.Fatalf("query: %v", err)
+	}
+	_, err = NormalizeRESTCommonParams([]RESTCommonParam{
+		{Name: "X-End-User-Token", In: "header"},
+		{Name: "x-end-user-token", In: "HEADER"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("dup header: %v", err)
+	}
+	got, err := NormalizeRESTCommonParams([]RESTCommonParam{
+		{Name: "X-End-User-Token", In: "header", Required: true, Description: "end user JWT"},
+		{Name: "sid", In: "cookie"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].In != "header" || got[1].In != "cookie" {
+		t.Fatalf("got = %#v", got)
+	}
+	if got[0].Schema["type"] != "string" || got[1].Schema["type"] != "string" {
+		t.Fatalf("default schema = %#v", got)
+	}
+}
+
+func TestCheckCommonParamCollisions(t *testing.T) {
+	c := &Catalog{
+		entries: []*Entry{{
+			PlanID: "p",
+			Doc: &high.Arazzo{
+				Workflows: []*high.Workflow{{
+					WorkflowId: "ping",
+					Inputs: yamlMapping(t, `
+type: object
+properties:
+  requestId:
+    type: string
+    x-source:
+      interface: rest
+      in: header
+      name: x-request-id
+`),
+				}},
+			},
+		}},
+	}
+	err := CheckCommonParamCollisions(c, []RESTCommonParam{{Name: "X-Request-Id", In: "header"}})
+	if err == nil || !strings.Contains(err.Error(), "collides") {
+		t.Fatalf("header collision: %v", err)
+	}
+	if err := CheckCommonParamCollisions(c, []RESTCommonParam{{Name: "x-request-id", In: "cookie"}}); err != nil {
+		t.Fatalf("cookie vs header should not collide: %v", err)
+	}
+}
+
+func TestOpenAPIJSON_CommonRESTParams(t *testing.T) {
+	c := loadPetstore(t)
+	latest, ok := c.Latest("petstore")
+	if !ok {
+		t.Fatal("latest")
+	}
+	meta := OpenAPIMeta{CommonParams: []RESTCommonParam{
+		{Name: "X-End-User-Token", In: "header", Required: true, Description: "end-user JWT"},
+		{Name: "sid", In: "cookie"},
+	}}
+	b, err := OpenAPIJSON(latest, true, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	item, _ := paths["/plans/petstore/pingHealth"].(map[string]any)
+	post, _ := item["post"].(map[string]any)
+	params, _ := post["parameters"].([]any)
+	h := findOpenAPIParam(params, "header", "X-End-User-Token")
+	if h == nil || h["required"] != true || h["description"] != "end-user JWT" {
+		t.Fatalf("header param = %#v", params)
+	}
+	if findOpenAPIParam(params, "cookie", "sid") == nil {
+		t.Fatalf("cookie param = %#v", params)
+	}
+
+	cb, err := CatalogOpenAPIJSON(c, true, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(cb, &doc); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ = doc["paths"].(map[string]any)
+	tools, _ := paths["/tools"].(map[string]any)
+	get, _ := tools["get"].(map[string]any)
+	params, _ = get["parameters"].([]any)
+	if findOpenAPIParam(params, "header", "X-End-User-Token") == nil {
+		t.Fatalf("/tools missing common header: %#v", params)
+	}
+	if findOpenAPIParam(params, "query", "cursor") == nil {
+		t.Fatalf("/tools missing cursor: %#v", params)
+	}
+	query, _ := paths["/plans/query"].(map[string]any)
+	qpost, _ := query["post"].(map[string]any)
+	params, _ = qpost["parameters"].([]any)
+	if findOpenAPIParam(params, "cookie", "sid") == nil {
+		t.Fatalf("query missing cookie: %#v", params)
+	}
+
+	s, err := InputSchema(latest.Doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "X-End-User-Token") || strings.Contains(string(raw), "sid") {
+		t.Fatalf("MCP schema leaked common params: %s", raw)
+	}
+}
+
+func findOpenAPIParam(params []any, in, name string) map[string]any {
+	for _, p := range params {
+		m, _ := p.(map[string]any)
+		if m["in"] == in && m["name"] == name {
+			return m
+		}
+	}
+	return nil
+}
+
 func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	c := loadPetstore(t)
 	latest, ok := c.Latest("petstore")
