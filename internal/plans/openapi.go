@@ -107,17 +107,25 @@ func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		outSchema, outParams, err := splitOpenAPIOutputs(wf)
+		if err != nil {
+			return nil, err
+		}
+		resp200 := map[string]any{
+			"description": "workflow outputs",
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": outSchema,
+				},
+			},
+		}
+		if len(outParams) > 0 {
+			resp200["headers"] = restHeadersJSON(outParams)
+		}
 		post := map[string]any{
 			"operationId": wf.WorkflowId,
 			"responses": map[string]any{
-				"200": map[string]any{
-					"description": "workflow outputs",
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": outputsToJSONSchema(wf.Outputs),
-						},
-					},
-				},
+				"200": resp200,
 			},
 		}
 		if len(params) > 0 {

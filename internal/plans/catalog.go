@@ -101,6 +101,14 @@ func (c *Catalog) addSource(src arazzo.Source, logger *slog.Logger) error {
 	if vr := libarazzo.Validate(doc); vr != nil && vr.HasErrors() {
 		return fmt.Errorf("%s: validate: %w", src.URI, vr)
 	}
+	for _, wf := range doc.Workflows {
+		if wf == nil || wf.WorkflowId == "" {
+			continue
+		}
+		if err := validateWorkflowIOSources(wf); err != nil {
+			return fmt.Errorf("%s: workflow %s: %w", src.URI, wf.WorkflowId, err)
+		}
+	}
 
 	k := key(planID, doc.Info.Version)
 	if _, dup := c.byKey[k]; dup {

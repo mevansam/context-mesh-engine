@@ -109,6 +109,7 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 	if !found {
 		return nil, fmt.Errorf("%w: workflow %s", ErrNotFound, workflowID)
 	}
+	rememberRESTWorkflow(ctx, planID, version, workflowID)
 
 	if r := restRequestFrom(ctx); r != nil {
 		var err error

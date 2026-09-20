@@ -4,6 +4,7 @@
 package apiv1
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -74,7 +75,7 @@ func (c *PlansController) postQuery(w http.ResponseWriter, r *http.Request) {
 		c.writeRunError(w, err)
 		return
 	}
-	iapi.WriteJSON(w, http.StatusOK, res)
+	c.writeRunResult(w, ctx, res)
 }
 
 func (c *PlansController) postLatest(w http.ResponseWriter, r *http.Request) {
@@ -116,6 +117,26 @@ func (c *PlansController) execute(w http.ResponseWriter, r *http.Request, planID
 	if err != nil {
 		c.writeRunError(w, err)
 		return
+	}
+	c.writeRunResult(w, ctx, res)
+}
+
+func (c *PlansController) writeRunResult(w http.ResponseWriter, ctx context.Context, res map[string]any) {
+	planID, version, workflowID, ok := plans.RESTWorkflowFrom(ctx)
+	if ok && c.catalog != nil {
+		if e, found := c.catalog.Get(planID, version); found {
+			body, headers, err := plans.SplitRESTOutputs(e, workflowID, res)
+			if err != nil {
+				c.writeRunError(w, err)
+				return
+			}
+			for k, vals := range headers {
+				for _, v := range vals {
+					w.Header().Add(k, v)
+				}
+			}
+			res = body
+		}
 	}
 	iapi.WriteJSON(w, http.StatusOK, res)
 }

@@ -12,6 +12,8 @@ import (
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	high "github.com/pb33f/libopenapi/datamodel/high/arazzo"
+	"github.com/pb33f/libopenapi/orderedmap"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestMergeRESTInputs(t *testing.T) {
@@ -184,5 +186,56 @@ properties:
 	}
 	if got["name"] != "x" {
 		t.Fatalf("got = %#v", got)
+	}
+}
+
+func TestSplitRESTOutputs(t *testing.T) {
+	outs := orderedmap.New[string, string]()
+	outs.Set("orderId", "$steps.s.outputs.id")
+	outs.Set("pet", "$steps.s.outputs.pet")
+	ext := orderedmap.New[string, *yaml.Node]()
+	ext.Set(outputSchemaExt, yamlMapping(t, `
+type: object
+required: [orderId]
+properties:
+  orderId:
+    type: string
+    x-source:
+      interface: rest
+      protocol: http
+      in: header
+      name: x-order-id
+  pet:
+    type: object
+`))
+	e := &Entry{
+		Doc: &high.Arazzo{
+			Workflows: []*high.Workflow{{
+				WorkflowId: "purchasePet",
+				Outputs:    outs,
+				Extensions: ext,
+			}},
+		},
+	}
+	body, headers, err := SplitRESTOutputs(e, "purchasePet", map[string]any{
+		"orderId": "ord-1",
+		"pet":     map[string]any{"id": 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["orderId"] != nil {
+		t.Fatalf("lifted orderId still in body: %#v", body)
+	}
+	if body["pet"].(map[string]any)["id"] != 1 {
+		t.Fatalf("body = %#v", body)
+	}
+	if headers.Get("x-order-id") != "ord-1" {
+		t.Fatalf("headers = %#v", headers)
+	}
+
+	_, _, err = SplitRESTOutputs(e, "purchasePet", map[string]any{"pet": map[string]any{"id": 1}})
+	if !errors.Is(err, ErrInternal) {
+		t.Fatalf("missing required err = %v", err)
 	}
 }

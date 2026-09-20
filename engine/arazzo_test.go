@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -58,6 +59,62 @@ func TestArazzo_InvalidTemplatesFailNew(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected template error")
+	}
+}
+
+type yamlLoader struct {
+	dir  string
+	data []byte
+}
+
+func (y yamlLoader) Load(context.Context) ([]arazzo.Source, error) {
+	dir, err := filepath.Abs(y.dir)
+	if err != nil {
+		return nil, err
+	}
+	base := (&url.URL{Scheme: "file", Path: filepath.ToSlash(dir) + "/"}).String()
+	return []arazzo.Source{{
+		URI:     filepath.Join(dir, "inline.yaml"),
+		Data:    y.data,
+		BaseURL: base,
+	}}, nil
+}
+
+func TestArazzo_NestedXSourceFailsNew(t *testing.T) {
+	_, err := engine.New(engine.Options{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders: []arazzo.Loader{yamlLoader{dir: plansDir(t), data: []byte(`
+arazzo: 1.0.1
+info:
+  title: t
+  version: "1.0.0"
+  x-planId: p
+sourceDescriptions:
+  - name: petstoreApi
+    url: ../sources/openapi.yaml
+    type: openapi
+workflows:
+  - workflowId: ping
+    inputs:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            id:
+              type: string
+              x-source:
+                interface: rest
+                in: header
+    steps:
+      - stepId: s
+        operationId: getHealth
+        successCriteria:
+          - condition: $statusCode == 200
+`)}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "x-source is only allowed on top-level properties") {
+		t.Fatalf("nested x-source: %v", err)
 	}
 }
 

@@ -113,7 +113,7 @@ Direct execute when the caller already knows the plan and version.
 }
 ```
 
-Successful `run_*` returns structured content that **is** the workflow outputs object (go-sdk `StructuredContent`). Same JSON as REST 200. Runner errors become MCP tool errors (`IsError: true`), not JSON-RPC protocol errors.
+Successful `run_*` returns structured content that **is** the full workflow outputs object (go-sdk `StructuredContent`). REST 200 is the same object minus any `x-outputs` fields lifted to response headers. Runner errors become MCP tool errors (`IsError: true`), not JSON-RPC protocol errors.
 
 ### REST execute
 
@@ -136,7 +136,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
 
 ### Result JSON
 
-The body is the workflow **outputs** map from the Arazzo document (not the engine trace). A workflow with no `outputs` returns `{}`.
+The body is the workflow **outputs** map from the Arazzo document (not the engine trace), minus REST/HTTP header `x-source` fields when `x-outputs` lifts them. Those lifted values are set as response headers (`x-source.name`, or the output name). A workflow with no `outputs` returns `{}`.
 
 ```json
 {
@@ -157,7 +157,7 @@ Generated OpenAPI `200` schemas use those output names as object properties.
 | 401 | `unauthorized` | Preprocessor rejected the call |
 | 403 | `policy denied` | Inbound or outbound OPA deny (reason logged only) |
 | 404 | `plan not found` | Unknown `planId`, version, or `workflowId` |
-| 500 | `internal error` | Policy load/compile or host failure |
+| 500 | `internal error` | Policy load/compile, host failure, or missing required `x-outputs` header |
 | 501 | `executor not configured` | `ArazzoExecutor` is nil |
 
 Body on error: `{"error":"<message>"}`. The full internal error is logged, not returned.
@@ -202,7 +202,21 @@ Paths **inside** those documents omit `Options.APIPrefix` (the REST mux is `Stri
 - HTTP: `GET /api/openapi/petstore`
 - Document path: `/plans/petstore/pingHealth` → real URL `POST /api/plans/petstore/pingHealth`
 
-Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted, then closed (`additionalProperties: false`). Top-level input properties may set `x-source` to bind a REST/HTTP location:
+Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted, then closed (`additionalProperties: false`).
+
+### `x-source` (REST vs MCP)
+
+`x-source` is a vendor object on a **top-level** JSON Schema property. Nested `x-source` (inside another property, `items`, `$defs`, combinators of a nested schema, or on the schema root) **fails catalog load**.
+
+```yaml
+interface: rest | mcp
+protocol: http          # default http; only http is lifted
+in: header | cookie | query   # inputs
+in: header                    # x-outputs only; any other value fails load
+name: HTTP field name   # default: the Arazzo property key
+```
+
+**Inputs** — on `workflows[].inputs.properties.{name}`:
 
 ```yaml
 inputs:
@@ -217,7 +231,32 @@ inputs:
         name: x-request-id
 ```
 
-`interface` is `rest` or `mcp`. Only `interface: rest` with `protocol: http` (or omitted `protocol`) and `in` of `header`, `cookie`, or `query` is lifted onto the generated operation as an OpenAPI parameter. `name` is the parameter name (default: the property key). Execute paths stay `POST /plans/{planId}/{workflowId}` (and the versioned form); `in: path` is not supported and stays on the JSON body. `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute binds those parameters from the request onto `$inputs.{property}` before `Run`; `POST /plans/query` does the same after match. Extra caller fields, including reserved keys, are **400** `unexpected fields in inputs` on execute (REST, MCP `run_*`, and query after match). Workflow summary/description that name reserved keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped, closed schema. Catalog `POST /plans/query` `data` stays an open object; `Run` still closes it against the selected workflow. **200** schema is an object with a property per Arazzo `outputs` name.
+Only `interface: rest` with `protocol: http` (or omitted) and `in` of `header`, `cookie`, or `query` is lifted onto the generated operation as an OpenAPI **request** parameter. `name` is the parameter name (default: the property key). Execute paths stay `POST /plans/{planId}/{workflowId}` (and the versioned form). `in: path` is not lifted and stays on the JSON body. `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute binds those parameters from the request onto `$inputs.{property}` before `Run`; `POST /plans/query` does the same after match. Sending a lifted key in the JSON body is **400** `unexpected fields in inputs`. A missing required REST/HTTP input is **400** `missing required input`. Bound values are strings (no JSON Schema type coercion).
+
+**Outputs** — Arazzo `outputs` stay `name: expression`. Optional workflow extension `x-outputs` is a JSON Schema whose property names **must** be workflow output names:
+
+```yaml
+outputs:
+  orderId: $steps.confirmPetPurchaseStep.outputs.orderId
+  pet: $steps.getPetStep.outputs.pet
+x-outputs:
+  type: object
+  required: [orderId]
+  properties:
+    orderId:
+      type: string
+      x-source:
+        interface: rest
+        protocol: http
+        in: header
+        name: x-order-id
+    pet:
+      type: object
+```
+
+REST/HTTP output lift is **header only**. `in` must be `header`; `query`, `cookie`, `path`, and a missing `in` fail load. Lifted fields become OpenAPI `responses.200.headers` and are **omitted from the REST JSON body**. MCP structured content still includes the full outputs object. After outbound OPA, REST copies the value to that header (string-formatted). A missing **required** lifted output is **500** `internal error`. Optional missing outputs omit the header.
+
+Unknown `x-outputs.properties` keys, duplicate header names, and nested `x-source` in `x-outputs` fail catalog load (`engine.New`). Extra caller fields, including reserved keys, are **400** `unexpected fields in inputs` on execute (REST, MCP `run_*`, and query after match). Workflow summary/description that name reserved keys are omitted too. MCP `run_*` `inputSchema` uses the same stripped, closed schema. Catalog `POST /plans/query` `data` stays an open object; `Run` still closes it against the selected workflow.
 
 404 if the plan or version is missing. OpenAPI does **not** require an executor. Child documents describe execute routes, not `/plans/query` (that lives on the catalog index).
 
@@ -258,7 +297,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Optional [`PolicyLoader`](adapters.md#policyloader) for inbound/outbound OPA; keep `.rego` out of the Arazzo loader tree.
 - Implement [`Executor`](adapters.md#executor); nil is 501 on execute, OpenAPI still works.
 - Implement [`QueryMatcher`](adapters.md#querymatcher) to publish MCP `query` / `POST /plans/query`; nil omits both.
-- MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body is remaining JSON `inputs`. REST/HTTP `x-source` fields come from header, cookie, or query.
+- MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body is remaining JSON `inputs`. REST/HTTP `x-source` input fields come from header, cookie, or query. REST/HTTP `x-source` **output** fields (`x-outputs`, `in: header` only) are response headers and are omitted from the REST JSON body.
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
 - Generated OpenAPI `paths` keys omit `Options.APIPrefix`. Catalog plan paths `$ref` `{APIPrefix}/openapi/{planId}`. `servers` is `PublicBaseURL` + `APIPrefix`.

@@ -5,6 +5,7 @@ package plans
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -16,8 +17,11 @@ import (
 
 const (
 	inputSourceExt      = "x-source"
+	outputSchemaExt     = "x-outputs"
 	sourceInterfaceREST = "rest"
+	sourceInterfaceMCP  = "mcp"
 	sourceProtocolHTTP  = "http"
+	sourceInHeader      = "header"
 )
 
 // restHTTPParam is an OpenAPI parameter lifted from a workflow input
@@ -497,6 +501,338 @@ func consumerFacingText(s string) string {
 		return ""
 	}
 	return s
+}
+
+type schemaLoc int
+
+const (
+	schemaLocRoot schemaLoc = iota
+	schemaLocTopProp
+	schemaLocNested
+)
+
+func validateWorkflowIOSources(wf *high.Workflow) error {
+	if wf == nil {
+		return nil
+	}
+	if err := validateXSourcePlacement(wf.Inputs, "inputs"); err != nil {
+		return err
+	}
+	return validateOutputSources(wf)
+}
+
+func validateXSourcePlacement(n *yaml.Node, root string) error {
+	if n == nil {
+		return nil
+	}
+	var v any
+	if err := n.Decode(&v); err != nil {
+		return fmt.Errorf("%s: %w", root, err)
+	}
+	return walkXSource(v, root, schemaLocRoot)
+}
+
+func walkXSource(v any, path string, loc schemaLoc) error {
+	switch t := v.(type) {
+	case map[string]any:
+		if _, has := t[inputSourceExt]; has && loc != schemaLocTopProp {
+			return fmt.Errorf("%s: x-source is only allowed on top-level properties", path)
+		}
+		if props, ok := t["properties"].(map[string]any); ok {
+			child := schemaLocNested
+			if loc == schemaLocRoot {
+				child = schemaLocTopProp
+			}
+			for k, p := range props {
+				if err := walkXSource(p, path+".properties."+k, child); err != nil {
+					return err
+				}
+			}
+		}
+		if items, ok := t["items"]; ok {
+			if err := walkXSource(items, path+".items", schemaLocNested); err != nil {
+				return err
+			}
+		}
+		if ap, ok := t["additionalProperties"]; ok {
+			if _, isBool := ap.(bool); !isBool {
+				if err := walkXSource(ap, path+".additionalProperties", schemaLocNested); err != nil {
+					return err
+				}
+			}
+		}
+		for _, key := range []string{"oneOf", "anyOf", "allOf", "prefixItems"} {
+			if arr, ok := t[key].([]any); ok {
+				for i, item := range arr {
+					if err := walkXSource(item, fmt.Sprintf("%s.%s[%d]", path, key, i), loc); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		for _, key := range []string{"not", "if", "then", "else"} {
+			if child, ok := t[key]; ok {
+				if err := walkXSource(child, path+"."+key, loc); err != nil {
+					return err
+				}
+			}
+		}
+		for _, key := range []string{"$defs", "definitions"} {
+			if defs, ok := t[key].(map[string]any); ok {
+				for k, def := range defs {
+					if err := walkXSource(def, path+"."+key+"."+k, schemaLocNested); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	case []any:
+		for i, item := range t {
+			if err := walkXSource(item, fmt.Sprintf("%s[%d]", path, i), loc); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func validateOutputSources(wf *high.Workflow) error {
+	n := workflowOutputSchemaNode(wf)
+	if n == nil {
+		return nil
+	}
+	if err := validateXSourcePlacement(n, outputSchemaExt); err != nil {
+		return err
+	}
+	_, _, err := splitOpenAPIOutputs(wf)
+	return err
+}
+
+func workflowOutputSchemaNode(wf *high.Workflow) *yaml.Node {
+	if wf == nil || wf.Extensions == nil {
+		return nil
+	}
+	n, ok := wf.Extensions.Get(outputSchemaExt)
+	if !ok || n == nil {
+		return nil
+	}
+	if n.Kind == yaml.DocumentNode && len(n.Content) > 0 {
+		return n.Content[0]
+	}
+	return n
+}
+
+func outputNameSet(outputs *orderedmap.Map[string, string]) map[string]struct{} {
+	names := map[string]struct{}{}
+	if orderedmap.Len(outputs) == 0 {
+		return names
+	}
+	for pair := outputs.First(); pair != nil; pair = pair.Next() {
+		names[pair.Key()] = struct{}{}
+	}
+	return names
+}
+
+func workflowByID(e *Entry, workflowID string) *high.Workflow {
+	if e == nil || e.Doc == nil {
+		return nil
+	}
+	for _, wf := range e.Doc.Workflows {
+		if wf != nil && wf.WorkflowId == workflowID {
+			return wf
+		}
+	}
+	return nil
+}
+
+// splitOpenAPIOutputs lifts top-level REST/HTTP header x-source properties
+// from workflow x-outputs into OpenAPI response headers. Remaining output
+// names stay on the JSON body schema.
+func splitOpenAPIOutputs(wf *high.Workflow) (any, []restHTTPParam, error) {
+	body := outputsToJSONSchema(nil)
+	if wf != nil {
+		body = outputsToJSONSchema(wf.Outputs)
+	}
+	n := workflowOutputSchemaNode(wf)
+	if n == nil {
+		return body, nil, nil
+	}
+	var raw any
+	if err := n.Decode(&raw); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", outputSchemaExt, err)
+	}
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil, nil, fmt.Errorf("%s must be a JSON Schema object", outputSchemaExt)
+	}
+	var outputs *orderedmap.Map[string, string]
+	if wf != nil {
+		outputs = wf.Outputs
+	}
+	names := outputNameSet(outputs)
+	props, _ := m["properties"].(map[string]any)
+	bodyProps, _ := body["properties"].(map[string]any)
+	if bodyProps == nil {
+		bodyProps = map[string]any{}
+		body["properties"] = bodyProps
+	}
+	for key := range props {
+		if _, ok := names[key]; !ok {
+			return nil, nil, fmt.Errorf("%s.properties.%s is not a workflow output", outputSchemaExt, key)
+		}
+	}
+	if req, ok := m["required"]; ok {
+		for _, key := range requiredStrings(req) {
+			if _, ok := names[key]; !ok {
+				return nil, nil, fmt.Errorf("%s.required lists %q, which is not a workflow output", outputSchemaExt, key)
+			}
+		}
+	}
+	drop := map[string]struct{}{}
+	var params []restHTTPParam
+	seenHeader := map[string]string{}
+	seenKey := map[string]struct{}{}
+	handle := func(key string, prop any) error {
+		if _, ok := seenKey[key]; ok {
+			return nil
+		}
+		seenKey[key] = struct{}{}
+		param, lifted, err := liftOutputRESTParam(key, prop, requiredHas(m["required"], key))
+		if err != nil {
+			return err
+		}
+		stripped, _ := stripVendorInputAttrs(cloneMap(prop)).(map[string]any)
+		if stripped == nil {
+			stripped = map[string]any{}
+		}
+		if lifted {
+			canon := strings.ToLower(param.Name)
+			if prev, ok := seenHeader[canon]; ok {
+				return fmt.Errorf("outputs %q and %q use the same header %q", prev, key, param.Name)
+			}
+			seenHeader[canon] = key
+			params = append(params, param)
+			delete(bodyProps, key)
+			drop[key] = struct{}{}
+			return nil
+		}
+		bodyProps[key] = stripped
+		return nil
+	}
+	for _, key := range schemaPropertyKeys(n) {
+		prop, exists := props[key]
+		if !exists {
+			continue
+		}
+		if err := handle(key, prop); err != nil {
+			return nil, nil, err
+		}
+	}
+	for key, prop := range props {
+		if err := handle(key, prop); err != nil {
+			return nil, nil, err
+		}
+	}
+	if req, ok := m["required"]; ok {
+		filtered := filterRequiredKeys(req, drop)
+		if !requiredEmpty(filtered) {
+			body["required"] = filtered
+		} else {
+			delete(body, "required")
+		}
+	}
+	if len(bodyProps) == 0 {
+		delete(body, "properties")
+	}
+	if req, ok := body["required"]; ok && requiredEmpty(req) {
+		delete(body, "required")
+	}
+	return body, params, nil
+}
+
+func liftOutputRESTParam(key string, prop any, required bool) (restHTTPParam, bool, error) {
+	pm, ok := prop.(map[string]any)
+	if !ok {
+		return restHTTPParam{}, false, nil
+	}
+	raw, has := pm[inputSourceExt]
+	if !has {
+		return restHTTPParam{}, false, nil
+	}
+	src, ok := parseInputSource(raw)
+	if !ok {
+		return restHTTPParam{}, false, fmt.Errorf("outputs.%s: x-source must be an object", key)
+	}
+	if src.Interface == sourceInterfaceMCP {
+		return restHTTPParam{}, false, nil
+	}
+	if src.Interface != sourceInterfaceREST {
+		return restHTTPParam{}, false, fmt.Errorf("outputs.%s: x-source.interface must be rest or mcp", key)
+	}
+	protocol := src.Protocol
+	if protocol == "" {
+		protocol = sourceProtocolHTTP
+	}
+	if protocol != sourceProtocolHTTP {
+		return restHTTPParam{}, false, fmt.Errorf("outputs.%s: x-source.protocol must be http", key)
+	}
+	if src.In != sourceInHeader {
+		return restHTTPParam{}, false, fmt.Errorf("outputs.%s: x-source.in must be header", key)
+	}
+	name := src.Name
+	if name == "" {
+		name = key
+	}
+	cloned := cloneMap(pm)
+	delete(cloned, inputSourceExt)
+	schema, _ := stripVendorInputAttrs(cloned).(map[string]any)
+	if schema == nil {
+		schema = map[string]any{}
+	}
+	return restHTTPParam{Key: key, Name: name, In: sourceInHeader, Required: required, Schema: schema}, true, nil
+}
+
+func cloneMap(v any) map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, val := range m {
+		out[k] = val
+	}
+	return out
+}
+
+func requiredStrings(v any) []string {
+	switch req := v.(type) {
+	case []any:
+		out := make([]string, 0, len(req))
+		for _, item := range req {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []string:
+		return append([]string(nil), req...)
+	default:
+		return nil
+	}
+}
+
+func restHeadersJSON(params []restHTTPParam) map[string]any {
+	out := map[string]any{}
+	for _, p := range params {
+		out[p.Name] = map[string]any{
+			"required": p.Required,
+			"schema":   p.Schema,
+		}
+	}
+	return out
 }
 
 // outputsToJSONSchema builds a JSON Schema object from Arazzo workflow

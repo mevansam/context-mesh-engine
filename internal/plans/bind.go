@@ -4,6 +4,7 @@
 package plans
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,15 +13,11 @@ import (
 )
 
 func workflowInputs(e *Entry, workflowID string) *yaml.Node {
-	if e == nil || e.Doc == nil {
+	wf := workflowByID(e, workflowID)
+	if wf == nil {
 		return nil
 	}
-	for _, wf := range e.Doc.Workflows {
-		if wf != nil && wf.WorkflowId == workflowID {
-			return wf.Inputs
-		}
-	}
-	return nil
+	return wf.Inputs
 }
 
 func bindRESTInputs(e *Entry, workflowID string, body map[string]any, r *http.Request) (map[string]any, error) {
@@ -79,4 +76,62 @@ func restValue(r *http.Request, p restHTTPParam) (string, bool) {
 		return "", false
 	}
 	return raw, true
+}
+
+// SplitRESTOutputs copies REST/HTTP header x-source outputs onto response
+// headers and removes them from the JSON body. MCP callers should use the
+// full outputs map. Missing required header outputs return [ErrInternal].
+func SplitRESTOutputs(e *Entry, workflowID string, outputs map[string]any) (body map[string]any, headers http.Header, err error) {
+	_, params, err := splitOpenAPIOutputs(workflowByID(e, workflowID))
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrInternal, err)
+	}
+	body = map[string]any{}
+	for k, v := range outputs {
+		body[k] = v
+	}
+	if len(params) == 0 {
+		return body, nil, nil
+	}
+	headers = make(http.Header)
+	for _, p := range params {
+		v, ok := body[p.Key]
+		if !ok || v == nil {
+			if p.Required {
+				return nil, nil, fmt.Errorf("%w: missing required output %q", ErrInternal, p.Key)
+			}
+			continue
+		}
+		s, err := formatHeaderValue(v)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: output %q: %w", ErrInternal, p.Key, err)
+		}
+		if s == "" {
+			if p.Required {
+				return nil, nil, fmt.Errorf("%w: missing required output %q", ErrInternal, p.Key)
+			}
+			delete(body, p.Key)
+			continue
+		}
+		headers.Set(p.Name, s)
+		delete(body, p.Key)
+	}
+	return body, headers, nil
+}
+
+func formatHeaderValue(v any) (string, error) {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t), nil
+	case json.Number:
+		return t.String(), nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
+		return fmt.Sprint(t), nil
+	default:
+		b, err := json.Marshal(t)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	}
 }

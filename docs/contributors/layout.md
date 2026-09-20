@@ -79,13 +79,13 @@ context-mesh-engine/
 | `api/v1/health.go` | Default `GET /health` |
 | `api/v1/tools.go` | `GET /tools` (MCP envelope; REST descriptions for Arazzo tools) |
 | `api/v1/plans.go` | `GET /openapi` (always), `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; sanitized errors |
-| `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest |
-| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; secrets inject; preprocessor enrich; closed inputs |
+| `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest; `validateWorkflowIOSources` |
+| `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; secrets inject; preprocessor enrich; closed inputs; REST workflow remember for output headers |
 | `plans/policy.go` | Compile/eval OPA (shared AND plan, libraries); TTL cache via `internal/ttlcache`; `input.auth` / `input.headers` |
-| `plans/request.go` | HTTP/MCP → `RequestSource` |
+| `plans/request.go` | HTTP/MCP → `RequestSource`; `WithRESTRequest` bind box |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
-| `plans/bind.go` | REST/HTTP `x-source` merge onto `$inputs.{property}` |
-| `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const; strip/close consumer inputs; REST/HTTP `x-source` lift |
+| `plans/bind.go` | REST/HTTP `x-source` merge onto `$inputs.{property}`; `SplitRESTOutputs` header lift |
+| `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const; strip/close consumer inputs; REST/HTTP `x-source` / `x-outputs` lift |
 | `plans/public.go` | `ClassifyError` / `LogAndPublic` |
 | `plans/openapi.go` | OAS 3.1 catalog + per-plan JSON; prefix-absolute `$ref`; `servers` from PublicBaseURL+APIPrefix |
 | `plans/mcp.go` | `query` + `run_*` tools |

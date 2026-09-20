@@ -14,7 +14,15 @@ import (
 
 type restRequestCtxKey struct{}
 
-// WithRESTRequest stores r so [Runner.Run] can bind REST/HTTP x-source inputs.
+type restBindBox struct {
+	Request    *http.Request
+	PlanID     string
+	Version    string
+	WorkflowID string
+}
+
+// WithRESTRequest stores r so [Runner.Run] can bind REST/HTTP x-source inputs
+// and emit REST/HTTP x-source outputs as response headers.
 func WithRESTRequest(ctx context.Context, r *http.Request) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -22,15 +30,47 @@ func WithRESTRequest(ctx context.Context, r *http.Request) context.Context {
 	if r == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, restRequestCtxKey{}, r)
+	return context.WithValue(ctx, restRequestCtxKey{}, &restBindBox{Request: r})
 }
 
 func restRequestFrom(ctx context.Context) *http.Request {
 	if ctx == nil {
 		return nil
 	}
-	r, _ := ctx.Value(restRequestCtxKey{}).(*http.Request)
-	return r
+	switch v := ctx.Value(restRequestCtxKey{}).(type) {
+	case *http.Request:
+		return v
+	case *restBindBox:
+		if v == nil {
+			return nil
+		}
+		return v.Request
+	default:
+		return nil
+	}
+}
+
+func rememberRESTWorkflow(ctx context.Context, planID, version, workflowID string) {
+	box, _ := ctx.Value(restRequestCtxKey{}).(*restBindBox)
+	if box == nil {
+		return
+	}
+	box.PlanID = planID
+	box.Version = version
+	box.WorkflowID = workflowID
+}
+
+func restWorkflowFrom(ctx context.Context) (planID, version, workflowID string, ok bool) {
+	box, _ := ctx.Value(restRequestCtxKey{}).(*restBindBox)
+	if box == nil || box.WorkflowID == "" {
+		return "", "", "", false
+	}
+	return box.PlanID, box.Version, box.WorkflowID, true
+}
+
+// RESTWorkflowFrom is the plan/workflow Run recorded on a REST request context.
+func RESTWorkflowFrom(ctx context.Context) (planID, version, workflowID string, ok bool) {
+	return restWorkflowFrom(ctx)
 }
 
 // RequestSourceFromHTTP builds a preprocessor source from a REST request.

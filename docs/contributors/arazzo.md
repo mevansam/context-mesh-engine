@@ -22,7 +22,7 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `internal/plans/runner.go` | `NewEngine` per `Run`; closed inputs; inbound then workflow then outbound |
 | `internal/plans/policy.go` | Compile shared + plan inbound/outbound; libraries; cache |
 | `internal/plans/redact.go` | RFC 6901 output redaction |
-| `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const; strip reserved input keys; close consumer objects |
+| `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const; strip reserved input keys; close consumer objects; `x-source` / `x-outputs` walk + REST lift |
 | `internal/plans/public.go` | `ClassifyError` / `LogAndPublic` for REST and MCP |
 | `internal/plans/openapi.go` | OAS 3.1 catalog index + per-plan specs; paths without `APIPrefix` |
 | `internal/plans/mcp.go` | `query` + one `run_*` tool per catalog entry |
@@ -40,7 +40,8 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 3. `info.version` must be a semantic version **without** a leading `v` (`golang.org/x/mod/semver` on `"v"+version`). Invalid → error
 4. `ResolveSources` (attaches OpenAPI docs onto the Arazzo model)
 5. `Validate`; **errors** fail load; **warnings** are allowed
-6. Duplicate `(planId, version)` → error
+6. Per workflow: `validateWorkflowIOSources` — nested/root `x-source` on `inputs` or `x-outputs` fail; `x-outputs` property names must be workflow output names; REST output `in` must be `header`
+7. Duplicate `(planId, version)` → error
 
 `x-planId` is read from `info.Extensions` (`yaml.ScalarNode` only).
 
@@ -85,7 +86,7 @@ Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurr
 
 `Catalog.View()` is `arazzo.PlanCatalog`. It does not snapshot the catalog; `Get`/`Latest`/`Plans` copy metadata only when called. Matcher must not use a catalog miss as “no match”; the engine always verifies after `Match`.
 
-HTTP (`plans.go`): `GET /openapi` (catalog) is always registered. `POST /plans/query` is registered only when `Runner.QueryEnabled()`. Execute and per-plan OpenAPI routes are registered when catalog is non-nil. REST execute and query attach the `*http.Request` via `WithRESTRequest`; `Run` binds REST/HTTP `x-source` inputs (header/cookie/query) onto `$inputs.{property}` before the closed-schema check. Transport bodies use `ClassifyError` / `LogAndPublic` (`internal/plans/public.go`): log the full error; return a stable public string. `ErrNoExecutor` / `ErrQueryNotImplemented` → 501; `ErrNotFound` → 404 `plan not found`; `ErrUnauthorized` → 401 `unauthorized`; `ErrPolicyDenied` → 403 `policy denied` (OPA reason logged only); `ErrPolicyLoad` / `ErrInternal` → 500 `internal error`; `ErrUnexpectedInputs` → 400 `unexpected fields in inputs`; `ErrMissingInput` → 400 `missing required input`; `ErrEmptyQuery` → 400; other runner errors → 400 `workflow failed`. Invalid JSON body → 400 `invalid json body` (not logged as a runner error). HTTP **200** body is the outputs object.
+HTTP (`plans.go`): `GET /openapi` (catalog) is always registered. `POST /plans/query` is registered only when `Runner.QueryEnabled()`. Execute and per-plan OpenAPI routes are registered when catalog is non-nil. REST execute and query attach the `*http.Request` via `WithRESTRequest`; `Run` binds REST/HTTP `x-source` inputs (header/cookie/query) onto `$inputs.{property}` before the closed-schema check, and records the resolved plan/workflow on that box so `writeRunResult` can `SplitRESTOutputs`. Transport bodies use `ClassifyError` / `LogAndPublic` (`internal/plans/public.go`): log the full error; return a stable public string. `ErrNoExecutor` / `ErrQueryNotImplemented` → 501; `ErrNotFound` → 404 `plan not found`; `ErrUnauthorized` → 401 `unauthorized`; `ErrPolicyDenied` → 403 `policy denied` (OPA reason logged only); `ErrPolicyLoad` / `ErrInternal` → 500 `internal error` (including a missing required `x-outputs` header); `ErrUnexpectedInputs` → 400 `unexpected fields in inputs`; `ErrMissingInput` → 400 `missing required input`; `ErrEmptyQuery` → 400; other runner errors → 400 `workflow failed`. Invalid JSON body → 400 `invalid json body` (not logged as a runner error). HTTP **200** JSON body is the outputs object minus REST/HTTP header-lifted fields; those values are copied onto response headers.
 
 MCP (`mcp.go`): `query` is added only when `QueryEnabled()`. It calls the same `Runner.Query`. Tool errors use the same public messages. Nil error + outputs map → structured content.
 
@@ -131,9 +132,19 @@ Do not copy backend OpenAPI (`sourceDescriptions`) into these documents. Those s
 
 `info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema after stripping reserved engine keys (`policyHints`, `secrets`, `policyHints.*`, `secrets.*`) from that schema’s `properties` / `required` (and combinators / `$defs`). The consumer object is then closed (`additionalProperties: false`). Nested consumer fields with reserved names are kept and are not force-closed.
 
-Top-level input properties with `x-source` (`interface`, `protocol`, `in`, `name`) are lifted into OpenAPI `parameters` when `interface` is `rest`, `protocol` is `http` (omitted means http), and `in` is `header` / `cookie` / `query`. `name` defaults to the property key. Execute path keys are unchanged (`/plans/{planId}/{workflowId}`). `interface: mcp` and invalid `in`/`protocol` (including `path`) stay on the JSON body. `x-source` is stripped from parameter schemas, leftover body schemas, and MCP `InputSchema`. If every remaining consumer property is lifted, `requestBody` is omitted. REST execute and `POST /plans/query` bind those parameters from the HTTP request onto `$inputs.{property}` (`bind.go`). MCP `run_*` still accepts the same keys in JSON `inputs`.
+### `x-source` and `x-outputs`
 
-Summary and description are copied only when they do not name reserved keys. MCP `InputSchema` uses the same strip and close (`nodeToJSON` / `nodeToSchema`); each `oneOf` branch is also closed. **200** schema is an object whose `properties` are the Arazzo `outputs` names (expression values are not types). `servers` as for the catalog. Do not copy Arazzo step parameters, source OpenAPI, or policy bundles into these documents.
+Arazzo `outputs` is `name → runtime expression`, not JSON Schema, so output types and `x-source` live on the workflow extension `x-outputs` (decoded from `Workflow.Extensions`). Input `x-source` stays on `workflows[].inputs` properties.
+
+`walkXSource` (`schema.go`) runs at catalog load. `x-source` is legal only on **top-level** `properties` of that schema (`schemaLocTopProp`). Root, nested properties, `items`, `$defs`/`definitions`, and nested combinators fail with `x-source is only allowed on top-level properties`. Combinators (`oneOf`/`anyOf`/`allOf`/`not`/`if`/`then`/`else`) at the schema root keep the current loc so a top-level property still lifts.
+
+**Inputs** (`splitOpenAPIInputs` / `liftRESTParam`): `interface: rest` + `protocol: http` (omitted = http) + `in` `header`/`cookie`/`query` → OpenAPI request `parameters`. Other values (including `path`, non-http protocol, `interface: mcp`) stay on the JSON body. `x-source` is stripped from parameter schemas, leftover body schemas, and MCP `InputSchema`. If every remaining consumer property is lifted, `requestBody` is omitted. REST execute and `POST /plans/query` bind those parameters from the HTTP request onto `$inputs.{property}` (`bind.go`). MCP `run_*` still accepts the same keys in JSON `inputs`.
+
+**Outputs** (`splitOpenAPIOutputs` / `liftOutputRESTParam`): `x-outputs.properties` keys and `required` entries must be names from `workflow.outputs`. REST lift is **header only**. `interface: rest` requires `protocol: http` (or omitted) and `in: header`; any other `in` (query, cookie, path, missing) fails load. `interface: mcp` stays on the JSON body. Duplicate header names fail load. Lifted fields become `responses.200.headers` and are dropped from the 200 JSON schema. After outbound OPA, REST `writeRunResult` calls `SplitRESTOutputs`: copy the value onto that header (JSON-marshal non-scalars), omit it from the body. Missing **required** lifted outputs → `ErrInternal` (500). MCP structured content is the full outputs map.
+
+Execute path keys are unchanged (`/plans/{planId}/{workflowId}`). `name` defaults to the property key.
+
+Summary and description are copied only when they do not name reserved keys. MCP `InputSchema` uses the same strip and close (`nodeToJSON` / `nodeToSchema`); each `oneOf` branch is also closed. **200** schema is an object whose `properties` are the remaining Arazzo `outputs` names after header lift (expression values are not types). `servers` as for the catalog. Do not copy Arazzo step parameters, source OpenAPI, or policy bundles into these documents.
 
 ### REST resources vs MCP tools
 
@@ -143,7 +154,7 @@ MCP granularity is **one tool per plan version** (`run_*`) plus optional `query`
 | --- | --- | --- | --- |
 | `GET /tools` | list | JSON-RPC `tools/list` | Optional `?cursor=` = `ListToolsParams.cursor`. Envelope is `ListToolsResult` (`ttlMs`, `cacheScope`, `tools`). Arazzo `description` on REST is the REST template; MCP list keeps MCP text. |
 | `POST /plans/query` | match + execute | tool `query` | `{ "query", "data" }` both sides. 200 / structured content = workflow **outputs**. Route and tool omitted unless `QueryMatcher` is set. |
-| `POST /plans/{planId}/{workflowId}` | execute **latest** | `run_{plan}_v{latest}` with that `workflowId` | REST JSON body is remaining `inputs`. REST/HTTP `x-source` comes from header/cookie/query. MCP args are `{ "workflowId", "inputs" }`. |
+| `POST /plans/{planId}/{workflowId}` | execute **latest** | `run_{plan}_v{latest}` with that `workflowId` | REST JSON body is remaining `inputs`. REST/HTTP input `x-source` comes from header/cookie/query. REST/HTTP output `x-source` (`x-outputs`, `in: header`) is a response header and is omitted from the JSON body. MCP args are `{ "workflowId", "inputs" }`; MCP structured content is the full outputs map. |
 | `POST /plans/{planId}/v{version}/{workflowId}` | execute that version | `run_{plan}_v{version}` | Same body split as latest. |
 | `GET /openapi` | catalog OAS | (none) | Index: `/tools` + `$ref`s to latest child specs. Always registered. |
 | `GET /openapi/{planId}` | latest child OAS | (none) | Describes latest execute paths for that plan. |
@@ -188,11 +199,11 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments; LoadShared |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
-| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs; `x-source` REST/HTTP lift |
-| `internal/plans/bind_test.go` | REST/HTTP header/cookie/query merge; body conflict; missing required; MCP JSON still accepted |
+| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs; `x-source` REST/HTTP lift; nested `x-source` fail; `x-outputs` header lift / `in` must be header |
+| `internal/plans/bind_test.go` | REST/HTTP header/cookie/query merge; body conflict; missing required input; MCP JSON still accepted; `SplitRESTOutputs` header lift and missing required output |
 | `internal/plans/public_test.go` | public error mapping |
 | `arazzo/inputs_test.go` | `ReservedInputKey` / `LeaksReservedInputs` |
-| `engine/arazzo_test.go` | invalid templates fail `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
+| `engine/arazzo_test.go` | invalid templates fail `New`; nested `x-source` fails `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
 | `engine/engine_test.go` | `GET /openapi` without loaders still describes `/tools` |
 
 Fixtures live under `testdata/arazzo/`. `FileLoader` must be pointed at **`plans/`**, not `testdata/arazzo/` (otherwise `sources/openapi.yaml` is parsed as Arazzo and fails). Latest petstore version in tests is `1.1.0`.

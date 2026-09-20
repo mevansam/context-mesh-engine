@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +24,31 @@ func plansDir(t *testing.T) string {
 	t.Helper()
 	return filepath.Join("..", "..", "testdata", "arazzo", "plans")
 }
+
+func inlinePlanSource(t *testing.T, data []byte) arazzo.Source {
+	t.Helper()
+	dir, err := filepath.Abs(plansDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := (&url.URL{Scheme: "file", Path: filepath.ToSlash(dir) + "/"}).String()
+	return arazzo.Source{
+		URI:     filepath.Join(dir, "inline.yaml"),
+		Data:    data,
+		BaseURL: base,
+	}
+}
+
+const inlinePlanPrefix = `arazzo: 1.0.1
+info:
+  title: t
+  version: "1.0.0"
+  x-planId: p
+sourceDescriptions:
+  - name: petstoreApi
+    url: ../sources/openapi.yaml
+    type: openapi
+`
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -88,6 +114,74 @@ func TestLoad_InvalidInfoVersion(t *testing.T) {
 	}
 	if err := checkPlanVersion("1.0.0-beta.1"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoad_NestedXSourceFails(t *testing.T) {
+	src := []byte(inlinePlanPrefix + `
+workflows:
+  - workflowId: ping
+    inputs:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+              x-source:
+                interface: rest
+                in: header
+    steps:
+      - stepId: s
+        operationId: getHealth
+        successCriteria:
+          - condition: $statusCode == 200
+`)
+	_, err := Load(context.Background(), []arazzo.Loader{errLoader{srcs: []arazzo.Source{inlinePlanSource(t, src)}}}, discardLogger())
+	if err == nil || !strings.Contains(err.Error(), "x-source is only allowed on top-level properties") {
+		t.Fatalf("nested x-source: %v", err)
+	}
+}
+
+func TestLoad_OutputSourceInMustBeHeader(t *testing.T) {
+	doc := func(inLine string) []byte {
+		return []byte(inlinePlanPrefix + `
+workflows:
+  - workflowId: ping
+    steps:
+      - stepId: s
+        operationId: getHealth
+        successCriteria:
+          - condition: $statusCode == 200
+        outputs:
+          orderId: $statusCode
+    outputs:
+      orderId: $steps.s.outputs.orderId
+    x-outputs:
+      type: object
+      properties:
+        orderId:
+          type: string
+          x-source:
+            interface: rest
+` + inLine)
+	}
+	for _, tc := range []struct {
+		name string
+		src  []byte
+	}{
+		{name: "query", src: doc("            in: query\n")},
+		{name: "cookie", src: doc("            in: cookie\n")},
+		{name: "path", src: doc("            in: path\n")},
+		{name: "missing", src: doc("")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(context.Background(), []arazzo.Loader{errLoader{srcs: []arazzo.Source{inlinePlanSource(t, tc.src)}}}, discardLogger())
+			if err == nil || !strings.Contains(err.Error(), "x-source.in must be header") {
+				t.Fatalf("output in %s: %v", tc.name, err)
+			}
+		})
 	}
 }
 
@@ -850,6 +944,93 @@ func TestOutputsToJSONSchema(t *testing.T) {
 	p, _ := got["properties"].(map[string]any)
 	if _, ok := p["petId"]; !ok {
 		t.Fatalf("properties = %#v", got)
+	}
+}
+
+func TestOpenAPIJSON_MapsOutputHeaders(t *testing.T) {
+	outs := orderedmap.New[string, string]()
+	outs.Set("orderId", "$steps.s.outputs.id")
+	outs.Set("pet", "$steps.s.outputs.pet")
+	ext := orderedmap.New[string, *yaml.Node]()
+	ext.Set(outputSchemaExt, yamlMapping(t, `
+type: object
+required: [orderId]
+properties:
+  orderId:
+    type: string
+    x-source:
+      interface: rest
+      in: header
+      name: x-order-id
+  pet:
+    type: object
+`))
+	e := &Entry{
+		PlanID:  "petstore",
+		Version: "0.0.1",
+		Doc: &high.Arazzo{
+			Workflows: []*high.Workflow{{
+				WorkflowId: "purchasePet",
+				Outputs:    outs,
+				Extensions: ext,
+			}},
+		},
+	}
+	b, err := OpenAPIJSON(e, true, OpenAPIMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	item, _ := paths["/plans/petstore/purchasePet"].(map[string]any)
+	post, _ := item["post"].(map[string]any)
+	resp, _ := post["responses"].(map[string]any)
+	okResp, _ := resp["200"].(map[string]any)
+	headers, _ := okResp["headers"].(map[string]any)
+	h, _ := headers["x-order-id"].(map[string]any)
+	if h["required"] != true {
+		t.Fatalf("header = %#v", h)
+	}
+	hs, _ := h["schema"].(map[string]any)
+	if _, ok := hs["x-source"]; ok {
+		t.Fatalf("header schema leaked x-source: %#v", h)
+	}
+	content, _ := okResp["content"].(map[string]any)
+	app, _ := content["application/json"].(map[string]any)
+	schema, _ := app["schema"].(map[string]any)
+	props, _ := schema["properties"].(map[string]any)
+	if _, ok := props["orderId"]; ok {
+		t.Fatalf("lifted orderId still in body: %#v", schema)
+	}
+	if _, ok := props["pet"]; !ok {
+		t.Fatalf("pet missing from body: %#v", schema)
+	}
+}
+
+func TestWalkXSource_RootAndNested(t *testing.T) {
+	n := yamlMapping(t, `
+type: object
+x-source:
+  interface: rest
+  in: header
+`)
+	if err := validateXSourcePlacement(n, "inputs"); err == nil {
+		t.Fatal("expected root x-source error")
+	}
+	ok := yamlMapping(t, `
+type: object
+properties:
+  requestId:
+    type: string
+    x-source:
+      interface: rest
+      in: header
+`)
+	if err := validateXSourcePlacement(ok, "inputs"); err != nil {
+		t.Fatal(err)
 	}
 }
 
