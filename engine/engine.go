@@ -160,6 +160,13 @@ type Options struct {
 	// Empty uses "1.0.0".
 	OpenAPICatalogVersion string
 
+	// CommonRESTParams are header and cookie parameters documented on
+	// generated OpenAPI for GET {APIPrefix}/tools, POST {APIPrefix}/plans/query,
+	// and execute POSTs. They are not bound to Arazzo $inputs. The host
+	// wrap and RequestPreprocessor read them from the HTTP request.
+	// Empty means none. In must be "header" or "cookie".
+	CommonRESTParams []CommonRESTParam
+
 	// MCPHandlerWrap wraps the Streamable HTTP handler only (not REST).
 	// Use auth.RequireBearerToken here. Nil means no wrap.
 	MCPHandlerWrap func(http.Handler) http.Handler
@@ -169,13 +176,6 @@ type Options struct {
 	// /health, /tools, /openapi, /openapi/{planId}, /plans/.... The engine
 	// does not require auth on any of them; the host chooses which to wrap.
 	RESTHandlerWrap func(http.Handler) http.Handler
-
-	// CommonRESTParams are header and cookie parameters documented on
-	// generated OpenAPI for GET {APIPrefix}/tools, POST {APIPrefix}/plans/query,
-	// and execute POSTs. They are not bound to Arazzo $inputs. The host
-	// wrap and RequestPreprocessor read them from the HTTP request.
-	// Empty means none. In must be "header" or "cookie".
-	CommonRESTParams []CommonRESTParam
 }
 
 // CommonRESTParam is a header or cookie documented on generated REST OpenAPI.
