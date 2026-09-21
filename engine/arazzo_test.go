@@ -168,7 +168,7 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	if _, ok := paths["/plans/petstore/pingHealth"]; !ok {
+	if _, ok := paths["/tools/petstore/pingHealth"]; !ok {
 		t.Fatalf("paths = %v", paths)
 	}
 
@@ -188,8 +188,8 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 	if _, ok := cpaths["/tools"]; !ok {
 		t.Fatalf("catalog missing /tools: %v", cpaths)
 	}
-	ping, _ := cpaths["/plans/petstore/pingHealth"].(map[string]any)
-	if ping["$ref"] != "/api/openapi/petstore#/paths/~1plans~1petstore~1pingHealth" {
+	ping, _ := cpaths["/tools/petstore/pingHealth"].(map[string]any)
+	if ping["$ref"] != "/api/openapi/petstore#/paths/~1tools~1petstore~1pingHealth" {
 		t.Fatalf("catalog pingHealth $ref = %v", ping["$ref"])
 	}
 	servers, _ := catalog["servers"].([]any)
@@ -213,7 +213,7 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 		t.Fatalf("versioned status = %d", resp.StatusCode)
 	}
 
-	resp, err = http.Post(ts.URL+"/api/plans/petstore/pingHealth", "application/json", strings.NewReader(`{}`))
+	resp, err = http.Post(ts.URL+"/api/tools/petstore/pingHealth", "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestArazzo_OpenAPIWithoutExecutor(t *testing.T) {
 		t.Fatalf("501 body = %#v", fail)
 	}
 
-	resp, err = http.Post(ts.URL+"/api/plans/petstore/pingHealth", "application/json", strings.NewReader(`{"name":"x","extra":1}`))
+	resp, err = http.Post(ts.URL+"/api/tools/petstore/pingHealth", "application/json", strings.NewReader(`{"name":"x","extra":1}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestArazzo_CommonRESTParamsInOpenAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, _ = child["paths"].(map[string]any)
-	item, _ := paths["/plans/petstore/pingHealth"].(map[string]any)
+	item, _ := paths["/tools/petstore/pingHealth"].(map[string]any)
 	post, _ := item["post"].(map[string]any)
 	params, _ = post["parameters"].([]any)
 	if !hasParam(params, "header", "X-End-User-Token") || !hasParam(params, "cookie", "sid") {
@@ -350,6 +350,104 @@ workflows:
 	}
 }
 
+func TestArazzo_OpenAPISecurityInOpenAPI(t *testing.T) {
+	schemes := []engine.OpenAPISecurityScheme{{
+		Name:        "planOAuth",
+		Type:        "oauth2",
+		Description: "Calling-application OAuth",
+		Flows: &engine.OpenAPIOAuthFlows{ClientCredentials: &engine.OpenAPIOAuthFlow{
+			TokenURL: "http://localhost:8092/oauth/token",
+			Scopes: map[string]string{
+				"tools:list": "List tools",
+				"pets:read":  "Find pets",
+			},
+		}},
+	}}
+	security := []engine.OpenAPISecurityRequirement{{
+		Schemes: []engine.OpenAPISchemeRef{{Name: "planOAuth", Scopes: []string{"tools:list"}}},
+	}}
+	e, err := engine.New(engine.Options{
+		Logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:          []arazzo.Loader{arazzo.NewFileLoader(plansDir(t))},
+		PublicBaseURL:          "http://example.test",
+		DualMCPandREST:         true,
+		QueryMatcher:           pingMatcher{planID: "petstore", workflowID: "pingHealth"},
+		OpenAPISecuritySchemes: schemes,
+		OpenAPISecurity:        security,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/openapi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var catalog map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
+		t.Fatal(err)
+	}
+	comps, _ := catalog["components"].(map[string]any)
+	ss, _ := comps["securitySchemes"].(map[string]any)
+	if _, ok := ss["planOAuth"]; !ok {
+		t.Fatalf("catalog schemes = %#v", ss)
+	}
+	sec, _ := catalog["security"].([]any)
+	sm, _ := sec[0].(map[string]any)
+	if fmt.Sprint(sm["planOAuth"]) != "[tools:list]" {
+		t.Fatalf("catalog security = %#v", sec)
+	}
+
+	resp, err = http.Get(ts.URL + "/api/openapi/petstore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var child map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&child); err != nil {
+		t.Fatal(err)
+	}
+	paths, _ := child["paths"].(map[string]any)
+	item, _ := paths["/tools/petstore/pingHealth"].(map[string]any)
+	post, _ := item["post"].(map[string]any)
+	psec, _ := post["security"].([]any)
+	pm, _ := psec[0].(map[string]any)
+	if fmt.Sprint(pm["planOAuth"]) != "[tools:list]" {
+		t.Fatalf("child fallback security = %#v", psec)
+	}
+
+	_, err = engine.New(engine.Options{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders: []arazzo.Loader{yamlLoader{dir: plansDir(t), data: []byte(`
+arazzo: 1.0.1
+info:
+  title: t
+  version: "1.0.0"
+  x-planId: p
+sourceDescriptions:
+  - name: petstoreApi
+    url: ../sources/openapi.yaml
+    type: openapi
+workflows:
+  - workflowId: ping
+    x-security:
+      - nope: []
+    steps:
+      - stepId: s
+        operationId: getHealth
+        successCriteria:
+          - condition: $statusCode == 200
+`)}},
+		OpenAPISecuritySchemes: schemes,
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown scheme") {
+		t.Fatalf("x-security unknown: %v", err)
+	}
+}
+
 func TestArazzo_RESTExecuteLatestAndVersioned(t *testing.T) {
 	exec := &countingExec{}
 	e := newArazzoEngine(t, exec)
@@ -374,11 +472,11 @@ func TestArazzo_RESTExecuteLatestAndVersioned(t *testing.T) {
 		return out
 	}
 
-	latest := post("/api/plans/petstore/pingHealth", `{"name":"a"}`)
+	latest := post("/api/tools/petstore/pingHealth", `{"name":"a"}`)
 	if _, ok := latest["success"]; ok {
 		t.Fatalf("REST body should be outputs only, got %v", latest)
 	}
-	ver := post("/api/plans/petstore/v1.0.0/pingHealth", `{"name":"b"}`)
+	ver := post("/api/tools/petstore/v1.0.0/pingHealth", `{"name":"b"}`)
 	if _, ok := ver["success"]; ok {
 		t.Fatalf("REST body should be outputs only, got %v", ver)
 	}
@@ -443,7 +541,7 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 			t.Fatalf("tools[%d]: REST %q MCP %q", i, restBody.Tools[i].Name, tl.Name)
 		}
 		if strings.HasPrefix(tl.Name, "run_") {
-			if !strings.Contains(restBody.Tools[i].Description, "POST http://example.test/api/plans/") {
+			if !strings.Contains(restBody.Tools[i].Description, "POST http://example.test/api/tools/") {
 				t.Fatalf("REST tool %s description missing REST URL:\n%s", tl.Name, restBody.Tools[i].Description)
 			}
 			if strings.Contains(strings.ToLower(restBody.Tools[i].Description), "mcp") {
@@ -490,7 +588,7 @@ func TestArazzo_MCPQueryStubAndRunTools(t *testing.T) {
 		t.Fatalf("structured content should be outputs only, got %#v", res.StructuredContent)
 	}
 
-	resp, err := http.Post(ts.URL+"/api/plans/petstore/v1.1.0/echoName", "application/json", bytes.NewReader([]byte(`{"name":"rest"}`)))
+	resp, err := http.Post(ts.URL+"/api/tools/petstore/v1.1.0/echoName", "application/json", bytes.NewReader([]byte(`{"name":"rest"}`)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,8 +644,8 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	catPaths, _ := catDoc["paths"].(map[string]any)
-	ping, _ := catPaths["/plans/petstore/pingHealth"].(map[string]any)
-	if ping["$ref"] != "/service/v2/openapi/petstore#/paths/~1plans~1petstore~1pingHealth" {
+	ping, _ := catPaths["/tools/petstore/pingHealth"].(map[string]any)
+	if ping["$ref"] != "/service/v2/openapi/petstore#/paths/~1tools~1petstore~1pingHealth" {
 		t.Fatalf("custom prefix $ref = %v", ping["$ref"])
 	}
 
@@ -602,7 +700,7 @@ func TestArazzo_CustomAPIPrefix(t *testing.T) {
 		if tl.Name == "query" && !strings.Contains(tl.Description, "POST http://example.test/service/v2/plans/query") {
 			t.Fatalf("REST query description missing custom URL:\n%s", tl.Description)
 		}
-		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/service/v2/plans/") {
+		if strings.HasPrefix(tl.Name, "run_") && !strings.Contains(tl.Description, "POST http://example.test/service/v2/tools/") {
 			t.Fatalf("REST tool %s description missing custom URL:\n%s", tl.Name, tl.Description)
 		}
 	}
@@ -719,7 +817,7 @@ func TestArazzo_ToolHelpLookupOnDemand(t *testing.T) {
 	if restBy["run_petstore_v1.1.0"] == nil || restBy["run_petstore_v1.1.0"].Description != "plan-help-1.1.0" {
 		t.Fatalf("REST v1.1.0 should reuse Description, got %#v", restBy["run_petstore_v1.1.0"])
 	}
-	if restBy["run_petstore_v1.0.0"] == nil || !strings.Contains(restBy["run_petstore_v1.0.0"].Description, "POST http://example.test/api/plans/") {
+	if restBy["run_petstore_v1.0.0"] == nil || !strings.Contains(restBy["run_petstore_v1.0.0"].Description, "POST http://example.test/api/tools/") {
 		t.Fatalf("REST v1.0.0 default REST desc missing: %#v", restBy["run_petstore_v1.0.0"])
 	}
 
@@ -947,7 +1045,7 @@ func TestArazzo_RESTNotFoundAndBadJSON(t *testing.T) {
 	ts := httptest.NewServer(e.Handler())
 	t.Cleanup(ts.Close)
 
-	resp, err := http.Post(ts.URL+"/api/plans/missing/pingHealth", "application/json", strings.NewReader(`{}`))
+	resp, err := http.Post(ts.URL+"/api/tools/missing/pingHealth", "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -956,7 +1054,7 @@ func TestArazzo_RESTNotFoundAndBadJSON(t *testing.T) {
 		t.Fatalf("missing plan status = %d", resp.StatusCode)
 	}
 
-	resp, err = http.Post(ts.URL+"/api/plans/petstore/v9.9.9/pingHealth", "application/json", strings.NewReader(`{}`))
+	resp, err = http.Post(ts.URL+"/api/tools/petstore/v9.9.9/pingHealth", "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -983,7 +1081,7 @@ func TestArazzo_RESTNotFoundAndBadJSON(t *testing.T) {
 		t.Fatalf("missing openapi version status = %d", resp.StatusCode)
 	}
 
-	resp, err = http.Post(ts.URL+"/api/plans/petstore/pingHealth", "application/json", strings.NewReader(`{`))
+	resp, err = http.Post(ts.URL+"/api/tools/petstore/pingHealth", "application/json", strings.NewReader(`{`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1026,7 +1124,7 @@ func TestArazzo_PolicyDeniedForbidden(t *testing.T) {
 	ts := httptest.NewServer(e.Handler())
 	t.Cleanup(ts.Close)
 
-	resp, err := http.Post(ts.URL+"/api/plans/petstore/pingHealth", "application/json", strings.NewReader(`{"name":"x"}`))
+	resp, err := http.Post(ts.URL+"/api/tools/petstore/pingHealth", "application/json", strings.NewReader(`{"name":"x"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

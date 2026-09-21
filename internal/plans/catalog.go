@@ -108,6 +108,9 @@ func (c *Catalog) addSource(src arazzo.Source, logger *slog.Logger) error {
 		if err := validateWorkflowIOSources(wf); err != nil {
 			return fmt.Errorf("%s: workflow %s: %w", src.URI, wf.WorkflowId, err)
 		}
+		if err := validateWorkflowSecurityShape(wf); err != nil {
+			return fmt.Errorf("%s: workflow %s: %w", src.URI, wf.WorkflowId, err)
+		}
 	}
 
 	k := key(planID, doc.Info.Version)

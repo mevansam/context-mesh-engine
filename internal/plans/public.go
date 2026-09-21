@@ -40,6 +40,8 @@ func ClassifyError(err error) PublicError {
 		return PublicError{Status: http.StatusNotFound, Message: ErrNotFound.Error()}
 	case errors.Is(err, ErrUnauthorized):
 		return PublicError{Status: http.StatusUnauthorized, Message: ErrUnauthorized.Error()}
+	case errors.Is(err, ErrInsufficientScope):
+		return PublicError{Status: http.StatusForbidden, Message: ErrInsufficientScope.Error()}
 	case errors.Is(err, ErrPolicyDenied):
 		return PublicError{Status: http.StatusForbidden, Message: ErrPolicyDenied.Error()}
 	case errors.Is(err, ErrEmptyQuery):

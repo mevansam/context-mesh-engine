@@ -19,6 +19,7 @@ func TestClassifyError(t *testing.T) {
 		{ErrNoExecutor, http.StatusNotImplemented, "executor not configured"},
 		{fmt.Errorf("%w: petstore@1.1.0", ErrNotFound), http.StatusNotFound, "plan not found"},
 		{fmt.Errorf("%w: missing token", ErrUnauthorized), http.StatusUnauthorized, "unauthorized"},
+		{fmt.Errorf("%w: workflow purchasePet", ErrInsufficientScope), http.StatusForbidden, "insufficient scope"},
 		{policyDenied("inbound", "browsers cannot purchase"), http.StatusForbidden, "policy denied"},
 		{fmt.Errorf("%w: inbound compile", ErrPolicyLoad), http.StatusInternalServerError, "internal error"},
 		{fmt.Errorf("%w: secret hmac", ErrInternal), http.StatusInternalServerError, "internal error"},

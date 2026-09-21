@@ -15,7 +15,8 @@ import (
 	"github.com/mevansam/context-mesh-engine/internal/plans"
 )
 
-// PlansController serves POST /plans/... and GET /openapi.
+// PlansController serves GET /openapi, POST /plans/query, and
+// POST /tools/{planId}/… execute routes.
 // GET /openapi (catalog index) is always registered. Plan execute
 // routes and per-plan OpenAPI are registered when catalog is non-nil.
 type PlansController struct {
@@ -42,8 +43,8 @@ func (c *PlansController) Register(mux *http.ServeMux) {
 	if c.runner != nil && c.runner.QueryEnabled() {
 		mux.HandleFunc("POST /plans/query", c.postQuery)
 	}
-	mux.HandleFunc("POST /plans/{planId}/{workflowId}", c.postLatest)
-	mux.HandleFunc("POST /plans/{planId}/{version}/{workflowId}", c.postVersioned)
+	mux.HandleFunc("POST /tools/{planId}/{workflowId}", c.postLatest)
+	mux.HandleFunc("POST /tools/{planId}/{version}/{workflowId}", c.postVersioned)
 	mux.HandleFunc("GET /openapi/{planId}", c.openapiLatest)
 	mux.HandleFunc("GET /openapi/{planId}/{version}", c.openapiVersioned)
 }

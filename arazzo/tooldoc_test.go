@@ -72,7 +72,7 @@ func TestRenderToolDoc_Defaults(t *testing.T) {
 	if strings.Contains(strings.ToLower(doc.RESTDescription), "mcp") {
 		t.Fatalf("REST description must not mention MCP:\n%s", doc.RESTDescription)
 	}
-	if want := "POST http://localhost:8080/api/plans/petstore/v1.1.0/{workflowId}"; !strings.Contains(doc.RESTDescription, want) {
+	if want := "POST http://localhost:8080/api/tools/petstore/v1.1.0/{workflowId}"; !strings.Contains(doc.RESTDescription, want) {
 		t.Fatalf("REST description missing %q:\n%s", want, doc.RESTDescription)
 	}
 	if want := "GET http://localhost:8080/api/openapi/petstore"; !strings.Contains(doc.RESTDescription, want) {

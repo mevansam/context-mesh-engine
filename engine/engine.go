@@ -162,10 +162,21 @@ type Options struct {
 
 	// CommonRESTParams are header and cookie parameters documented on
 	// generated OpenAPI for GET {APIPrefix}/tools, POST {APIPrefix}/plans/query,
-	// and execute POSTs. They are not bound to Arazzo $inputs. The host
+	// and execute POSTs under {APIPrefix}/tools/{planId}/…. They are not bound to Arazzo $inputs. The host
 	// wrap and RequestPreprocessor read them from the HTTP request.
 	// Empty means none. In must be "header" or "cookie".
 	CommonRESTParams []CommonRESTParam
+
+	// OpenAPISecuritySchemes are OAS 3.1 components.securitySchemes on
+	// generated catalog and child specs. Empty means none. Type is http,
+	// apiKey, oauth2, or openIdConnect.
+	OpenAPISecuritySchemes []OpenAPISecurityScheme
+
+	// OpenAPISecurity is document-level OAS security on GET {APIPrefix}/tools
+	// and POST {APIPrefix}/plans/query. Child execute operations use workflow
+	// x-security when set, otherwise this fallback. Scheme names must exist
+	// in OpenAPISecuritySchemes. Empty means schemes are documented only.
+	OpenAPISecurity []OpenAPISecurityRequirement
 
 	// MCPHandlerWrap wraps the Streamable HTTP handler only (not REST).
 	// Use auth.RequireBearerToken here. Nil means no wrap.
@@ -173,8 +184,9 @@ type Options struct {
 
 	// RESTHandlerWrap wraps the REST mux after StripPrefix of APIPrefix
 	// and before APITimeout. Nil means no wrap. After the strip, paths are
-	// /health, /tools, /openapi, /openapi/{planId}, /plans/.... The engine
-	// does not require auth on any of them; the host chooses which to wrap.
+	// /health, /tools, /openapi, /openapi/{planId}, /tools/{planId}/…,
+	// /plans/query. The engine does not require auth on any of them; the
+	// host chooses which to wrap.
 	RESTHandlerWrap func(http.Handler) http.Handler
 }
 
@@ -192,6 +204,58 @@ type CommonRESTParam struct {
 	Description string
 	// Schema defaults to {type: string} when nil.
 	Schema map[string]any
+}
+
+// OpenAPISecurityScheme is an OAS 3.1 security scheme on generated REST OpenAPI.
+// The engine does not verify tokens from this config; RESTHandlerWrap /
+// MCPHandlerWrap still enforce auth.
+type OpenAPISecurityScheme struct {
+	// Name is the components.securitySchemes key.
+	Name string
+	// Type is http, apiKey, oauth2, or openIdConnect.
+	Type string
+	// Description is copied onto the scheme when non-empty.
+	Description string
+	// Scheme is required for Type http: bearer or basic.
+	Scheme string
+	// BearerFormat is optional for http bearer (for example JWT).
+	BearerFormat string
+	// In is required for Type apiKey: header, query, or cookie.
+	In string
+	// APIKeyName is the header, query, or cookie name for Type apiKey.
+	APIKeyName string
+	// Flows is required for Type oauth2.
+	Flows *OpenAPIOAuthFlows
+	// OpenIDConnectURL is required for Type openIdConnect.
+	OpenIDConnectURL string
+}
+
+// OpenAPIOAuthFlows is the OAS oauth2 flows object.
+type OpenAPIOAuthFlows struct {
+	Implicit          *OpenAPIOAuthFlow
+	Password          *OpenAPIOAuthFlow
+	ClientCredentials *OpenAPIOAuthFlow
+	AuthorizationCode *OpenAPIOAuthFlow
+}
+
+// OpenAPIOAuthFlow is one OAS oauth2 flow.
+type OpenAPIOAuthFlow struct {
+	AuthorizationURL string
+	TokenURL         string
+	RefreshURL       string
+	Scopes           map[string]string
+}
+
+// OpenAPISchemeRef names a scheme in a security requirement.
+type OpenAPISchemeRef struct {
+	Name   string
+	Scopes []string
+}
+
+// OpenAPISecurityRequirement is one OAS security requirement (AND of scheme
+// refs). A slice of requirements is OR.
+type OpenAPISecurityRequirement struct {
+	Schemes []OpenAPISchemeRef
 }
 
 // Engine is a thin facade over internal/mcpgw, internal/httpserver,
@@ -217,9 +281,10 @@ type Engine struct {
 // [Options.DualMCPandREST], [Options.MCPOnly], and
 // [Options.RESTOnly] control which HTTP surfaces [Engine.Handler]
 // mounts; all false serves REST only. Load or template errors fail
-// construction. Invalid [Options.CommonRESTParams] or a name that collides
-// with a workflow x-source REST lift also fail construction. Help registry
-// I/O is deferred until tools/list.
+// construction. Invalid [Options.CommonRESTParams], [Options.OpenAPISecuritySchemes],
+// [Options.OpenAPISecurity], a common-param / security-scheme collision with
+// an x-source REST lift, or workflow x-security that names an unknown scheme
+// also fail construction. Help registry I/O is deferred until tools/list.
 func New(opts Options) (*Engine, error) {
 	opts = applyDefaults(opts)
 	if err := validateServeMode(opts); err != nil {
@@ -230,6 +295,17 @@ func New(opts Options) (*Engine, error) {
 	}
 	common := restCommonParams(opts)
 	if _, err := plans.NormalizeRESTCommonParams(common); err != nil {
+		return nil, err
+	}
+	schemes, err := plans.NormalizeSecuritySchemes(restSecuritySchemes(opts))
+	if err != nil {
+		return nil, err
+	}
+	security, err := plans.NormalizeSecurity(restSecurity(opts), schemes)
+	if err != nil {
+		return nil, err
+	}
+	if err := plans.CheckSecurityCollisions(nil, schemes, common); err != nil {
 		return nil, err
 	}
 
@@ -263,6 +339,12 @@ func New(opts Options) (*Engine, error) {
 		if err := plans.CheckCommonParamCollisions(catalog, common); err != nil {
 			return nil, err
 		}
+		if err := plans.CheckSecurityCollisions(catalog, schemes, common); err != nil {
+			return nil, err
+		}
+		if err := plans.CheckWorkflowSecurity(catalog, schemes); err != nil {
+			return nil, err
+		}
 		runner := plans.NewRunner(catalog, opts.ArazzoExecutor, opts.QueryMatcher)
 		if opts.PolicyLoader != nil {
 			runner.SetPolicy(plans.NewPolicyCache(opts.PolicyLoader, opts.PolicyCacheTTL, opts.Logger))
@@ -282,9 +364,9 @@ func New(opts Options) (*Engine, error) {
 		}
 		gw.Server().AddReceivingMiddleware(help.ReceivingMiddleware())
 		toolsCtrl.SetToolHelpOverlay(help.ApplyREST)
-		router.Register(apiv1.NewPlansController(catalog, runner, openAPIMeta(opts, common), opts.Logger))
+		router.Register(apiv1.NewPlansController(catalog, runner, openAPIMeta(opts, common, schemes, security), opts.Logger))
 	} else {
-		router.Register(apiv1.NewPlansController(nil, nil, openAPIMeta(opts, common), opts.Logger))
+		router.Register(apiv1.NewPlansController(nil, nil, openAPIMeta(opts, common, schemes, security), opts.Logger))
 	}
 
 	return &Engine{
@@ -326,13 +408,15 @@ func applyDefaults(opts Options) Options {
 	return opts
 }
 
-func openAPIMeta(opts Options, common []plans.RESTCommonParam) plans.OpenAPIMeta {
+func openAPIMeta(opts Options, common []plans.RESTCommonParam, schemes []plans.SecurityScheme, security []plans.SecurityRequirement) plans.OpenAPIMeta {
 	return plans.OpenAPIMeta{
-		ServerURL:      plans.OpenAPIServerURL(opts.PublicBaseURL, opts.APIPrefix),
-		APIPrefix:      opts.APIPrefix,
-		CatalogTitle:   opts.OpenAPICatalogTitle,
-		CatalogVersion: opts.OpenAPICatalogVersion,
-		CommonParams:   common,
+		ServerURL:       plans.OpenAPIServerURL(opts.PublicBaseURL, opts.APIPrefix),
+		APIPrefix:       opts.APIPrefix,
+		CatalogTitle:    opts.OpenAPICatalogTitle,
+		CatalogVersion:  opts.OpenAPICatalogVersion,
+		CommonParams:    common,
+		SecuritySchemes: schemes,
+		Security:        security,
 	}
 }
 
@@ -349,6 +433,66 @@ func restCommonParams(opts Options) []plans.RESTCommonParam {
 			Description: p.Description,
 			Schema:      p.Schema,
 		}
+	}
+	return out
+}
+
+func restSecuritySchemes(opts Options) []plans.SecurityScheme {
+	if len(opts.OpenAPISecuritySchemes) == 0 {
+		return nil
+	}
+	out := make([]plans.SecurityScheme, len(opts.OpenAPISecuritySchemes))
+	for i, s := range opts.OpenAPISecuritySchemes {
+		out[i] = plans.SecurityScheme{
+			Name:             s.Name,
+			Type:             s.Type,
+			Description:      s.Description,
+			Scheme:           s.Scheme,
+			BearerFormat:     s.BearerFormat,
+			In:               s.In,
+			APIKeyName:       s.APIKeyName,
+			Flows:            restOAuthFlows(s.Flows),
+			OpenIDConnectURL: s.OpenIDConnectURL,
+		}
+	}
+	return out
+}
+
+func restOAuthFlows(f *OpenAPIOAuthFlows) *plans.OAuthFlows {
+	if f == nil {
+		return nil
+	}
+	return &plans.OAuthFlows{
+		Implicit:          restOAuthFlow(f.Implicit),
+		Password:          restOAuthFlow(f.Password),
+		ClientCredentials: restOAuthFlow(f.ClientCredentials),
+		AuthorizationCode: restOAuthFlow(f.AuthorizationCode),
+	}
+}
+
+func restOAuthFlow(f *OpenAPIOAuthFlow) *plans.OAuthFlow {
+	if f == nil {
+		return nil
+	}
+	return &plans.OAuthFlow{
+		AuthorizationURL: f.AuthorizationURL,
+		TokenURL:         f.TokenURL,
+		RefreshURL:       f.RefreshURL,
+		Scopes:           f.Scopes,
+	}
+}
+
+func restSecurity(opts Options) []plans.SecurityRequirement {
+	if len(opts.OpenAPISecurity) == 0 {
+		return nil
+	}
+	out := make([]plans.SecurityRequirement, len(opts.OpenAPISecurity))
+	for i, r := range opts.OpenAPISecurity {
+		refs := make([]plans.SchemeRef, len(r.Schemes))
+		for j, s := range r.Schemes {
+			refs[j] = plans.SchemeRef{Name: s.Name, Scopes: s.Scopes}
+		}
+		out[i] = plans.SecurityRequirement{Schemes: refs}
 	}
 	return out
 }

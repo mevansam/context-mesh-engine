@@ -64,7 +64,7 @@ properties:
 		t.Fatalf("status = %#v", byKey["status"])
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/plans/p/wf?status=available", nil)
+	req := httptest.NewRequest(http.MethodPost, "/tools/p/wf?status=available", nil)
 	req.Header.Set("X-Request-Id", "abc")
 	req.AddCookie(&http.Cookie{Name: "sid", Value: "sess"})
 	got, err := mergeRESTInputs(map[string]any{"note": "hi"}, req, params)
@@ -80,13 +80,13 @@ properties:
 		t.Fatalf("body conflict err = %v", err)
 	}
 
-	missing := httptest.NewRequest(http.MethodPost, "/plans/p/wf", nil)
+	missing := httptest.NewRequest(http.MethodPost, "/tools/p/wf", nil)
 	_, err = mergeRESTInputs(nil, missing, params)
 	if !errors.Is(err, ErrMissingInput) {
 		t.Fatalf("missing required err = %v", err)
 	}
 
-	optional := httptest.NewRequest(http.MethodPost, "/plans/p/wf?status=sold", nil)
+	optional := httptest.NewRequest(http.MethodPost, "/tools/p/wf?status=sold", nil)
 	optional.Header.Set("x-request-id", "id-1")
 	got, err = mergeRESTInputs(nil, optional, params)
 	if err != nil {
@@ -114,7 +114,7 @@ properties:
 			}},
 		},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/plans/p/ping", nil)
+	req := httptest.NewRequest(http.MethodPost, "/tools/p/ping", nil)
 	req.Header.Set("X-End-User-Token", "tok")
 	req.AddCookie(&http.Cookie{Name: "sid", Value: "sess"})
 	got, err := bindRESTInputs(e, "ping", map[string]any{"name": "x"}, req)
@@ -151,7 +151,7 @@ properties:
 		}
 	}
 	r := NewRunner(c, &stubExec{}, nil)
-	req := httptest.NewRequest(http.MethodPost, "/plans/petstore/pingHealth", nil)
+	req := httptest.NewRequest(http.MethodPost, "/tools/petstore/pingHealth", nil)
 	req.Header.Set("X-Request-Id", "rid")
 	ctx := WithRESTRequest(context.Background(), req)
 	if _, err := r.Run(ctx, "petstore", "1.1.0", "pingHealth", map[string]any{"name": "x"}); err != nil {

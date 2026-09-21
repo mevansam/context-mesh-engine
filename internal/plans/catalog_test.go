@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/url"
@@ -182,6 +183,24 @@ workflows:
 				t.Fatalf("output in %s: %v", tc.name, err)
 			}
 		})
+	}
+}
+
+func TestLoad_InvalidXSecurity(t *testing.T) {
+	src := []byte(inlinePlanPrefix + `
+workflows:
+  - workflowId: ping
+    x-security:
+      planOAuth: [pets:read]
+    steps:
+      - stepId: s
+        operationId: getHealth
+        successCriteria:
+          - condition: $statusCode == 200
+`)
+	_, err := Load(context.Background(), []arazzo.Loader{errLoader{srcs: []arazzo.Source{inlinePlanSource(t, src)}}}, discardLogger())
+	if err == nil || !strings.Contains(err.Error(), "x-security must be a sequence") {
+		t.Fatalf("x-security object: %v", err)
 	}
 }
 
@@ -761,7 +780,7 @@ properties:
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	item, ok := paths["/plans/petstore/retrievePet"].(map[string]any)
+	item, ok := paths["/tools/petstore/retrievePet"].(map[string]any)
 	if !ok {
 		t.Fatalf("missing retrievePet path: %s", b)
 	}
@@ -826,8 +845,8 @@ properties:
 		t.Fatal(err)
 	}
 	cpaths, _ := cdoc["paths"].(map[string]any)
-	refItem, _ := cpaths["/plans/petstore/retrievePet"].(map[string]any)
-	want := "/api/openapi/petstore#/paths/~1plans~1petstore~1retrievePet"
+	refItem, _ := cpaths["/tools/petstore/retrievePet"].(map[string]any)
+	want := "/api/openapi/petstore#/paths/~1tools~1petstore~1retrievePet"
 	if refItem["$ref"] != want {
 		t.Fatalf("catalog $ref = %v, want %q", refItem["$ref"], want)
 	}
@@ -863,7 +882,7 @@ properties:
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	item, _ := paths["/plans/petstore/getPet"].(map[string]any)
+	item, _ := paths["/tools/petstore/getPet"].(map[string]any)
 	post, _ := item["post"].(map[string]any)
 	if _, ok := post["requestBody"]; ok {
 		t.Fatalf("requestBody should be omitted: %s", b)
@@ -912,7 +931,7 @@ properties:
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	item, _ := paths["/plans/petstore/retrievePet"].(map[string]any)
+	item, _ := paths["/tools/petstore/retrievePet"].(map[string]any)
 	post, _ := item["post"].(map[string]any)
 	if _, ok := post["parameters"]; ok {
 		t.Fatalf("invalid sources should not lift: %s", b)
@@ -985,7 +1004,7 @@ properties:
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	item, _ := paths["/plans/petstore/purchasePet"].(map[string]any)
+	item, _ := paths["/tools/petstore/purchasePet"].(map[string]any)
 	post, _ := item["post"].(map[string]any)
 	resp, _ := post["responses"].(map[string]any)
 	okResp, _ := resp["200"].(map[string]any)
@@ -1114,7 +1133,7 @@ func TestOpenAPIJSON_CommonRESTParams(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	item, _ := paths["/plans/petstore/pingHealth"].(map[string]any)
+	item, _ := paths["/tools/petstore/pingHealth"].(map[string]any)
 	post, _ := item["post"].(map[string]any)
 	params, _ := post["parameters"].([]any)
 	h := findOpenAPIParam(params, "header", "X-End-User-Token")
@@ -1162,6 +1181,87 @@ func TestOpenAPIJSON_CommonRESTParams(t *testing.T) {
 	}
 }
 
+func TestOpenAPIJSON_Security(t *testing.T) {
+	schemes := []SecurityScheme{{
+		Name:        "planOAuth",
+		Type:        "oauth2",
+		Description: "Calling-application OAuth",
+		Flows: &OAuthFlows{ClientCredentials: &OAuthFlow{
+			TokenURL: "http://localhost:8092/oauth/token",
+			Scopes: map[string]string{
+				"pets:read":  "Find pets",
+				"pets:write": "Purchase pets",
+				"tools:list": "List tools",
+			},
+		}},
+	}}
+	fallback := []SecurityRequirement{{Schemes: []SchemeRef{{Name: "planOAuth", Scopes: []string{"tools:list"}}}}}
+	ext := orderedmap.New[string, *yaml.Node]()
+	ext.Set(workflowSecurityExt, yamlMapping(t, `
+- planOAuth: [pets:read]
+`))
+	e := &Entry{
+		PlanID:  "petstore",
+		Version: "0.0.1",
+		Doc: &high.Arazzo{
+			Workflows: []*high.Workflow{
+				{WorkflowId: "retrievePet", Extensions: ext},
+				{WorkflowId: "pingHealth"},
+			},
+		},
+	}
+	b, err := OpenAPIJSON(e, true, OpenAPIMeta{SecuritySchemes: schemes, Security: fallback})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	comps, _ := doc["components"].(map[string]any)
+	ss, _ := comps["securitySchemes"].(map[string]any)
+	plan, _ := ss["planOAuth"].(map[string]any)
+	if plan["type"] != "oauth2" {
+		t.Fatalf("scheme = %#v", plan)
+	}
+	flows, _ := plan["flows"].(map[string]any)
+	cc, _ := flows["clientCredentials"].(map[string]any)
+	if cc["tokenUrl"] != "http://localhost:8092/oauth/token" {
+		t.Fatalf("tokenUrl = %#v", cc)
+	}
+	if _, ok := doc["security"]; ok {
+		t.Fatalf("child spec should not set document security: %#v", doc["security"])
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	retrieve, _ := paths["/tools/petstore/retrievePet"].(map[string]any)
+	rpost, _ := retrieve["post"].(map[string]any)
+	rsec, _ := rpost["security"].([]any)
+	rm, _ := rsec[0].(map[string]any)
+	if fmt.Sprint(rm["planOAuth"]) != "[pets:read]" {
+		t.Fatalf("retrievePet security = %#v", rsec)
+	}
+	ping, _ := paths["/tools/petstore/pingHealth"].(map[string]any)
+	ppost, _ := ping["post"].(map[string]any)
+	psec, _ := ppost["security"].([]any)
+	pm, _ := psec[0].(map[string]any)
+	if fmt.Sprint(pm["planOAuth"]) != "[tools:list]" {
+		t.Fatalf("pingHealth fallback security = %#v", psec)
+	}
+
+	cb, err := CatalogOpenAPIJSON(nil, true, OpenAPIMeta{SecuritySchemes: schemes, Security: fallback})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(cb, &doc); err != nil {
+		t.Fatal(err)
+	}
+	sec, _ := doc["security"].([]any)
+	sm, _ := sec[0].(map[string]any)
+	if fmt.Sprint(sm["planOAuth"]) != "[tools:list]" {
+		t.Fatalf("catalog security = %#v", sec)
+	}
+}
+
 func findOpenAPIParam(params []any, in, name string) map[string]any {
 	for _, p := range params {
 		m, _ := p.(map[string]any)
@@ -1182,13 +1282,13 @@ func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `/plans/petstore/pingHealth`) {
+	if !strings.Contains(string(b), `/tools/petstore/pingHealth`) {
 		t.Fatalf("latest paths: %s", b)
 	}
 	if strings.Contains(string(b), `"durationMs"`) || strings.Contains(string(b), `"workflowId"`) {
 		t.Fatalf("200 schema should be workflow outputs, not the execution trace: %s", b)
 	}
-	if strings.Contains(string(b), `/plans/petstore/v1.1.0/`) {
+	if strings.Contains(string(b), `/tools/petstore/v1.1.0/`) {
 		t.Fatalf("latest should not include version segment: %s", b)
 	}
 	if !strings.Contains(string(b), `"url":"/api"`) {
@@ -1201,7 +1301,7 @@ func TestOpenAPIJSON_LatestAndVersioned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `/plans/petstore/v1.1.0/echoName`) {
+	if !strings.Contains(string(b), `/tools/petstore/v1.1.0/echoName`) {
 		t.Fatalf("versioned paths: %s", b)
 	}
 	if !strings.Contains(string(b), `"url":"http://example.test/api"`) {
@@ -1249,17 +1349,17 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 	if _, ok := paths["/plans/query"]; ok {
 		t.Fatalf("query path without queryEnabled: %s", b)
 	}
-	ping, _ := paths["/plans/petstore/pingHealth"].(map[string]any)
+	ping, _ := paths["/tools/petstore/pingHealth"].(map[string]any)
 	ref, _ := ping["$ref"].(string)
-	want := "/api/openapi/petstore#/paths/~1plans~1petstore~1pingHealth"
+	want := "/api/openapi/petstore#/paths/~1tools~1petstore~1pingHealth"
 	if ref != want {
 		t.Fatalf("pingHealth $ref = %q, want %q", ref, want)
 	}
-	echo, _ := paths["/plans/petstore/echoName"].(map[string]any)
-	if echo["$ref"] != "/api/openapi/petstore#/paths/~1plans~1petstore~1echoName" {
+	echo, _ := paths["/tools/petstore/echoName"].(map[string]any)
+	if echo["$ref"] != "/api/openapi/petstore#/paths/~1tools~1petstore~1echoName" {
 		t.Fatalf("echoName $ref = %v", echo["$ref"])
 	}
-	if _, ok := paths["/plans/petstore/v1.1.0/echoName"]; ok {
+	if _, ok := paths["/tools/petstore/v1.1.0/echoName"]; ok {
 		t.Fatalf("catalog must $ref latest paths only: %s", b)
 	}
 	comps, _ := doc["components"].(map[string]any)
@@ -1309,7 +1409,7 @@ func TestCatalogOpenAPIJSON_ToolsAndPlanRefs(t *testing.T) {
 	if _, ok := paths["/tools"]; !ok {
 		t.Fatal("nil catalog must still describe /tools")
 	}
-	if _, ok := paths["/plans/petstore/pingHealth"]; ok {
+	if _, ok := paths["/tools/petstore/pingHealth"]; ok {
 		t.Fatal("nil catalog must not $ref plans")
 	}
 }

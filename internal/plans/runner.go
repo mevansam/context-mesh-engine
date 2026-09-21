@@ -27,6 +27,9 @@ var (
 	// ErrUnauthorized is returned when request preprocessing rejects the call
 	// (missing or invalid end-user token, etc.).
 	ErrUnauthorized = errors.New("unauthorized")
+	// ErrInsufficientScope is returned when the client token lacks a
+	// workflow x-security scope.
+	ErrInsufficientScope = errors.New("insufficient scope")
 )
 
 // Runner executes workflows via a new libopenapi Engine per call.
@@ -69,7 +72,11 @@ func (r *Runner) SetSecrets(p arazzo.SecretsProvider, names []string) {
 
 // EnrichContext runs [arazzo.RequestPreprocessor] and stores the result on ctx.
 func (r *Runner) EnrichContext(ctx context.Context, src arazzo.RequestSource) (context.Context, error) {
-	if r == nil || r.preprocessor == nil {
+	if r == nil {
+		return ctx, nil
+	}
+	ctx = withClientAuth(ctx, src.ClientAuth)
+	if r.preprocessor == nil {
 		return ctx, nil
 	}
 	pc, err := r.preprocessor.Process(ctx, src)
@@ -110,6 +117,10 @@ func (r *Runner) Run(ctx context.Context, planID, version, workflowID string, in
 		return nil, fmt.Errorf("%w: workflow %s", ErrNotFound, workflowID)
 	}
 	rememberRESTWorkflow(ctx, planID, version, workflowID)
+
+	if err := checkWorkflowScopes(ctx, workflowByID(e, workflowID)); err != nil {
+		return nil, err
+	}
 
 	if r := restRequestFrom(ctx); r != nil {
 		var err error

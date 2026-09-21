@@ -6,6 +6,7 @@ package plans
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -114,4 +115,44 @@ func clientAuthMap(ti *auth.TokenInfo) map[string]any {
 		m[k] = v
 	}
 	return m
+}
+
+type clientAuthCtxKey struct{}
+
+func withClientAuth(ctx context.Context, auth map[string]any) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if len(auth) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, clientAuthCtxKey{}, auth)
+}
+
+func clientScopes(ctx context.Context) ([]string, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	m, _ := ctx.Value(clientAuthCtxKey{}).(map[string]any)
+	if m == nil {
+		return nil, false
+	}
+	return anyStringSlice(m["scopes"]), true
+}
+
+func anyStringSlice(v any) []string {
+	switch t := v.(type) {
+	case []string:
+		return append([]string(nil), t...)
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

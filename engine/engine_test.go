@@ -137,7 +137,7 @@ func TestHandler_ToolsListEmpty(t *testing.T) {
 	if _, ok := paths["/tools"]; !ok {
 		t.Fatalf("catalog missing /tools: %v", paths)
 	}
-	if _, ok := paths["/plans/petstore/pingHealth"]; ok {
+	if _, ok := paths["/tools/petstore/pingHealth"]; ok {
 		t.Fatal("catalog without loaders must not $ref plans")
 	}
 }
@@ -285,6 +285,41 @@ func TestNew_CommonRESTParamsRejected(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "in must be header or cookie") {
 		t.Fatalf("query: %v", err)
+	}
+}
+
+func TestNew_OpenAPISecurityRejected(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	_, err := engine.New(engine.Options{
+		Logger:                 log,
+		OpenAPISecuritySchemes: []engine.OpenAPISecurityScheme{{Type: "oauth2"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "name is required") {
+		t.Fatalf("empty name: %v", err)
+	}
+	_, err = engine.New(engine.Options{
+		Logger: log,
+		OpenAPISecuritySchemes: []engine.OpenAPISecurityScheme{{
+			Name: "planOAuth", Type: "http", Scheme: "bearer",
+		}},
+		OpenAPISecurity: []engine.OpenAPISecurityRequirement{{
+			Schemes: []engine.OpenAPISchemeRef{{Name: "nope"}},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown scheme") {
+		t.Fatalf("unknown: %v", err)
+	}
+	_, err = engine.New(engine.Options{
+		Logger: log,
+		CommonRESTParams: []engine.CommonRESTParam{{
+			Name: "Authorization", In: "header",
+		}},
+		OpenAPISecuritySchemes: []engine.OpenAPISecurityScheme{{
+			Name: "clientBearer", Type: "http", Scheme: "bearer",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "collides") {
+		t.Fatalf("bearer collision: %v", err)
 	}
 }
 

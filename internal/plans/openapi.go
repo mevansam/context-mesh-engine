@@ -35,6 +35,13 @@ type OpenAPIMeta struct {
 	// POST /plans/query, and execute operations. They are not bound to
 	// Arazzo $inputs. Empty means none.
 	CommonParams []RESTCommonParam
+	// SecuritySchemes are OAS components.securitySchemes on catalog and
+	// child documents. Empty means none.
+	SecuritySchemes []SecurityScheme
+	// Security is document-level OAS security on the catalog (GET /tools,
+	// POST /plans/query). Child execute ops use workflow x-security when
+	// set, otherwise this fallback.
+	Security []SecurityRequirement
 }
 
 func (m OpenAPIMeta) prefix() string {
@@ -94,8 +101,8 @@ var (
 )
 
 // OpenAPIJSON builds an OAS 3.1 document describing POST execute paths.
-// versioned: paths include /plans/{planId}/{versionSegment}/{workflowId}
-// latest: paths use /plans/{planId}/{workflowId}
+// versioned: paths include /tools/{planId}/{versionSegment}/{workflowId}
+// latest: paths use /tools/{planId}/{workflowId}
 func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 	title := e.PlanID
 	if e.Doc.Info != nil && e.Doc.Info.Title != "" {
@@ -156,6 +163,9 @@ func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 		if d := consumerFacingText(wf.Description); d != "" {
 			post["description"] = d
 		}
+		if sec := operationSecurity(wf, meta.Security); len(sec) > 0 {
+			post["security"] = securityJSON(sec)
+		}
 		p := executePath(e.PlanID, wf.WorkflowId, e.VersionSegment(), latest)
 		paths[p] = map[string]any{"post": post}
 	}
@@ -168,6 +178,7 @@ func OpenAPIJSON(e *Entry, latest bool, meta OpenAPIMeta) ([]byte, error) {
 		"paths": paths,
 	}
 	meta.applyServers(doc)
+	applySecuritySchemes(doc, meta.SecuritySchemes)
 	return json.Marshal(doc)
 }
 
@@ -288,14 +299,16 @@ func CatalogOpenAPIJSON(c *Catalog, queryEnabled bool, meta OpenAPIMeta) ([]byte
 		},
 	}
 	meta.applyServers(doc)
+	applySecuritySchemes(doc, meta.SecuritySchemes)
+	applyDocumentSecurity(doc, meta.Security)
 	return json.Marshal(doc)
 }
 
 func executePath(planID, workflowID, versionSegment string, latest bool) string {
 	if latest {
-		return "/plans/" + planID + "/" + workflowID
+		return "/tools/" + planID + "/" + workflowID
 	}
-	return "/plans/" + planID + "/" + versionSegment + "/" + workflowID
+	return "/tools/" + planID + "/" + versionSegment + "/" + workflowID
 }
 
 func jsonPointerEscape(s string) string {
