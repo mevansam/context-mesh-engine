@@ -27,9 +27,11 @@
     <p>
       mcp-server REST Try it out.
       Catalog GET uses the client token from
-      <a href="/api/docs/login">login</a>.
-      POST /plans also needs an end-user JWT
-      (<a href="http://localhost:8092/oauth/token">password grant</a>).
+      <a href="/api/docs/login">login</a> (needs <code>tools:list</code>).
+      POST /tools/{planId} also needs an end-user JWT
+      (<a href="http://localhost:8092/oauth/token">password grant</a>)
+      and workflow scopes (<code>pets:read</code> or
+      <code>pets:write</code> + <code>orders:create</code>).
     </p>
     <label>Client bearer
       <input id="client-token" type="password" autocomplete="off" placeholder="Authorization: Bearer …">

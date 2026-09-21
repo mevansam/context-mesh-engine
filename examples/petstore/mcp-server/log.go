@@ -33,8 +33,8 @@ func logClientToken(c *jwtx.ClientClaims) {
 	if c.ExpiresAt != nil {
 		exp = c.ExpiresAt.Time
 	}
-	log.Printf("client JWT token_use=%s sub=%s iss=%s aud=%s exp=%s",
-		c.TokenUse, c.Subject, c.Issuer, fmtAud(c.Audience), fmtTime(exp))
+	log.Printf("client JWT token_use=%s sub=%s scope=%s iss=%s aud=%s exp=%s",
+		c.TokenUse, c.Subject, c.Scope, c.Issuer, fmtAud(c.Audience), fmtTime(exp))
 }
 
 func logUserToken(u *jwtx.UserClaims) {

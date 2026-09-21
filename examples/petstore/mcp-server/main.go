@@ -25,6 +25,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/mevansam/context-mesh-engine/arazzo"
@@ -38,6 +39,7 @@ func main() {
 	petstore := flag.String("petstore", "local", "Petstore 3 target: local (Docker on :8090) or hosted (petstore3.swagger.io)")
 	petstoreURL := flag.String("petstore-url", "", "override Petstore 3 OpenAPI origin")
 	jwtSecret := flag.String("jwt-secret", "petstore-demo-hs256", "HS256 secret shared with auth-server")
+	authURL := flag.String("auth-url", defaultAuthURL, "auth-server origin used as oauth2 tokenUrl")
 	dual := flag.Bool("dual", false, "serve both MCP and REST (default is REST only)")
 	flag.Parse()
 
@@ -49,7 +51,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	e, err := engine.New(hostOptions(*addr, *asyncURL, petstoreBase, *jwtSecret, *dual))
+	e, err := engine.New(hostOptions(*addr, *asyncURL, petstoreBase, *jwtSecret, *authURL, *dual))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,9 +69,11 @@ func main() {
 	}
 }
 
+const defaultAuthURL = "http://localhost:8092"
+
 // hostOptions is the engine.Options this example sets. Unset fields keep
 // engine defaults (REST-only mux, no query matcher, no SecretInputs).
-func hostOptions(addr, asyncURL, petstoreBase, jwtSecret string, dual bool) engine.Options {
+func hostOptions(addr, asyncURL, petstoreBase, jwtSecret, authURL string, dual bool) engine.Options {
 	secret := []byte(jwtSecret)
 
 	// HMAC used by SecretsProvider and by httpExec to mint a downstream JWT.
@@ -80,6 +84,8 @@ func hostOptions(addr, asyncURL, petstoreBase, jwtSecret string, dual bool) engi
 	// parse JWTs; this wrap is MCPHandlerWrap / the inner RESTHandlerWrap.
 	bearer := clientBearer(secret)
 
+	schemes, security := planOAuth(authURL)
+
 	return engine.Options{
 		Addr: addr,
 
@@ -89,7 +95,7 @@ func hostOptions(addr, asyncURL, petstoreBase, jwtSecret string, dual bool) engi
 		},
 
 		// Loader: parse Arazzo from plans/. Engine indexes (x-planId, version),
-		// resolves sourceDescriptions, registers run_* and POST /plans/{planId}/….
+		// resolves sourceDescriptions, registers run_* and POST /tools/{planId}/….
 		ArazzoLoaders: []arazzo.Loader{
 			arazzo.NewFileLoader(plansDir()),
 		},
@@ -119,16 +125,58 @@ func hostOptions(addr, asyncURL, petstoreBase, jwtSecret string, dual bool) engi
 
 		OpenAPICatalogTitle: "API Execution Plan Catalog Demo",
 
+		// Header documented on generated OpenAPI; preprocessor still enforces it
+		// on execute. GET /tools wrap does not require this header.
+		CommonRESTParams: []engine.CommonRESTParam{{
+			Name:        endUserHeader,
+			In:          "header",
+			Required:    true,
+			Description: "End-user JWT (password grant). Required on execute, not on GET /tools.",
+		}},
+
+		// OAS oauth2 scheme + catalog security (tools:list). Execute operations
+		// use workflow x-security when set. Wrap still only verifies the JWT;
+		// Run checks TokenInfo.Scopes against x-security.
+		OpenAPISecuritySchemes: schemes,
+		OpenAPISecurity:        security,
+
 		// All false = REST only. DualMCPandREST also mounts /mcp.
 		DualMCPandREST: dual,
 
 		// Wraps apply to child handlers only, never the root mux.
 		// MCP: every Streamable HTTP request (initialize, tools/list, run_*).
-		// REST: wrapRESTPlans requires bearer on GET /tools, GET /openapi/…, and POST /plans/.
+		// REST: wrapRESTPlans requires bearer on GET /tools, GET /openapi/…, POST /tools/{planId}/…, and POST /plans/query.
 		// GET /health, GET /docs, and GET /docs/login stay open.
 		MCPHandlerWrap:  bearer,
 		RESTHandlerWrap: func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
 	}
+}
+
+func planOAuth(authURL string) ([]engine.OpenAPISecurityScheme, []engine.OpenAPISecurityRequirement) {
+	if strings.TrimSpace(authURL) == "" {
+		authURL = defaultAuthURL
+	}
+	tokenURL := strings.TrimRight(authURL, "/") + "/oauth/token"
+	schemes := []engine.OpenAPISecurityScheme{{
+		Name:        "planOAuth",
+		Type:        "oauth2",
+		Description: "Calling-application OAuth. Mint a client JWT with POST " + tokenURL + " (client_credentials).",
+		Flows: &engine.OpenAPIOAuthFlows{
+			ClientCredentials: &engine.OpenAPIOAuthFlow{
+				TokenURL: tokenURL,
+				Scopes: map[string]string{
+					"tools:list":    "List catalog tools",
+					"pets:read":     "Find pets and check orders",
+					"pets:write":    "Purchase pets",
+					"orders:create": "Create orders",
+				},
+			},
+		},
+	}}
+	security := []engine.OpenAPISecurityRequirement{{
+		Schemes: []engine.OpenAPISchemeRef{{Name: "planOAuth", Scopes: []string{"tools:list"}}},
+	}}
+	return schemes, security
 }
 
 // plansDir is plans/ next to this source file. runtime.Caller records the

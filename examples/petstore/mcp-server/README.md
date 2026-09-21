@@ -4,16 +4,16 @@
 
 | File | SDK seam | What it changes |
 | --- | --- | --- |
-| [`main.go`](main.go) | `engine.Options` | Loader, executor, policy, preprocessor, secrets, handler wraps |
+| [`main.go`](main.go) | `engine.Options` | Loader, executor, policy, preprocessor, secrets, handler wraps, OAS oauth2 (`planOAuth`) + `CommonRESTParams` |
 | [`docs.go`](docs.go) / [`docs/`](docs/) | `AddController` | Swagger UI at `GET /api/docs`; client-token gate at `GET /api/docs/login` |
-| [`auth.go`](auth.go) | `MCPHandlerWrap`, `RESTHandlerWrap`, `RequestPreprocessor` | Client JWT on MCP + `GET /tools` + `GET /openapi` + `POST /plans/`; end-user JWT → OPA `input.auth` |
+| [`auth.go`](auth.go) | `MCPHandlerWrap`, `RESTHandlerWrap`, `RequestPreprocessor` | Client JWT on MCP + `GET /tools` + `GET /openapi` + `POST /tools/{planId}/…`; `TokenInfo.Scopes` from JWT `scope`; end-user JWT → OPA `input.auth` |
 | [`executor.go`](executor.go) | `ArazzoExecutor`, `SecretsProvider` | HTTP to Petstore / async adapter; **new** downstream JWT |
-| `plans/` | `ArazzoLoaders` | Arazzo document (`x-planId: petstore`) |
+| `plans/` | `ArazzoLoaders` | Arazzo document (`x-planId: petstore`); workflow `x-security` scopes |
 | `policies/` | `PolicyLoader` | Inbound/outbound Rego (not passed to `FileLoader`) |
 
 Field-by-field notes: comments on `hostOptions` in `main.go`. How to run all processes: **[../README.md](../README.md)**.
 
-Plan: `plans/petstore.arazzo.yaml` (`x-planId: petstore`, version `0.0.1`). Workflows: `retrievePet`, `purchasePet`, `checkOrderStatus`. First step is `getUserByName` (`$inputs.policyHints.username` from the end-user JWT).
+Plan: `plans/petstore.arazzo.yaml` (`x-planId: petstore`, version `0.0.1`). Workflows: `retrievePet` (`pets:read`), `purchasePet` (`pets:write` + `orders:create`), `checkOrderStatus` (`pets:read`). First step is `getUserByName` (`$inputs.policyHints.username` from the end-user JWT).
 
 Inbound (`policies/petstore/0.0.1/inbound.rego`) imports `data.lib.enduser` from `policies/_shared/lib/enduser.rego`. It reads `input.auth.endUser`. It does **not** `http.send`. `userStatus` **1** may only `retrievePet`; **2** may also purchase/check order.
 

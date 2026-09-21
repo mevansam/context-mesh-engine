@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,9 +20,15 @@ import (
 )
 
 func TestPetstorePlanLoads(t *testing.T) {
+	schemes, security := planOAuth(defaultAuthURL)
 	e, err := engine.New(engine.Options{
-		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-		ArazzoLoaders: []arazzo.Loader{arazzo.NewFileLoader(plansDir())},
+		Logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:          []arazzo.Loader{arazzo.NewFileLoader(plansDir())},
+		OpenAPISecuritySchemes: schemes,
+		OpenAPISecurity:        security,
+		CommonRESTParams: []engine.CommonRESTParam{{
+			Name: endUserHeader, In: "header", Required: true,
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +53,7 @@ func TestPetstorePlanLoads(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, _ := doc["paths"].(map[string]any)
-	post, _ := paths["/plans/petstore/retrievePet"].(map[string]any)
+	post, _ := paths["/tools/petstore/retrievePet"].(map[string]any)
 	op, _ := post["post"].(map[string]any)
 	responses, _ := op["responses"].(map[string]any)
 	ok200, _ := responses["200"].(map[string]any)
@@ -76,6 +83,23 @@ func TestPetstorePlanLoads(t *testing.T) {
 	}
 	if rschema["additionalProperties"] != false {
 		t.Fatalf("retrievePet request schema should be closed: %#v", rschema)
+	}
+	rsec, _ := op["security"].([]any)
+	rm, _ := rsec[0].(map[string]any)
+	if fmt.Sprint(rm["planOAuth"]) != "[pets:read]" {
+		t.Fatalf("retrievePet security = %#v", rsec)
+	}
+	purchase, _ := paths["/tools/petstore/purchasePet"].(map[string]any)
+	ppost, _ := purchase["post"].(map[string]any)
+	psec, _ := ppost["security"].([]any)
+	pm, _ := psec[0].(map[string]any)
+	if fmt.Sprint(pm["planOAuth"]) != "[pets:write orders:create]" && fmt.Sprint(pm["planOAuth"]) != "[orders:create pets:write]" {
+		t.Fatalf("purchasePet security = %#v", psec)
+	}
+	comps, _ := doc["components"].(map[string]any)
+	ss, _ := comps["securitySchemes"].(map[string]any)
+	if _, ok := ss["planOAuth"]; !ok {
+		t.Fatalf("missing planOAuth scheme: %#v", comps)
 	}
 	if desc, _ := op["description"].(string); strings.Contains(desc, "policyHints") {
 		t.Fatalf("description leaked policyHints: %s", desc)
@@ -115,10 +139,13 @@ func TestPetstorePlanLoads(t *testing.T) {
 func TestPetstoreCatalogRequiresClientJWT(t *testing.T) {
 	secret := []byte("petstore-demo-hs256")
 	bearer := clientBearer(secret)
+	schemes, security := planOAuth(defaultAuthURL)
 	e, err := engine.New(engine.Options{
-		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		ArazzoLoaders:   []arazzo.Loader{arazzo.NewFileLoader(plansDir())},
-		RESTHandlerWrap: func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
+		Logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:          []arazzo.Loader{arazzo.NewFileLoader(plansDir())},
+		RESTHandlerWrap:        func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
+		OpenAPISecuritySchemes: schemes,
+		OpenAPISecurity:        security,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +198,7 @@ func TestPetstoreCatalogRequiresClientJWT(t *testing.T) {
 		t.Fatalf("tools without token = %d, want 401", toolsUnauth.StatusCode)
 	}
 
-	tok, err := jwtx.SignClient(secret, "petstore-mcp", time.Hour)
+	tok, err := jwtx.SignClient(secret, "petstore-mcp", time.Hour, jwtx.DefaultClientScopes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,6 +212,72 @@ func TestPetstoreCatalogRequiresClientJWT(t *testing.T) {
 	tools.Body.Close()
 	if tools.StatusCode != http.StatusOK {
 		t.Fatalf("tools with token = %d", tools.StatusCode)
+	}
+}
+
+func TestPetstoreInsufficientScope(t *testing.T) {
+	secret := []byte("petstore-demo-hs256")
+	bearer := clientBearer(secret)
+	schemes, security := planOAuth(defaultAuthURL)
+	e, err := engine.New(engine.Options{
+		Logger:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArazzoLoaders:          []arazzo.Loader{arazzo.NewFileLoader(plansDir())},
+		RESTHandlerWrap:        func(h http.Handler) http.Handler { return wrapRESTPlans(h, bearer) },
+		RequestPreprocessor:    &dualJWTPreprocessor{secret: secret},
+		OpenAPISecuritySchemes: schemes,
+		OpenAPISecurity:        security,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(e.Handler())
+	t.Cleanup(ts.Close)
+
+	user, err := jwtx.SignUser(secret, "buyer", 2, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(clientTok string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/tools/petstore/retrievePet", strings.NewReader(`{"status":"available"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+clientTok)
+		req.Header.Set(endUserHeader, user)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	limited, err := jwtx.SignClient(secret, "petstore-mcp", time.Hour, []string{"tools:list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := post(limited)
+	defer denied.Body.Close()
+	if denied.StatusCode != http.StatusForbidden {
+		t.Fatalf("limited scope status = %d", denied.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(denied.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] != "insufficient scope" {
+		t.Fatalf("limited scope body = %#v", body)
+	}
+
+	okTok, err := jwtx.SignClient(secret, "petstore-mcp", time.Hour, jwtx.DefaultClientScopes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := post(okTok)
+	defer allowed.Body.Close()
+	if allowed.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("full scope without executor = %d, want 501", allowed.StatusCode)
 	}
 }
 

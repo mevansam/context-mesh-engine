@@ -41,10 +41,11 @@
   <form id="login">
     <h1>Client token</h1>
     <p>
-      Catalog OpenAPI requires the calling-app JWT.
+      Catalog OpenAPI requires the calling-app JWT
+      (<code>tools:list</code>).
       Mint one with
       <a href="http://localhost:8092/oauth/token">auth-server</a>
-      <code>client_credentials</code>, then open the docs.
+      <code>client_credentials</code> (omit <code>scope</code> for all demo scopes), then open the docs.
     </p>
     <label>Client bearer
       <input id="client-token" type="password" autocomplete="off" required

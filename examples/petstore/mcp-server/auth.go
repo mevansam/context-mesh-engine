@@ -39,6 +39,7 @@ func (v *jwtVerifier) verifyClient(_ context.Context, token string, _ *http.Requ
 	}
 	return &auth.TokenInfo{
 		UserID:     c.Subject,
+		Scopes:     jwtx.SplitScope(c.Scope),
 		Expiration: exp,
 		Extra: map[string]any{
 			"tokenUse": jwtx.TokenUseClient,
@@ -58,9 +59,9 @@ func clientBearer(secret []byte) func(http.Handler) http.Handler {
 }
 
 // wrapRESTPlans is Options.RESTHandlerWrap. After the engine StripPrefix of
-// APIPrefix, paths are /health, /tools, /openapi/…, /plans/…, /docs.
+// APIPrefix, paths are /health, /tools, /openapi/…, /tools/{planId}/…, /plans/query, /docs.
 // Client JWT is required on catalog reads (GET /tools, GET /openapi/…) and
-// execute (POST /plans/). GET /health, GET /docs, and GET /docs/login stay open.
+// execute (POST /tools/{planId}/…) plus query (POST /plans/query). GET /health, GET /docs, and GET /docs/login stay open.
 func wrapRESTPlans(inner http.Handler, bearer func(http.Handler) http.Handler) http.Handler {
 	protected := bearer(inner)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +78,7 @@ func restRequiresClientJWT(r *http.Request) bool {
 	p := r.URL.Path
 	switch r.Method {
 	case http.MethodPost:
-		return strings.HasPrefix(p, "/plans/")
+		return strings.HasPrefix(p, "/plans/") || strings.HasPrefix(p, "/tools/")
 	case http.MethodGet:
 		return p == "/tools" || p == "/openapi" || strings.HasPrefix(p, "/openapi/")
 	default:

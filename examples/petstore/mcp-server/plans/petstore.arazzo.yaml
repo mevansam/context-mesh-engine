@@ -4,6 +4,9 @@
 # Engine adaptations (libopenapi Arazzo 1.0.x):
 # - arazzo: 1.0.1 (validator accepts 1.0.x, not 1.1.0)
 # - info.x-planId (required by context-mesh-engine)
+# - workflow x-security (OAS security-requirement shape; scheme names from
+#   engine.Options.OpenAPISecuritySchemes). retrievePet / checkOrderStatus
+#   need pets:read; purchasePet needs pets:write and orders:create.
 # - three workflows instead of one mixed retrieve+purchase workflow
 # - getUserByName (not loginUser): identity is the end-user JWT; executor mints
 #   a downstream JWT for Petstore. Auth-server used loginUser to issue that JWT.
@@ -32,6 +35,8 @@ workflows:
   - workflowId: retrievePet
     summary: Find a pet by status
     description: Loads the authenticated user and returns details of a pet. Availability status is applied by the server from the caller's role. Username comes from the end-user JWT.
+    x-security:
+      - planOAuth: [pets:read]
     inputs:
       type: object
       required: [status]
@@ -82,6 +87,8 @@ workflows:
   - workflowId: purchasePet
     summary: Purchase a pet
     description: Loads the user and places an order for the given pet. Returns the order identifier when the purchase is confirmed.
+    x-security:
+      - planOAuth: [pets:write, orders:create]
     inputs:
       type: object
       required: [petId, orderCorrelationId]
@@ -139,6 +146,8 @@ workflows:
   - workflowId: checkOrderStatus
     summary: Check an order
     description: Loads the user and returns the status of an existing order.
+    x-security:
+      - planOAuth: [pets:read]
     inputs:
       type: object
       required: [orderId]
