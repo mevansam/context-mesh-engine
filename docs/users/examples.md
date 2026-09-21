@@ -89,7 +89,7 @@ go run ./examples/arazzo-fs -dual testdata/arazzo/plans
 ```bash
 curl -s http://localhost:8080/api/openapi
 curl -s http://localhost:8080/api/openapi/petstore
-curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
+curl -s -X POST http://localhost:8080/api/tools/petstore/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'
 curl -s -X POST http://localhost:8080/api/plans/query \
   -H 'Content-Type: application/json' \
@@ -120,7 +120,7 @@ Three processes plus a demo IdP:
 | [`Loader`](adapters.md#loader) | `FileLoader` on `mcp-server/plans/` |
 | [`Executor`](adapters.md#executor) | HTTP client; mints a downstream JWT from `SecretsProvider` |
 | [`PolicyLoader`](adapters.md#policyloader) | `FilePolicyLoader`; `userStatus` from end-user JWT (`input.auth.endUser`), not `http.send` |
-| [`RequestPreprocessor`](adapters.md#requestpreprocessor) | Verifies `X-End-User-Token`; copies client `TokenInfo` |
+| [`RequestPreprocessor`](adapters.md#requestpreprocessor) | Verifies `X-End-User-Token`; copies client `TokenInfo` including `scopes` |
 | [`SecretsProvider`](adapters.md#secretsprovider) | `MapSecrets{"downstream-hmac": ...}` |
 | [`QueryMatcher`](adapters.md#querymatcher) | **unset** — `query` is not registered; callers use `run_petstore_v0.0.1` or REST execute |
 
@@ -139,7 +139,7 @@ go run ./examples/petstore/mcp-server -dual           # also /mcp
 ```
 
 ```bash
-curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
+curl -s -X POST http://localhost:8080/api/tools/petstore/retrievePet \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $CLIENT" \
   -H "X-End-User-Token: $USER" \

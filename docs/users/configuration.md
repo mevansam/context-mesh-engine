@@ -57,6 +57,7 @@ Zero-value `Options` is valid: REST only at `/api`, listen address `localhost:80
 - More than one of `DualMCPandREST`, `MCPOnly`, and `RESTOnly` is true.
 - `APIPrefix` normalizes to `/` or `/mcp`.
 - `CommonRESTParams` has an empty name, `in` other than `header` or `cookie`, a duplicate name, or a name that collides with a workflow `x-source` REST lift.
+- `OpenAPISecuritySchemes` or `OpenAPISecurity` is invalid (missing name/type, unknown scheme, oauth2 scope not declared on the scheme), a scheme collides with `CommonRESTParams` or an `x-source` REST lift, or a workflow `x-security` names an unknown scheme.
 - `ArazzoLoaders` is non-empty and templates fail to parse, specs fail to load, `info.version` is not semver or starts with `v`, `(planId, version)` is duplicated, or rendered MCP tool names collide.
 
 ## Options reference
@@ -116,6 +117,8 @@ These fields are optional. Empty `ArazzoLoaders` means no `run_*` tools and no `
 | `OpenAPICatalogTitle` | `string` | `Arazzo plan catalog` | `info.title` on `GET {APIPrefix}/openapi`. |
 | `OpenAPICatalogVersion` | `string` | `1.0.0` | `info.version` on `GET {APIPrefix}/openapi`. Not a plan `info.version`. |
 | `CommonRESTParams` | `[]engine.CommonRESTParam` | none | Header/cookie parameters documented on generated OpenAPI for `GET /tools`, `POST /plans/query`, and execute. **Not** bound to Arazzo `$inputs`. See [Request identity](#request-identity). |
+| `OpenAPISecuritySchemes` | `[]engine.OpenAPISecurityScheme` | none | OAS 3.1 `components.securitySchemes` on catalog and child specs. Type `http`, `apiKey`, `oauth2`, or `openIdConnect`. The engine does **not** verify tokens from this config; wraps still do. |
+| `OpenAPISecurity` | `[]engine.OpenAPISecurityRequirement` | none | Document-level OAS `security` on `GET /tools` and `POST /plans/query`. Child execute operations use workflow [`x-security`](arazzo.md#x-security) when set, otherwise this fallback. Scheme names must exist in `OpenAPISecuritySchemes`. Empty means schemes are documented only. |
 
 How documents are loaded, executed, and exposed: [Arazzo plans](arazzo.md).
 
@@ -188,8 +191,8 @@ Paths below use the default REST prefix `/api`. Replace it with `Options.APIPref
 | GET | `/api/tools` | REST mounted | MCP `tools/list` envelope (`ttlMs`, `cacheScope`, `tools`). Optional `?cursor=` |
 | GET | `/api/openapi` | REST mounted | Catalog OAS 3.1: `GET /tools` plus `$ref` to each latest plan spec |
 | POST | `/api/plans/query` | loaders **and** `QueryMatcher` | Natural-language match + execute |
-| POST | `/api/plans/{planId}/{workflowId}` | loaders | Execute **latest** version; body is workflow inputs |
-| POST | `/api/plans/{planId}/{version}/{workflowId}` | loaders | Execute that version (`{version}` is `v` + `info.version`) |
+| POST | `/api/tools/{planId}/{workflowId}` | loaders | Execute **latest** version; body is workflow inputs |
+| POST | `/api/tools/{planId}/{version}/{workflowId}` | loaders | Execute that version (`{version}` is `v` + `info.version`) |
 | GET | `/api/openapi/{planId}` | loaders | OAS 3.1 for latest execute paths |
 | GET | `/api/openapi/{planId}/{version}` | loaders | OAS 3.1 for that version |
 | * | `/api/...` | REST mounted | Your [`Controller`](adapters.md#rest-controllers) routes |
@@ -262,7 +265,9 @@ Custom HTTP clients talking to `/mcp` must send:
 
 Calling-application OAuth (one `Authorization: Bearer` JWT) is `Options.MCPHandlerWrap` / `Options.RESTHandlerWrap` with go-sdk [`auth.RequireBearerToken`](https://github.com/modelcontextprotocol/go-sdk/blob/main/examples/server/auth-middleware/main.go). Wrap **child** handlers only, never the root mux. The engine does not require a token on REST; which paths need a bearer is a host wrap decision (see `RESTHandlerWrap` after `APIPrefix` strip).
 
-End-user JWTs on `x-*` headers, claim extraction, and remote enrichment are [`RequestPreprocessor`](adapters.md#requestpreprocessor). How those values reach each handler and OPA: [Request identity](#request-identity). Invalid preprocessor → **401**. Inbound deny → **403**.
+Generated OpenAPI documents schemes via [`OpenAPISecuritySchemes`](#arazzo-plans) and requirements via [`OpenAPISecurity`](#arazzo-plans) / workflow [`x-security`](arazzo.md#x-security). That is documentation plus a **runtime scope check** in `Run` (`TokenInfo.Scopes` vs oauth2/OIDC scopes on `x-security`). The wrap still verifies the JWT. `RequireBearerTokenOptions.Scopes` is optional extra wrap-level enforcement (for example `tools:list` on `GET /tools`); the engine does not set it.
+
+End-user JWTs on `x-*` headers, claim extraction, and remote enrichment are [`RequestPreprocessor`](adapters.md#requestpreprocessor). How those values reach each handler and OPA: [Request identity](#request-identity). Invalid preprocessor → **401**. Missing client token when `x-security` is set → **401**. Missing required scopes → **403** `insufficient scope`. Inbound deny → **403** `policy denied`.
 
 The host `Executor` may mint a **new** downstream JWT from [`SecretsProvider`](adapters.md). Do not put signing keys in `$inputs` unless they are listed in `SecretInputs`.
 
@@ -271,6 +276,8 @@ Petstore walkthrough: [examples/petstore](../../examples/petstore/README.md).
 ## Request identity
 
 HTTP headers and cookies are **not** copied onto Arazzo `$inputs` unless a workflow property has REST/HTTP [`x-source`](arazzo.md#x-source-rest-vs-mcp). Host-wide headers and cookies that wraps and OPA should see are declared on [`Options.CommonRESTParams`](#arazzo-plans) so generated OpenAPI documents them. `Required` on those params is OpenAPI documentation only; missing values are **not** `400 missing required input`. Enforce in the wrap (`401`) or preprocessor.
+
+OAS **security schemes** are a separate Options field (`OpenAPISecuritySchemes`). Do not also list `Authorization` as a `CommonRESTParam` when using `http` bearer or oauth2 — that collides at `New`. `apiKey` schemes collide with the same `in`+name as a common param or `x-source` lift.
 
 ```go
 e, err := engine.New(engine.Options{
@@ -289,7 +296,7 @@ e, err := engine.New(engine.Options{
 | OpenAPI operation | Documented | Runtime consumer |
 | --- | --- | --- |
 | `GET /tools` | yes | `RESTHandlerWrap` only |
-| `POST /plans/query` and execute `POST /plans/...` | yes | wrap, then preprocessor, then OPA |
+| `POST /plans/query` and execute `POST /tools/{planId}/…` | yes | wrap, then preprocessor, then OPA |
 | MCP `run_*` / `query` (Streamable HTTP) | not in `inputSchema` | `MCPHandlerWrap`, then preprocessor, then OPA |
 | `GET /health` | no | wrap sees the request if it does not skip `/health` |
 
@@ -302,7 +309,7 @@ RESTHandlerWrap
   → GET /tools          ToolsController (cursor only; no preprocessor)
   → GET /openapi/…      OpenAPI bytes; no preprocessor
   → POST /plans/query
-  → POST /plans/{planId}/…
+  → POST /tools/{planId}/…
         RequestSourceFromHTTP(r)     // clone of r.Header (Cookie header included)
         EnrichContext → RequestPreprocessor.Process
         bindRESTInputs               // x-source only
@@ -330,7 +337,7 @@ MCPHandlerWrap
 | --- | --- | --- |
 | `RESTHandlerWrap` | `r.Header.Get("X-End-User-Token")`, `r.Cookie("sid")`. After strip, `r.URL.Path` is `/tools`, `/openapi`, `/plans/…`, `/health`. | Reject missing/invalid client bearer before the engine. Skip `/health` if it must stay open. |
 | `MCPHandlerWrap` | Same `*http.Request` on `/mcp` (initialize, `tools/list`, `tools/call`). | Client bearer on Streamable HTTP. |
-| `RequestPreprocessor.Process` | `src.Header` (`http.Header`). Cookies are the `Cookie` header (`src.Header.Get("Cookie")`) unless you parse them yourself. `src.ClientAuth` is go-sdk `TokenInfo` after `RequireBearerToken`. | Verify extra JWTs, allowlist headers, build `Auth`. Error → **401**. Nil option skips this step. |
+| `RequestPreprocessor.Process` | `src.Header` (`http.Header`). Cookies are the `Cookie` header (`src.Header.Get("Cookie")`) unless you parse them yourself. `src.ClientAuth` is go-sdk `TokenInfo` after `RequireBearerToken` (`userId`, `scopes`, `expiration`). | Verify extra JWTs, allowlist headers, build `Auth`. Error → **401**. Nil option skips this step. |
 | OPA inbound/outbound | Only what the preprocessor returned: `input.headers` (`map[string]string`) and `input.auth` (`map[string]any`). Raw `Authorization` is not copied unless the preprocessor puts it there (do not). | Allow/deny. Plan inbound `hints` → `$inputs.policyHints`. Shared inbound cannot set hints. |
 | `Executor` | `arazzo.PolicyRequestFromContext(ctx)` → same `Headers` / `Auth` maps. | Downstream credentials from processed identity, not from `$inputs`. |
 | Arazzo `$inputs` | JSON body plus REST/HTTP **`x-source`** lifts (`header` / `cookie` / `query`). | Workflow expressions. Common params are never merged here. |
@@ -362,6 +369,7 @@ Do not put `Authorization` or raw user JWTs in `PolicyRequestContext.Headers`. A
 - Arazzo execute needs an `Executor`; OpenAPI GET does not.
 - `PublicBaseURL` is a separate option from `Addr`.
 - Declare host-wide headers/cookies on `CommonRESTParams`; read them in wraps / `RequestPreprocessor`, not `$inputs`.
+- Declare OAS schemes on `OpenAPISecuritySchemes` and catalog requirements on `OpenAPISecurity`; put per-workflow scopes on `x-security`. Copy wrap-verified `TokenInfo.Scopes` so `Run` can enforce them.
 
 ## Next
 

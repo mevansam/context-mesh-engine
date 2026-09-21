@@ -19,8 +19,8 @@ When `ArazzoLoaders` is set, `New` loads every document from every loader, then:
 | REST tools | `GET /api/tools` | always (MCP envelope; Arazzo descriptions use REST templates) |
 | REST catalog OpenAPI | `GET /api/openapi` | always (index: `/tools` + `$ref` to each latest plan spec) |
 | REST query | `POST /api/plans/query` | `QueryMatcher` is set |
-| REST execute (latest) | `POST /api/plans/{planId}/{workflowId}` | always (with loaders) |
-| REST execute (versioned) | `POST /api/plans/{planId}/{version}/{workflowId}` | always (with loaders) |
+| REST execute (latest) | `POST /api/tools/{planId}/{workflowId}` | always (with loaders) |
+| REST execute (versioned) | `POST /api/tools/{planId}/{version}/{workflowId}` | always (with loaders) |
 | OpenAPI (latest plan) | `GET /api/openapi/{planId}` | always (with loaders) |
 | OpenAPI (versioned plan) | `GET /api/openapi/{planId}/{version}` | always (with loaders) |
 
@@ -78,7 +78,7 @@ e, err := engine.New(engine.Options{
 })
 ```
 
-`PublicBaseURL` is the origin written into REST tool descriptions. It is not `Addr`. Empty → path-only URLs (`{APIPrefix}/plans/...`).
+`PublicBaseURL` is the origin written into REST tool descriptions. It is not `Addr`. Empty → path-only URLs (`{APIPrefix}/tools/...`).
 
 Implementations: [Adapters](adapters.md). Runnable stubs: [arazzo-fs](examples.md#arazzo-fs). Live HTTP: [petstore](examples.md#petstore).
 
@@ -120,16 +120,16 @@ Successful `run_*` returns structured content that **is** the full workflow outp
 POST body is the workflow **inputs object** (no `workflowId` wrapper). `workflowId` is the path. Empty body is allowed (`{}` or no body). Properties with REST/HTTP `x-source` are **not** in the body: they come from the header, cookie, or query named by `x-source.name` (or the property key) and are copied onto `$inputs.{property}`. Sending those keys in the JSON body is **400** `unexpected fields in inputs`. A missing required REST/HTTP input is **400** `missing required input`. MCP `run_*` still sends those fields in `inputs` JSON.
 
 ```bash
-curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
+curl -s -X POST http://localhost:8080/api/tools/petstore/pingHealth \
   -H 'Content-Type: application/json' \
   -d '{"name":"demo"}'
 
-curl -s -X POST 'http://localhost:8080/api/plans/petstore/retrievePet?status=available' \
+curl -s -X POST 'http://localhost:8080/api/tools/petstore/retrievePet?status=available' \
   -H 'Content-Type: application/json' \
   -H 'x-request-id: demo-1' \
   -d '{"note":"ok"}'
 
-curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
+curl -s -X POST http://localhost:8080/api/tools/petstore/v1.0.0/pingHealth \
   -H 'Content-Type: application/json' \
   -d '{"name":"demo"}'
 ```
@@ -154,7 +154,8 @@ Generated OpenAPI `200` schemas use those output names as object properties.
 | 400 | `missing required input` | Required REST/HTTP `x-source` header, cookie, or query is absent |
 | 400 | `query is required` | Empty `query` |
 | 400 | `workflow failed` | Step/libopenapi failure (detail logged only) |
-| 401 | `unauthorized` | Preprocessor rejected the call |
+| 401 | `unauthorized` | Preprocessor rejected the call, or `x-security` is set and there is no client token |
+| 403 | `insufficient scope` | Client token is present but lacks a workflow `x-security` scope |
 | 403 | `policy denied` | Inbound or outbound OPA deny (reason logged only) |
 | 404 | `plan not found` | Unknown `planId`, version, or `workflowId` |
 | 500 | `internal error` | Policy load/compile, host failure, or missing required `x-outputs` header |
@@ -186,7 +187,7 @@ Same job on both surfaces: the caller sends a simple natural-language question p
 | Plan/version/workflow not loaded here | 404 | tool error |
 | Match + execute OK | 200 outputs | structured content = outputs |
 
-Direct `run_*` and `POST /api/plans/{planId}/...` do not use the matcher.
+Direct `run_*` and `POST /api/tools/{planId}/...` do not use the matcher.
 
 Override display strings with `ToolDoc.QueryName` (name only) and [`ToolHelpLookup`](adapters.md#toolhelplookup) (`Kind: query`) for title/description, or `ToolDoc.QueryTitle` / `QueryDescription` / `RESTQueryDescription` as global fallbacks.
 
@@ -200,11 +201,31 @@ Paths **inside** those documents omit `Options.APIPrefix` (the REST mux is `Stri
 
 - HTTP: `GET /api/openapi` → catalog index
 - HTTP: `GET /api/openapi/petstore`
-- Document path: `/plans/petstore/pingHealth` → real URL `POST /api/plans/petstore/pingHealth`
+- Document path: `/tools/petstore/pingHealth` → real URL `POST /api/tools/petstore/pingHealth`
 
-Latest child document: `/plans/{planId}/{workflowId}`. Versioned child document: `/plans/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted, then closed (`additionalProperties: false`).
+Latest child document: `/tools/{planId}/{workflowId}`. Versioned child document: `/tools/{planId}/v{version}/{workflowId}`. Request body schema is that workflow’s Arazzo `inputs` with reserved engine keys (`policyHints`, `secrets`, and dotted prefixes) omitted, then closed (`additionalProperties: false`).
 
 Host-wide headers and cookies (`Options.CommonRESTParams`) are OpenAPI **parameters** on `GET /tools`, `POST /plans/query`, and execute operations. They are **not** Arazzo `$inputs` and are **not** on `GET /health`. How wraps, the preprocessor, and OPA read them: [Request identity](configuration.md#request-identity). A name that collides with a workflow REST/HTTP `x-source` lift fails `engine.New`.
+
+OAS **authorization** is host-configured, not copied from backend `sourceDescriptions`:
+
+### `x-security`
+
+| Options / spec | Catalog (`GET /openapi`) | Child execute (`GET /openapi/{planId}`) |
+| --- | --- | --- |
+| `OpenAPISecuritySchemes` | `components.securitySchemes` | same schemes |
+| `OpenAPISecurity` | document `security` (`GET /tools`, `POST /plans/query`) | fallback on an operation with no `x-security` |
+| workflow `x-security` | (path-item `$ref`s the child op) | that operation’s `security` |
+
+`x-security` is the OAS security-requirement list (OR of AND-groups). Scheme names must exist in `OpenAPISecuritySchemes`. oauth2 scopes must be declared on that scheme’s flows. Empty `planOAuth: []` means authenticated, no extra scopes. `Run` checks `TokenInfo.Scopes` after the wrap: no client token → **401**; missing a required scope → **403** `insufficient scope`. Catalog query OAS cannot name the selected workflow’s scopes; `Run` still checks them after match. `GET /health` is not in these documents.
+
+```yaml
+- workflowId: retrievePet
+  x-security:
+    - planOAuth: [pets:read]
+```
+
+A workflow `x-security` without `OpenAPISecuritySchemes`, or an unknown scheme / undeclared oauth2 scope, fails `engine.New`. An `http` bearer scheme collides with `CommonRESTParams` / `x-source` named `Authorization`; `apiKey` collides on the same `in`+name.
 
 ### `x-source` (REST vs MCP)
 
@@ -233,7 +254,7 @@ inputs:
         name: x-request-id
 ```
 
-Only `interface: rest` with `protocol: http` (or omitted) and `in` of `header`, `cookie`, or `query` is lifted onto the generated operation as an OpenAPI **request** parameter. `name` is the parameter name (default: the property key). Execute paths stay `POST /plans/{planId}/{workflowId}` (and the versioned form). `in: path` is not lifted and stays on the JSON body. `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute binds those parameters from the request onto `$inputs.{property}` before `Run`; `POST /plans/query` does the same after match. Sending a lifted key in the JSON body is **400** `unexpected fields in inputs`. A missing required REST/HTTP input is **400** `missing required input`. Bound values are strings (no JSON Schema type coercion). A host `CommonRESTParam` that uses the same `in`+name fails `engine.New`.
+Only `interface: rest` with `protocol: http` (or omitted) and `in` of `header`, `cookie`, or `query` is lifted onto the generated operation as an OpenAPI **request** parameter. `name` is the parameter name (default: the property key). Execute paths stay `POST /tools/{planId}/{workflowId}` (and the versioned form). `in: path` is not lifted and stays on the JSON body. `interface: mcp` stays on the JSON body. `x-source` is stripped from MCP `run_*` `inputSchema`; the property remains a JSON field. REST execute binds those parameters from the request onto `$inputs.{property}` before `Run`; `POST /plans/query` does the same after match. Sending a lifted key in the JSON body is **400** `unexpected fields in inputs`. A missing required REST/HTTP input is **400** `missing required input`. Bound values are strings (no JSON Schema type coercion). A host `CommonRESTParam` that uses the same `in`+name fails `engine.New`.
 
 **Outputs** — Arazzo `outputs` stay `name: expression`. Optional workflow extension `x-outputs` is a JSON Schema whose property names **must** be workflow output names:
 
@@ -280,7 +301,7 @@ Optional inbound/outbound [OPA](https://www.openpolicyagent.org/) modules run on
 - **Inbound** (`data.shared.inbound` if the loader implements [`SharedPolicySource`](adapters.md#sharedpolicysource), then `data.plan.inbound`) runs before the workflow. Shared `allow` is ANDed with the plan; only the plan may set `$inputs.policyHints`. Deny is **403** `policy denied` (the OPA `reason` is logged, not returned). The workflow does not run.
 - **Outbound** (`data.shared.outbound` then `data.plan.outbound`) runs after success. Deny is **403** `policy denied` and outputs are not returned. Plan `redact` / `outputs` may reshape the response.
 
-REST and MCP execute errors use the same public strings (`plan not found`, `unauthorized`, `policy denied`, `unexpected fields in inputs`, `missing required input`, `workflow failed`, `internal error`). The full error is logged only.
+REST and MCP execute errors use the same public strings (`plan not found`, `unauthorized`, `insufficient scope`, `policy denied`, `unexpected fields in inputs`, `missing required input`, `workflow failed`, `internal error`). The full error is logged only.
 
 A missing bundle for that `(planId, version)` skips both phases. Load/compile errors fail closed (**500** `internal error`) unless a compiled bundle is still cached.
 
@@ -299,7 +320,7 @@ Loads the sample Pet Store plans. Execute still needs an `Executor`; this binary
 - Optional [`PolicyLoader`](adapters.md#policyloader) for inbound/outbound OPA; keep `.rego` out of the Arazzo loader tree.
 - Implement [`Executor`](adapters.md#executor); nil is 501 on execute, OpenAPI still works.
 - Implement [`QueryMatcher`](adapters.md#querymatcher) to publish MCP `query` / `POST /plans/query`; nil omits both.
-- MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body is remaining JSON `inputs`. REST/HTTP `x-source` input fields come from header, cookie, or query. REST/HTTP `x-source` **output** fields (`x-outputs`, `in: header` only) are response headers and are omitted from the REST JSON body. Host-wide headers/cookies are [`CommonRESTParams`](configuration.md#request-identity), not `$inputs`.
+- MCP `run_*` args wrap `{workflowId, inputs}`; REST execute POST body is remaining JSON `inputs`. REST/HTTP `x-source` input fields come from header, cookie, or query. REST/HTTP `x-source` **output** fields (`x-outputs`, `in: header` only) are response headers and are omitted from the REST JSON body. Host-wide headers/cookies are [`CommonRESTParams`](configuration.md#request-identity), not `$inputs`. Per-workflow OAuth scopes are [`x-security`](#x-security).
 - MCP `query` and `POST /api/plans/query` share `{query, data}` and the execute **outputs** object.
 - Path version token is `v` + `info.version` (`v1.0.0`), not `1.0.0`.
 - Generated OpenAPI `paths` keys omit `Options.APIPrefix`. Catalog plan paths `$ref` `{APIPrefix}/openapi/{planId}`. `servers` is `PublicBaseURL` + `APIPrefix`.

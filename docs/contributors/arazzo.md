@@ -18,15 +18,16 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 | `arazzo/toolhelp.go` | `ToolHelpLookup`; overlay; default lookup |
 | `internal/plans/help.go` | TTL cache (`internal/ttlcache`); MCP `tools/list` middleware; REST overlay |
 | `internal/ttlcache/` | Generic singleflight TTL cache |
-| `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest, `View()` |
-| `internal/plans/runner.go` | `NewEngine` per `Run`; closed inputs; inbound then workflow then outbound |
+| `internal/plans/catalog.go` | Parse, skip, duplicate, `ResolveSources`, latest, `View()`, `x-security` shape |
+| `internal/plans/runner.go` | `NewEngine` per `Run`; closed inputs; scope check; inbound then workflow then outbound |
 | `internal/plans/policy.go` | Compile shared + plan inbound/outbound; libraries; cache |
 | `internal/plans/redact.go` | RFC 6901 output redaction |
 | `internal/plans/schema.go` | MCP `oneOf` + `workflowId` const; strip reserved input keys; close consumer objects; `x-source` / `x-outputs` walk + REST lift |
+| `internal/plans/security.go` | OAS schemes / `x-security`; collisions; `checkWorkflowScopes` |
 | `internal/plans/public.go` | `ClassifyError` / `LogAndPublic` for REST and MCP |
-| `internal/plans/openapi.go` | OAS 3.1 catalog index + per-plan specs; paths without `APIPrefix` |
+| `internal/plans/openapi.go` | OAS 3.1 catalog index + per-plan specs; paths without `APIPrefix`; `securitySchemes` / `security` |
 | `internal/plans/mcp.go` | `query` + one `run_*` tool per catalog entry |
-| `internal/api/v1/plans.go` | `GET /openapi`, `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; 400/403/404/500/501 |
+| `internal/api/v1/plans.go` | `GET /openapi`, `POST /plans/query`, `POST /tools/{planId}/…`, `GET /openapi/{planId}`; 400/403/404/500/501 |
 | `internal/api/v1/tools.go` | `GET /tools` (MCP `tools/list` envelope; REST descriptions for Arazzo tools) |
 | `engine/engine.go` | `New` wires loaders → catalog → MCP + REST |
 | `testdata/arazzo/` | Fixtures |
@@ -41,7 +42,8 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 4. `ResolveSources` (attaches OpenAPI docs onto the Arazzo model)
 5. `Validate`; **errors** fail load; **warnings** are allowed
 6. Per workflow: `validateWorkflowIOSources` — nested/root `x-source` on `inputs` or `x-outputs` fail; `x-outputs` property names must be workflow output names; REST output `in` must be `header`
-7. Duplicate `(planId, version)` → error
+7. Per workflow: `validateWorkflowSecurityShape` — `x-security` must be a sequence of requirement objects
+8. Duplicate `(planId, version)` → error
 
 `x-planId` is read from `info.Extensions` (`yaml.ScalarNode` only).
 
@@ -63,13 +65,14 @@ SDK usage: [docs/users/arazzo.md](../users/arazzo.md) (contracts), [docs/users/a
 
 1. Catalog `Get(planID, rawVersion)` — not found → `ErrNotFound`
 2. Workflow id must exist on that entry — else `ErrNotFound`
-3. If `PolicyCache` is set, load/compile shared modules (if `PolicyLoader` implements `SharedPolicySource`) then the bundle for `(planId, version)` (TTL cache, on demand). Shared libraries are parsed once and compiled into each plan. Load error without a cached bundle → `ErrPolicyLoad`.
-4. If shared inbound compiled: eval `data.shared.inbound` (`allow` only; hints ignored). Then if plan inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On plan allow, copy inputs, drop caller `policyHints` and `policyHints.*` keys, set `$inputs.policyHints` from plan `hints` when present, and flatten leaves to dotted keys (`policyHints.petStatus`) so stock libopenapi `$inputs` lookup (single key, not nested walk) can resolve `$inputs.policyHints.petStatus`. `input.headers` / `input.auth` come from `PolicyRequestContext` (preprocessor), not from Rego `http.send`.
-5. If `SecretsProvider` is set, strip caller `secrets` / `secrets.*`, then flatten `Options.SecretInputs` names onto `$inputs.secrets.<name>`.
-6. Nil executor → `ErrNoExecutor` (`executor not configured`)
-7. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
-8. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.
-9. If shared outbound compiled: eval `data.shared.outbound` (`allow` only). Then if plan outbound compiled: eval `data.plan.outbound` on `{inputs, outputs}`. Deny → `ErrPolicyDenied` (no outputs returned). Else replace `outputs` or apply `redact`/`mask`.
+3. `checkWorkflowScopes` if the workflow has `x-security` — no client token → `ErrUnauthorized`; missing a required scope → `ErrInsufficientScope`
+4. If `PolicyCache` is set, load/compile shared modules (if `PolicyLoader` implements `SharedPolicySource`) then the bundle for `(planId, version)` (TTL cache, on demand). Shared libraries are parsed once and compiled into each plan. Load error without a cached bundle → `ErrPolicyLoad`.
+5. If shared inbound compiled: eval `data.shared.inbound` (`allow` only; hints ignored). Then if plan inbound compiled: eval `data.plan.inbound`. Non-boolean/`false` `allow` → `ErrPolicyDenied`. On plan allow, copy inputs, drop caller `policyHints` and `policyHints.*` keys, set `$inputs.policyHints` from plan `hints` when present, and flatten leaves to dotted keys (`policyHints.petStatus`) so stock libopenapi `$inputs` lookup (single key, not nested walk) can resolve `$inputs.policyHints.petStatus`. `input.headers` / `input.auth` come from `PolicyRequestContext` (preprocessor), not from Rego `http.send`.
+6. If `SecretsProvider` is set, strip caller `secrets` / `secrets.*`, then flatten `Options.SecretInputs` names onto `$inputs.secrets.<name>`.
+7. Nil executor → `ErrNoExecutor` (`executor not configured`)
+8. `libarazzo.NewEngine(doc, executor, sources)` then `RunWorkflow`
+9. Return the workflow **outputs** map (`{}` if none). `success: false` becomes an error.
+10. If shared outbound compiled: eval `data.shared.outbound` (`allow` only). Then if plan outbound compiled: eval `data.plan.outbound` on `{inputs, outputs}`. Deny → `ErrPolicyDenied` (no outputs returned). Else replace `outputs` or apply `redact`/`mask`.
 
 Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurrency-safe). Cache `*high.Arazzo` and `[]*ResolvedSource` on `Entry` only. Do **not** parse `.rego` in `FileLoader` / `catalog.addSource`.
 
@@ -86,7 +89,7 @@ Do **not** reuse `libopenapi/arazzo.Engine` across calls (documented not concurr
 
 `Catalog.View()` is `arazzo.PlanCatalog`. It does not snapshot the catalog; `Get`/`Latest`/`Plans` copy metadata only when called. Matcher must not use a catalog miss as “no match”; the engine always verifies after `Match`.
 
-HTTP (`plans.go`): `GET /openapi` (catalog) is always registered. `POST /plans/query` is registered only when `Runner.QueryEnabled()`. Execute and per-plan OpenAPI routes are registered when catalog is non-nil. REST execute and query attach the `*http.Request` via `WithRESTRequest`; `Run` binds REST/HTTP `x-source` inputs (header/cookie/query) onto `$inputs.{property}` before the closed-schema check, and records the resolved plan/workflow on that box so `writeRunResult` can `SplitRESTOutputs`. Transport bodies use `ClassifyError` / `LogAndPublic` (`internal/plans/public.go`): log the full error; return a stable public string. `ErrNoExecutor` / `ErrQueryNotImplemented` → 501; `ErrNotFound` → 404 `plan not found`; `ErrUnauthorized` → 401 `unauthorized`; `ErrPolicyDenied` → 403 `policy denied` (OPA reason logged only); `ErrPolicyLoad` / `ErrInternal` → 500 `internal error` (including a missing required `x-outputs` header); `ErrUnexpectedInputs` → 400 `unexpected fields in inputs`; `ErrMissingInput` → 400 `missing required input`; `ErrEmptyQuery` → 400; other runner errors → 400 `workflow failed`. Invalid JSON body → 400 `invalid json body` (not logged as a runner error). HTTP **200** JSON body is the outputs object minus REST/HTTP header-lifted fields; those values are copied onto response headers.
+HTTP (`plans.go`): `GET /openapi` (catalog) is always registered. `POST /plans/query` is registered only when `Runner.QueryEnabled()`. Execute and per-plan OpenAPI routes are registered when catalog is non-nil. REST execute and query attach the `*http.Request` via `WithRESTRequest`; `Run` binds REST/HTTP `x-source` inputs (header/cookie/query) onto `$inputs.{property}` before the closed-schema check, and records the resolved plan/workflow on that box so `writeRunResult` can `SplitRESTOutputs`. Transport bodies use `ClassifyError` / `LogAndPublic` (`internal/plans/public.go`): log the full error; return a stable public string. `ErrNoExecutor` / `ErrQueryNotImplemented` → 501; `ErrNotFound` → 404 `plan not found`; `ErrUnauthorized` → 401 `unauthorized`; `ErrInsufficientScope` → 403 `insufficient scope`; `ErrPolicyDenied` → 403 `policy denied` (OPA reason logged only); `ErrPolicyLoad` / `ErrInternal` → 500 `internal error` (including a missing required `x-outputs` header); `ErrUnexpectedInputs` → 400 `unexpected fields in inputs`; `ErrMissingInput` → 400 `missing required input`; `ErrEmptyQuery` → 400; other runner errors → 400 `workflow failed`. Invalid JSON body → 400 `invalid json body` (not logged as a runner error). HTTP **200** JSON body is the outputs object minus REST/HTTP header-lifted fields; those values are copied onto response headers.
 
 MCP (`mcp.go`): `query` is added only when `QueryEnabled()`. It calls the same `Runner.Query`. Tool errors use the same public messages. Nil error + outputs map → structured content.
 
@@ -115,20 +118,20 @@ Two layers. Both are OAS **3.1.0** JSON. Paths omit `APIPrefix` (REST mux is `St
 | --- | --- | --- |
 | `GET /tools` | always | MCP `tools/list`. 200 schema is `components.schemas.ListToolsResult`, inferred at runtime from go-sdk `mcp.ListToolsResult` (`jsonschema.For`). Optional query `cursor` is `ListToolsParams.cursor`. |
 | `POST /plans/query` | `QueryMatcher` set | MCP tool `query`. Body `{query, data}`; 200 is workflow outputs. |
-| `POST /plans/{planId}/{workflowId}` | latest entry for that `planId` | Path-item **`$ref`** to the child spec: `{APIPrefix}/openapi/{planId}#/paths/~1plans~1{planId}~1{workflowId}` |
+| `POST /tools/{planId}/{workflowId}` | latest entry for that `planId` | Path-item **`$ref`** to the child spec: `{APIPrefix}/openapi/{planId}#/paths/~1tools~1{planId}~1{workflowId}` |
 
 `$ref` is **prefix-absolute** (starts with `APIPrefix`, default `/api`). `GET /openapi` has no trailing slash, so a relative `./petstore` would resolve to `/api/petstore`. Absolute `/api/openapi/petstore#/paths/...` is what Swagger UI and other OAS clients need. Versioned child specs (`GET /openapi/{planId}/v{version}`) are **not** inlined in the index.
 
 Both catalog and child documents set `servers: [{ url: PublicBaseURL + APIPrefix }]`. Empty `PublicBaseURL` → `{APIPrefix}` only (`/api`). That is the Try-it-out origin; path keys stay unprefixed.
 
-`OpenAPIMeta` / `OpenAPIServerURL` live in `internal/plans/openapi.go`. `PlansController` gets them from `engine.New`. `OpenAPIMeta.CommonParams` (`engine.Options.CommonRESTParams`) are merged onto `GET /tools`, `POST /plans/query`, and child execute operations (`withCommonParameters`). They are not bound in `bind.go`. `NormalizeRESTCommonParams` / `CheckCommonParamCollisions` run in `engine.New`. `GET /health` is not in these documents.
+`OpenAPIMeta` / `OpenAPIServerURL` live in `internal/plans/openapi.go`. `PlansController` gets them from `engine.New`. `OpenAPIMeta.CommonParams` (`engine.Options.CommonRESTParams`) are merged onto `GET /tools`, `POST /plans/query`, and child execute operations (`withCommonParameters`). They are not bound in `bind.go`. `NormalizeRESTCommonParams` / `CheckCommonParamCollisions` run in `engine.New`. `OpenAPIMeta.SecuritySchemes` / `Security` (`Options.OpenAPISecuritySchemes` / `OpenAPISecurity`) become `components.securitySchemes` and catalog document `security`. Child execute ops use `operationSecurity` (workflow `x-security`, else fallback). `NormalizeSecuritySchemes` / `NormalizeSecurity` / `CheckSecurityCollisions` / `CheckWorkflowSecurity` run in `engine.New`. `GET /health` is not in these documents.
 
 Do not copy backend OpenAPI (`sourceDescriptions`) into these documents. Those specs are for libopenapi step execution only.
 
 ### Per-plan child — `OpenAPIJSON(entry, latest bool)`
 
-- `latest == true` → paths `/plans/{planId}/{workflowId}`
-- `latest == false` → `/plans/{planId}/{versionSegment}/{workflowId}`
+- `latest == true` → paths `/tools/{planId}/{workflowId}`
+- `latest == false` → `/tools/{planId}/{versionSegment}/{workflowId}`
 
 `info.title` from Arazzo if set, else `planId`. `info.version` is the raw catalog version. Request body schema is the workflow `inputs` JSON Schema after stripping reserved engine keys (`policyHints`, `secrets`, `policyHints.*`, `secrets.*`) from that schema’s `properties` / `required` (and combinators / `$defs`). The consumer object is then closed (`additionalProperties: false`). Nested consumer fields with reserved names are kept and are not force-closed.
 
@@ -142,7 +145,7 @@ Arazzo `outputs` is `name → runtime expression`, not JSON Schema, so output ty
 
 **Outputs** (`splitOpenAPIOutputs` / `liftOutputRESTParam`): `x-outputs.properties` keys and `required` entries must be names from `workflow.outputs`. REST lift is **header only**. `interface: rest` requires `protocol: http` (or omitted) and `in: header`; any other `in` (query, cookie, path, missing) fails load. `interface: mcp` stays on the JSON body. Duplicate header names fail load. Lifted fields become `responses.200.headers` and are dropped from the 200 JSON schema. After outbound OPA, REST `writeRunResult` calls `SplitRESTOutputs`: copy the value onto that header (JSON-marshal non-scalars), omit it from the body. Missing **required** lifted outputs → `ErrInternal` (500). MCP structured content is the full outputs map.
 
-Execute path keys are unchanged (`/plans/{planId}/{workflowId}`). `name` defaults to the property key.
+Execute path keys are unchanged (`/tools/{planId}/{workflowId}`). `name` defaults to the property key.
 
 Summary and description are copied only when they do not name reserved keys. MCP `InputSchema` uses the same strip and close (`nodeToJSON` / `nodeToSchema`); each `oneOf` branch is also closed. **200** schema is an object whose `properties` are the remaining Arazzo `outputs` names after header lift (expression values are not types). `servers` as for the catalog. Do not copy Arazzo step parameters, source OpenAPI, or policy bundles into these documents.
 
@@ -154,8 +157,8 @@ MCP granularity is **one tool per plan version** (`run_*`) plus optional `query`
 | --- | --- | --- | --- |
 | `GET /tools` | list | JSON-RPC `tools/list` | Optional `?cursor=` = `ListToolsParams.cursor`. Envelope is `ListToolsResult` (`ttlMs`, `cacheScope`, `tools`). Arazzo `description` on REST is the REST template; MCP list keeps MCP text. |
 | `POST /plans/query` | match + execute | tool `query` | `{ "query", "data" }` both sides. 200 / structured content = workflow **outputs**. Route and tool omitted unless `QueryMatcher` is set. |
-| `POST /plans/{planId}/{workflowId}` | execute **latest** | `run_{plan}_v{latest}` with that `workflowId` | REST JSON body is remaining `inputs`. REST/HTTP input `x-source` comes from header/cookie/query. REST/HTTP output `x-source` (`x-outputs`, `in: header`) is a response header and is omitted from the JSON body. MCP args are `{ "workflowId", "inputs" }`; MCP structured content is the full outputs map. |
-| `POST /plans/{planId}/v{version}/{workflowId}` | execute that version | `run_{plan}_v{version}` | Same body split as latest. |
+| `POST /tools/{planId}/{workflowId}` | execute **latest** | `run_{plan}_v{latest}` with that `workflowId` | REST JSON body is remaining `inputs`. REST/HTTP input `x-source` comes from header/cookie/query. REST/HTTP output `x-source` (`x-outputs`, `in: header`) is a response header and is omitted from the JSON body. MCP args are `{ "workflowId", "inputs" }`; MCP structured content is the full outputs map. |
+| `POST /tools/{planId}/v{version}/{workflowId}` | execute that version | `run_{plan}_v{version}` | Same body split as latest. |
 | `GET /openapi` | catalog OAS | (none) | Index: `/tools` + `$ref`s to latest child specs. Always registered. |
 | `GET /openapi/{planId}` | latest child OAS | (none) | Describes latest execute paths for that plan. |
 | `GET /openapi/{planId}/v{version}` | versioned child OAS | (none) | Describes that version’s execute paths. |
@@ -184,7 +187,7 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 8. Templates are recipes; `Addr` is not a template field; `{workflowId}` in URLs is literal.
 9. FileLoader root for tests is `testdata/arazzo/plans`, never the parent that contains `sources/openapi.yaml`.
 10. Help `Lookup` is on `tools/list` / `GET /tools` only. Lookup errors must not fail the list.
-11. `GET /openapi` is always registered. Per-plan `GET /openapi/{planId}` and execute `POST /plans/...` are registered only when loaders produced a catalog.
+11. `GET /openapi` is always registered. Per-plan `GET /openapi/{planId}` and execute `POST /tools/...` are registered only when loaders produced a catalog.
 12. Keep OpenAPI paths unprefixed. Catalog plan paths must `$ref` `./{planId}#/paths/...`, not inline child operations.
 
 ## Tests to update when you change behavior
@@ -199,12 +202,13 @@ After render, `SanitizeToolName` keeps `[A-Za-z0-9_.-]` and truncates to 128. Em
 | `internal/plans/redact_test.go` | JSON Pointer mask, missing skip, malformed deny |
 | `arazzo/filepolicy_test.go` | inbound/outbound/data overlay; missing nil; unsafe segments; LoadShared |
 | `internal/plans/mcp_test.go` | RegisterMCP run/query tools; duplicate names; invalid templates |
-| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs; `x-source` REST/HTTP lift; nested `x-source` fail; `x-outputs` header lift / `in` must be header; `CommonRESTParams` on `/tools` + query + execute |
+| `internal/plans/catalog_test.go` | skip `no-plan-id`; reject `v`-prefixed / non-semver version; latest `1.1.0`; duplicate loaders; runner; schema oneOf length; OAS path keys; catalog `$ref` + `ListToolsResult`; reserved input strip; closed inputs; `x-source` REST/HTTP lift; nested `x-source` fail; `x-outputs` header lift / `in` must be header; `CommonRESTParams` on `/tools` + query + execute; OAS `securitySchemes` / `x-security`; invalid `x-security` shape |
+| `internal/plans/security_test.go` | scheme normalize; unknown scheme; undeclared oauth2 scope; bearer vs `Authorization` collision; parse `x-security`; `checkWorkflowScopes`; OR of requirement groups |
 | `internal/plans/bind_test.go` | REST/HTTP header/cookie/query merge; body conflict; missing required input; MCP JSON still accepted; `SplitRESTOutputs` header lift and missing required output; unlisted headers/cookies not bound |
 | `internal/plans/public_test.go` | public error mapping |
 | `arazzo/inputs_test.go` | `ReservedInputKey` / `LeaksReservedInputs` |
-| `engine/arazzo_test.go` | invalid templates fail `New`; nested `x-source` fails `New`; `CommonRESTParams` on catalog `/tools` + query + child execute; collision with `x-source` fails `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
-| `engine/engine_test.go` | `GET /openapi` without loaders still describes `/tools`; invalid `CommonRESTParams` fail `New` |
+| `engine/arazzo_test.go` | invalid templates fail `New`; nested `x-source` fails `New`; `CommonRESTParams` on catalog `/tools` + query + child execute; collision with `x-source` fails `New`; OpenAPI security schemes + fallback `security`; workflow `x-security` unknown scheme fails `New`; OpenAPI without executor; catalog `GET /openapi`; REST 501; REST 403 policy deny; MCP `query` + `POST /plans/query`; `run_*` + REST share executor; on-demand `ToolHelpLookup`; lookup errors use defaults |
+| `engine/engine_test.go` | `GET /openapi` without loaders still describes `/tools`; invalid `CommonRESTParams` fail `New`; invalid `OpenAPISecuritySchemes` / unknown `OpenAPISecurity` / bearer collision fail `New` |
 
 Fixtures live under `testdata/arazzo/`. `FileLoader` must be pointed at **`plans/`**, not `testdata/arazzo/` (otherwise `sources/openapi.yaml` is parsed as Arazzo and fails). Latest petstore version in tests is `1.1.0`.
 

@@ -23,7 +23,7 @@ Arazzo plans move that design **out of the model**. Authors publish a versioned 
 | Path through the mesh is inferred per request          | Path is the published workflow                                    |
 | Order, mapping, and “done” can change between runs     | Same steps, criteria, and retries on every run                    |
 | Failures are whatever the model tries next             | The runner applies the plan’s success and failure rules           |
-| Agents and REST clients each re-implement composition  | One catalog and one runner: MCP `run_*` and `POST /api/plans/...` |
+| Agents and REST clients each re-implement composition  | One catalog and one runner: MCP `run_*` and `POST /api/tools/{planId}/...` |
 | Review means reading prompts and traces after the fact | Review means accepting a plan version before it can run           |
 
 
@@ -31,7 +31,7 @@ The unit of work is a **pre-built, validated, governed plan**, not unbounded too
 
 ## Why inbound and outbound policy
 
-A published plan still runs for whoever can call `run_*` or `POST /api/plans/...`. Without a policy layer, **who may run which workflow** and **what may leave the engine** live in prompts, ad-hoc checks in the Executor, or nowhere. An agent can pick `purchasePet` as easily as `retrievePet`. A REST client can send a forged role. A successful step can return fields the caller should never see.
+A published plan still runs for whoever can call `run_*` or `POST /api/tools/{planId}/...`. Without a policy layer, **who may run which workflow** and **what may leave the engine** live in prompts, ad-hoc checks in the Executor, or nowhere. An agent can pick `purchasePet` as easily as `retrievePet`. A REST client can send a forged role. A successful step can return fields the caller should never see.
 
 Optional [OPA](https://www.openpolicyagent.org/) modules attach to `(planId, version)` and run on **every** execute path (MCP `run_*`, REST, `query`). They are not prompts. They are versioned with the plan, default-deny, and fail closed if the bundle cannot load.
 
@@ -60,12 +60,12 @@ One process, one TCP port:
 | MCP `query`  | `/mcp`                         | Natural-language entry, registered only when `QueryMatcher` is set. The matcher selects a plan; the engine runs it if that plan is loaded here.       |
 | MCP `run_*`  | `/mcp`                         | Direct execute of a known plan version. Arguments: `workflowId` + `inputs`.                                                                           |
 | REST `query` | `POST /api/plans/query`        | Same as MCP `query` (omitted without `QueryMatcher`). JSON body is `{ "query": "...", "data": { } }`. Success payload is the workflow outputs object. |
-| REST execute | `POST /api/plans/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs.                                                                                                |
+| REST execute | `POST /api/tools/{planId}/...` | Same as MCP `run_*`; JSON body is the workflow inputs.                                                                                                |
 | REST OpenAPI | `GET /api/openapi`             | Catalog OAS 3.1 (`GET /tools` + `$ref` to each latest plan spec). Per-plan: `GET /api/openapi/{planId}`.                                              |
 | REST tools   | `GET /api/tools`               | MCP `tools/list` envelope (`ttlMs`, `cacheScope`, `tools`); Arazzo descriptions are REST-specific.                                                    |
 
 
-`query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_`* and `POST /api/plans/{planId}/...` are for when the plan and version are already known.
+`query` (MCP or REST) is for when the caller should not pick a `run_*` tool or execute URL itself. Matching stays inside the registry of **pre-built plans**; the model still does not compose domain API calls. `run_`* and `POST /api/tools/{planId}/...` are for when the plan and version are already known.
 
 You supply **loaders**, an **Executor** for domain HTTP, optionally a **PolicyLoader** for inbound/outbound OPA, and optionally a **QueryMatcher** for natural-language plan selection. The engine loads plans, exposes tools and OpenAPI, evaluates policy around `Run`, and executes steps through libopenapi’s Arazzo engine. Nil `PolicyLoader` skips those checks.
 

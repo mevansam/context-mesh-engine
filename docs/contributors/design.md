@@ -146,7 +146,7 @@ MCP already validates `Content-Type` / `Accept` and applies localhost DNS-rebind
 
 Implement `api.Controller.Register(*http.ServeMux)`. Routes are relative to `Options.APIPrefix`. Register via `Engine.AddController`. Prefer before serve.
 
-Built-in plan routes live in `internal/api/v1/plans.go`. `GET /openapi` (catalog OAS) is always registered. `POST /plans/...` and `GET /openapi/{planId}` are registered only when loaders produced a catalog. `GET /tools` is always registered (`internal/api/v1/tools.go`). Do not duplicate those patterns.
+Built-in plan routes live in `internal/api/v1/plans.go`. `GET /openapi` (catalog OAS) is always registered. `POST /tools/{planId}/…`, `POST /plans/query`, and `GET /openapi/{planId}` are registered only when loaders produced a catalog. `GET /tools` is always registered (`internal/api/v1/tools.go`). Do not duplicate those patterns.
 
 How catalog OpenAPI is generated and how REST paths map to MCP `tools/list` / `query` / `run_*`: [arazzo.md — REST resources vs MCP tools](arazzo.md#rest-resources-vs-mcp-tools).
 

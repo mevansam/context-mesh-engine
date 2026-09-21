@@ -147,7 +147,7 @@ Exact `ExecutionRequest` fields (`OperationPath` vs `OperationID`, parameter pla
 | Surface | Behavior |
 | --- | --- |
 | `GET /tools`, `GET /openapi`, `GET /openapi/...` | Work |
-| `POST /plans/{planId}/...` | **501** `{"error":"executor not configured"}` |
+| `POST /tools/{planId}/...` | **501** `{"error":"executor not configured"}` |
 | MCP `run_*` | Tool error (`IsError: true`), not a JSON-RPC protocol error |
 | `query` | Not registered without a matcher; with a matcher, same 501/tool error on execute |
 
@@ -220,7 +220,7 @@ Same job on MCP tool `query` and `POST {APIPrefix}/plans/query`:
 { "query": "natural language", "data": { } }
 ```
 
-Success payload is the workflow **outputs** object (same as direct execute). Direct `run_*` and `POST /plans/{planId}/...` do **not** use the matcher.
+Success payload is the workflow **outputs** object (same as direct execute). Direct `run_*` and `POST /tools/{planId}/...` do **not** use the matcher.
 
 ---
 
@@ -459,7 +459,7 @@ type PolicyRequestContext struct {
 }
 ```
 
-REST: `Header` is a clone of the incoming `*http.Request` header map (`Cookie` is in that map). MCP: `Header` is `req.Extra.Header` from Streamable HTTP. `ClientAuth` is filled when `auth.RequireBearerToken` already verified the calling-application bearer. Error from `Process` is **401**.
+REST: `Header` is a clone of the incoming `*http.Request` header map (`Cookie` is in that map). MCP: `Header` is `req.Extra.Header` from Streamable HTTP. `ClientAuth` is filled when `auth.RequireBearerToken` already verified the calling-application bearer (`userId`, `scopes` from `TokenInfo.Scopes`, `expiration`, plus `Extra`). Error from `Process` is **401**. Workflow `x-security` is checked in `Run` from those scopes, not from this map’s OPA copy.
 
 The returned maps are stored on `ctx` and copied into OPA as `input.headers` / `input.auth`. They are not merged into `$inputs`. Host-wide OpenAPI documentation for those headers/cookies is [`Options.CommonRESTParams`](configuration.md#request-identity). The wrap still sees the raw `*http.Request` on every REST path, including `GET /tools`.
 
@@ -496,8 +496,8 @@ Data bag passed to `ToolDoc` and help templates.
 | `PublicBaseURL` | trimmed origin or empty |
 | `APIRoot` | `PublicBaseURL` + `APIPrefix`, or `APIPrefix` alone (default `/api`) |
 | `RESTQueryURL` | `{APIRoot}/plans/query` |
-| `RESTExecuteLatestURL` | `{APIRoot}/plans/{PlanID}/{workflowId}` |
-| `RESTExecuteVersionedURL` | `{APIRoot}/plans/{PlanID}/{VersionSegment}/{workflowId}` |
+| `RESTExecuteLatestURL` | `{APIRoot}/tools/{PlanID}/{workflowId}` |
+| `RESTExecuteVersionedURL` | `{APIRoot}/tools/{PlanID}/{VersionSegment}/{workflowId}` |
 | `OpenAPICatalogURL` | `{APIRoot}/openapi` |
 | `OpenAPILatestURL` | `{APIRoot}/openapi/{PlanID}` |
 | `OpenAPIVersionedURL` | `{APIRoot}/openapi/{PlanID}/{VersionSegment}` |

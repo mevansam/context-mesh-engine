@@ -28,7 +28,7 @@ context-mesh-engine/
     api/v1/router.go             REST ServeMux (mounted at Options.APIPrefix)
     api/v1/health.go             GET /health
     api/v1/tools.go              GET /tools (MCP envelope; REST descriptions for Arazzo tools)
-    api/v1/plans.go              GET /openapi, POST /plans, GET /openapi/{planId}
+    api/v1/plans.go              GET /openapi, POST /tools/{planId}, POST /plans/query
     plans/                       Catalog, runner, MCP tools, OAS generator, OPA eval
     ttlcache/                    Generic singleflight TTL cache (help + policy)
 ```
@@ -52,7 +52,7 @@ context-mesh-engine/
 
 | File | Responsibility |
 | --- | --- |
-| `engine/engine.go` | `Options` (incl. `APIPrefix`, serve modes, `CommonRESTParams`), `New` (`error`), `MCP`, `AddController`, `APIPrefix`, `Handler`, `ListenAndServe` |
+| `engine/engine.go` | `Options` (incl. `APIPrefix`, serve modes, `CommonRESTParams`, `OpenAPISecuritySchemes`, `OpenAPISecurity`), `New` (`error`), `MCP`, `AddController`, `APIPrefix`, `Handler`, `ListenAndServe` |
 | `engine/engine_test.go` | Mux contract: health JSON, custom prefix, MCP handshake, SSE GET 400, REST ≠ MCP |
 | `engine/arazzo_test.go` | Plan MCP tools, REST execute, OpenAPI, query matcher, 501 |
 | `api/controller.go` | `Controller` |
@@ -78,16 +78,17 @@ context-mesh-engine/
 | `api/v1/router.go` | v1 `ServeMux` and `Register` |
 | `api/v1/health.go` | Default `GET /health` |
 | `api/v1/tools.go` | `GET /tools` (MCP envelope; REST descriptions for Arazzo tools) |
-| `api/v1/plans.go` | `GET /openapi` (always), `POST /plans/query`, `POST /plans/...`, `GET /openapi/{planId}`; sanitized errors |
-| `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest; `validateWorkflowIOSources` |
+| `api/v1/plans.go` | `GET /openapi` (always), `POST /plans/query`, `POST /tools/{planId}/…`, `GET /openapi/{planId}`; sanitized errors |
+| `plans/catalog.go` | Load, skip, duplicate, `ResolveSources`, latest; `validateWorkflowIOSources`; `validateWorkflowSecurityShape` |
 | `plans/runner.go` | New libopenapi Engine per `Run`/`Query`; inbound/outbound OPA; secrets inject; preprocessor enrich; closed inputs; REST workflow remember for output headers |
 | `plans/policy.go` | Compile/eval OPA (shared AND plan, libraries); TTL cache via `internal/ttlcache`; `input.auth` / `input.headers` |
 | `plans/request.go` | HTTP/MCP → `RequestSource`; `WithRESTRequest` bind box |
 | `plans/redact.go` | RFC 6901 redaction of workflow outputs |
 | `plans/bind.go` | REST/HTTP `x-source` merge onto `$inputs.{property}`; `SplitRESTOutputs` header lift |
 | `plans/schema.go` | MCP `inputSchema` oneOf + workflowId const; strip/close consumer inputs; REST/HTTP `x-source` / `x-outputs` lift; `CommonRESTParams` normalize + collision |
+| `plans/security.go` | OAS schemes / requirements; `x-security` parse; collisions; `Run` scope check |
 | `plans/public.go` | `ClassifyError` / `LogAndPublic` |
-| `plans/openapi.go` | OAS 3.1 catalog + per-plan JSON; prefix-absolute `$ref`; `servers` from PublicBaseURL+APIPrefix; merge `CommonParams` |
+| `plans/openapi.go` | OAS 3.1 catalog + per-plan JSON; prefix-absolute `$ref`; `servers` from PublicBaseURL+APIPrefix; merge `CommonParams`; `securitySchemes` / `security` |
 | `plans/mcp.go` | `query` + `run_*` tools |
 | `plans/help.go` | Help TTL cache + `tools/list` overlay (`internal/ttlcache`) |
 | `ttlcache/cache.go` | Generic singleflight TTL cache |
