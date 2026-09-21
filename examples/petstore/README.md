@@ -135,12 +135,22 @@ sequenceDiagram
 
 ## Identity and tokens
 
-Two JWTs on every execute (REST `POST /plans/…` and MCP `/mcp`):
+Two JWTs on every execute (REST `POST /tools/{planId}/…` and MCP `/mcp`):
 
 | Header | Issuer | Role |
 | --- | --- | --- |
-| `Authorization: Bearer` | auth-server `client_credentials` | Calling **client app**. go-sdk `RequireBearerToken` (`MCPHandlerWrap` / REST wrap on execute only). |
-| `X-End-User-Token` | auth-server `password` grant | **End user**. `RequestPreprocessor` verifies HS256, copies `username` / `userStatus` into OPA `input.auth.endUser`. |
+| `Authorization: Bearer` | auth-server `client_credentials` | Calling **client app**. go-sdk `RequireBearerToken` (`MCPHandlerWrap` / REST wrap on catalog + execute). JWT `scope` is copied to `TokenInfo.Scopes`. |
+| `X-End-User-Token` | auth-server `password` grant | **End user**. `RequestPreprocessor` verifies HS256, copies `username` / `userStatus` into OPA `input.auth.endUser`. Documented on OpenAPI via `CommonRESTParams`. |
+
+Default client token scopes: `tools:list pets:read pets:write orders:create`. Workflow `x-security` on execute:
+
+| Workflow | Required scopes |
+| --- | --- |
+| `retrievePet` | `pets:read` |
+| `checkOrderStatus` | `pets:read` |
+| `purchasePet` | `pets:write`, `orders:create` |
+
+`GET /tools` wrap only checks the JWT (OpenAPI documents `tools:list`). Missing execute scopes are **403** `insufficient scope`. Pass `scope` on the token request to mint a subset.
 
 Inbound OPA **must not** call Petstore. `userStatus` is already on the user JWT because the auth-server ran [loginUser](https://petstore3.swagger.io/#/user/loginUser) then [getUserByName](https://petstore3.swagger.io/#/user/getUserByName) at token issue.
 
@@ -172,14 +182,14 @@ USER=$(curl -s -X POST http://localhost:8092/oauth/token \
   -d '{"grant_type":"password","username":"browser","password":"abc123"}' \
   | jq -r .access_token)
 
-curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
+curl -s -X POST http://localhost:8080/api/tools/petstore/retrievePet \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $CLIENT" \
   -H "X-End-User-Token: $USER" \
   -d '{"status":"sold"}'
 ```
 
-Default `mcp-server` is **REST only**. `-dual` also mounts MCP Streamable HTTP at `/mcp`.
+Default `mcp-server` is **REST only**. `-dual` also mounts MCP Streamable HTTP at `/mcp`. Omit `scope` on `client_credentials` to get all demo scopes (needed for execute).
 
 ## The Arazzo plan
 
@@ -215,8 +225,8 @@ sourceDescriptions:
 | Surface | Value |
 | --- | --- |
 | MCP tool | `run_petstore_v0.0.1` (default `run_{{.SafePlanID}}_v{{.SafeVersion}}`) |
-| REST latest | `POST /api/plans/petstore/{workflowId}` |
-| REST versioned | `POST /api/plans/petstore/v0.0.1/{workflowId}` |
+| REST latest | `POST /api/tools/petstore/{workflowId}` |
+| REST versioned | `POST /api/tools/petstore/v0.0.1/{workflowId}` |
 | Generated OpenAPI | `GET /api/openapi` (catalog), `GET /api/openapi/petstore` (plan) |
 
 `info.version` must be semver **without** a leading `v` (`0.0.1`, not `v0.0.1`). URL path tokens prepend `v`. See [Arazzo plans — spec requirements](../../docs/users/arazzo.md#spec-requirements).
@@ -235,7 +245,7 @@ OpenAPI operations used by the plan:
 
 ### Workflow: retrievePet
 
-**Purpose:** load the end user (`getUserByName`), then return the first pet matching a status that **inbound policy** chooses. The caller’s `status` input is a hint for buyers only; browsers always search `available`. Username comes from the end-user JWT via `policyHints.username`, not from the JSON body.
+**Purpose:** load the end user (`getUserByName`), then return the first pet matching a status that **inbound policy** chooses. The caller’s `status` input is a hint for buyers only; browsers always search `available`. Username comes from the end-user JWT via `policyHints.username`, not from the JSON body. Client JWT needs scope `pets:read`.
 
 **Inputs (required):** `status` (`available` \| `pending` \| `sold`). Generated OpenAPI and MCP `inputSchema` omit `policyHints` (and `secrets`); those keys stay in the Arazzo file for execution. Callers must not send them — the engine strips them at run time.
 
@@ -269,7 +279,7 @@ sequenceDiagram
   participant H as mcp-server
   participant P as Petstore :8090
 
-  C->>H: POST /api/plans/petstore/retrievePet (two JWTs)
+  C->>H: POST /api/tools/petstore/retrievePet (two JWTs)
   Note over H: inbound reads input.auth.endUser (no http.send)
   alt deny
     H-->>C: 403
@@ -298,7 +308,7 @@ For a `browser` (`userStatus` 1), inbound sets `petStatus` to `available` even i
 
 ### Workflow: purchasePet
 
-**Purpose:** load the user, place an order on the async adapter, poll until confirmation, return `orderId`. Requires inbound **buy** (`userStatus` 2). A `browser` call is **403** before any step runs.
+**Purpose:** load the user, place an order on the async adapter, poll until confirmation, return `orderId`. Requires inbound **buy** (`userStatus` 2). A `browser` call is **403** before any step runs. Client JWT needs scopes `pets:write` and `orders:create`.
 
 **Inputs (required):** `petId`, `orderCorrelationId` (any unique string; AsyncAPI `orderRequestId`).
 
@@ -332,7 +342,7 @@ sequenceDiagram
   participant P as Petstore :8090
   participant A as async-order-server :8091
 
-  C->>H: POST /api/plans/petstore/purchasePet (two JWTs)
+  C->>H: POST /api/tools/petstore/purchasePet (two JWTs)
   Note over H: inbound reads input.auth.endUser
   alt deny
     H-->>C: 403
@@ -367,7 +377,7 @@ Local Docker Petstore does not allocate order ids (omit `id` and you get `0`). T
 
 ### Workflow: checkOrderStatus
 
-**Purpose:** load the user and `GET /store/order/{orderId}`. Buyers only.
+**Purpose:** load the user and `GET /store/order/{orderId}`. Buyers only. Client JWT needs scope `pets:read`.
 
 **Inputs (required):** `orderId`.
 
@@ -397,7 +407,7 @@ sequenceDiagram
   participant H as mcp-server
   participant P as Petstore :8090
 
-  C->>H: POST /api/plans/petstore/checkOrderStatus (two JWTs)
+  C->>H: POST /api/tools/petstore/checkOrderStatus (two JWTs)
   Note over H: inbound reads input.auth.endUser
   alt deny
     H-->>C: 403
@@ -630,7 +640,7 @@ Rego decision objects:
 
 ### OAuth and the engine SDK
 
-The engine does **not** implement OAuth. It exposes four host-owned seams on [`engine.Options`](../../docs/users/configuration.md#options-reference). This demo uses all of them. Operator-facing token table: [Identity and tokens](#identity-and-tokens). Contracts: [Configuration — Auth](../../docs/users/configuration.md#auth), [Adapters — RequestPreprocessor](../../docs/users/adapters.md#requestpreprocessor), [Adapters — SecretsProvider](../../docs/users/adapters.md#secretsprovider).
+The engine does **not** implement OAuth. It exposes host-owned seams on [`engine.Options`](../../docs/users/configuration.md#options-reference). This demo uses wraps, preprocessor, secrets, policy, `CommonRESTParams`, and OAS security Options. Operator-facing token table: [Identity and tokens](#identity-and-tokens). Contracts: [Configuration — Auth](../../docs/users/configuration.md#auth), [Arazzo — x-security](../../docs/users/arazzo.md#x-security), [Adapters — RequestPreprocessor](../../docs/users/adapters.md#requestpreprocessor), [Adapters — SecretsProvider](../../docs/users/adapters.md#secretsprovider).
 
 | Token | Who mints it | SDK seam | Where it is consumed |
 | --- | --- | --- | --- |
@@ -644,10 +654,12 @@ The engine does **not** implement OAuth. It exposes four host-owned seams on [`e
 
 From [`mcp-server/main.go`](mcp-server/main.go) and [`mcp-server/auth.go`](mcp-server/auth.go):
 
-1. **`MCPHandlerWrap` / `RESTHandlerWrap`** — wrap **child** handlers (`/mcp` and the REST mux after `APIPrefix` strip), never the root mux. The engine applies `RESTHandlerWrap` **before** `APITimeout`. Petstore wraps **all** MCP traffic (so `initialize` and `tools/list` need the client JWT). REST wrap is `wrapRESTPlans`: client JWT on `GET /tools`, `GET /openapi/…`, and `POST /plans/…`. `GET /health` and `GET /docs` stay open.
-2. **`RequestPreprocessor`** — `dualJWTPreprocessor` reads `X-End-User-Token`, verifies HS256 (`jwtx.ParseUser`), and returns `PolicyRequestContext`. `Auth.endUser` is `{username, userStatus, sub}`. `Auth.client` is copied from `RequestSource.ClientAuth` (go-sdk `TokenInfo` after the bearer wrap). Allowlisted headers only (`X-Request-Id` → `x-request-id`). Do not put raw `Authorization` or the user JWT into `Headers`.
-3. **`SecretsProvider`** — `arazzo.MapSecrets{"downstream-hmac": jwt-secret}` shared with the auth-server’s `-jwt-secret`. The same map is passed into `newHTTPExec`. **`SecretInputs` is empty**: the HMAC key is not flattened onto `$inputs.secrets.*`. Caller-supplied `secrets` / `secrets.*` keys are stripped either way.
-4. **`PolicyLoader`** — inbound reads `input.auth.endUser`, not `http.send`. Invalid preprocessor is **401**; inbound deny is **403**.
+1. **`MCPHandlerWrap` / `RESTHandlerWrap`** — wrap **child** handlers (`/mcp` and the REST mux after `APIPrefix` strip), never the root mux. The engine applies `RESTHandlerWrap` **before** `APITimeout`. Petstore wraps **all** MCP traffic (so `initialize` and `tools/list` need the client JWT). REST wrap is `wrapRESTPlans`: client JWT on `GET /tools`, `GET /openapi/…`, `POST /tools/{planId}/…`, and `POST /plans/query`. `GET /health` and `GET /docs` stay open. `jwtVerifier` copies JWT `scope` onto `TokenInfo.Scopes`. The wrap does **not** require `tools:list`; generated OpenAPI documents it.
+2. **`RequestPreprocessor`** — `dualJWTPreprocessor` reads `X-End-User-Token`, verifies HS256 (`jwtx.ParseUser`), and returns `PolicyRequestContext`. `Auth.endUser` is `{username, userStatus, sub}`. `Auth.client` is copied from `RequestSource.ClientAuth` (go-sdk `TokenInfo` after the bearer wrap, including `scopes`). Allowlisted headers only (`X-Request-Id` → `x-request-id`). Do not put raw `Authorization` or the user JWT into `Headers`.
+3. **`OpenAPISecuritySchemes` / `OpenAPISecurity`** — oauth2 `planOAuth` client-credentials (`-auth-url` + `/oauth/token`) with scopes `tools:list`, `pets:read`, `pets:write`, `orders:create`. Catalog `security` is `planOAuth: [tools:list]`. Execute ops use workflow `x-security` (`retrievePet` / `checkOrderStatus` → `pets:read`; `purchasePet` → `pets:write` + `orders:create`). `Run` enforces those scopes (**403** `insufficient scope`).
+4. **`CommonRESTParams`** — documents `X-End-User-Token` on generated OpenAPI. The preprocessor still requires it on execute.
+5. **`SecretsProvider`** — `arazzo.MapSecrets{"downstream-hmac": jwt-secret}` shared with the auth-server’s `-jwt-secret`. The same map is passed into `newHTTPExec`. **`SecretInputs` is empty**: the HMAC key is not flattened onto `$inputs.secrets.*`. Caller-supplied `secrets` / `secrets.*` keys are stripped either way.
+6. **`PolicyLoader`** — inbound reads `input.auth.endUser`, not `http.send`. Invalid preprocessor is **401**; inbound deny is **403** `policy denied`.
 
 The engine stores the preprocessor result on `context.Context` (`arazzo.WithPolicyRequest`). Inbound/outbound OPA read it as `input.auth` / `input.headers`. The `Executor` reads the same context to set `sub`/`username` on the **new** downstream JWT. It does not forward the caller’s bearer.
 
@@ -687,7 +699,7 @@ sequenceDiagram
     W-->>C: 401
   else verified
     W->>E: TokenInfo on request context
-    Note over E: REST POST /plans or MCP run_*
+    Note over E: REST POST /tools/{planId} or MCP run_*
     E->>Pre: RequestSource (headers + ClientAuth)
     alt missing or invalid X-End-User-Token
       Pre-->>C: 401
@@ -727,8 +739,8 @@ When `ArazzoLoaders` is set, `New` registers:
 
 | Surface | Path / name |
 | --- | --- |
-| REST execute latest | `POST {APIPrefix}/plans/{planId}/{workflowId}` |
-| REST execute versioned | `POST {APIPrefix}/plans/{planId}/{version}/{workflowId}` |
+| REST execute latest | `POST {APIPrefix}/tools/{planId}/{workflowId}` |
+| REST execute versioned | `POST {APIPrefix}/tools/{planId}/{version}/{workflowId}` |
 | REST OpenAPI catalog | `GET {APIPrefix}/openapi` |
 | REST OpenAPI plan | `GET {APIPrefix}/openapi/{planId}` |
 | REST Swagger UI (this example) | `GET {APIPrefix}/docs` |
@@ -907,17 +919,17 @@ The sticky bar on `/api/docs` is for **Try it out**. A `requestInterceptor` copi
 1. Seed users and mint `$CLIENT`, `$BROWSER` / `$BUYER` as above.
 2. Open [http://localhost:8080/api/docs](http://localhost:8080/api/docs) (needs network once for the CDN). You land on `/api/docs/login` until a client token is stored.
 3. Paste the client access token (`$CLIENT`) and submit. The catalog spec should load.
-4. Paste an end-user access token into **End-user JWT** (`X-End-User-Token`) before **Try it out** on `POST /plans/…`.
-5. Pick a spec in the dropdown. Execute `retrievePet` / `purchasePet` / `checkOrderStatus` with the same token rules as curl (`browser` retrieve-only; `buyer` may purchase).
+4. Paste an end-user access token into **End-user JWT** (`X-End-User-Token`) before **Try it out** on `POST /tools/…`.
+5. Pick a spec in the dropdown. Execute `retrievePet` / `purchasePet` / `checkOrderStatus` with the same token rules as curl (`browser` retrieve-only; `buyer` may purchase). A client token with only `tools:list` can load the catalog and is **403** `insufficient scope` on execute.
 
-`GET /health` and `GET /docs` (login + UI HTML) stay unauthenticated. `GET /tools` and `GET /openapi/…` need the client JWT (the UI sends it after login). `POST /plans/` needs both JWTs.
+`GET /health` and `GET /docs` (login + UI HTML) stay unauthenticated. `GET /tools` and `GET /openapi/…` need the client JWT (the UI sends it after login). `POST /tools/{planId}/…` needs both JWTs.
 
 ### REST: retrieve, purchase, check order
 
 A `browser` token can only retrieve. Inbound forces `petStatus` to `available`. Missing tokens are **401**.
 
 ```bash
-curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
+curl -s -X POST http://localhost:8080/api/tools/petstore/retrievePet \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $CLIENT" \
   -H "X-End-User-Token: $BROWSER" \
@@ -927,19 +939,19 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
 `buyer` may pass `status` through as `policyHints.petStatus`:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/plans/petstore/retrievePet \
+curl -s -X POST http://localhost:8080/api/tools/petstore/retrievePet \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $CLIENT" \
   -H "X-End-User-Token: $BUYER" \
   -d '{"status":"available"}'
 ```
 
-Versioned URL: `POST /api/plans/petstore/v0.0.1/retrievePet`. Pick a `petId` from the response (or `pet.id`). Direct Petstore: `GET http://localhost:8090/api/v3/pet/1`.
+Versioned URL: `POST /api/tools/petstore/v0.0.1/retrievePet`. Pick a `petId` from the response (or `pet.id`). Direct Petstore: `GET http://localhost:8090/api/v3/pet/1`.
 
 Purchase requires the async adapter and a **buyer**. A `browser` token returns **403**. `orderCorrelationId` is any unique string:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/plans/petstore/purchasePet \
+curl -s -X POST http://localhost:8080/api/tools/petstore/purchasePet \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $CLIENT" \
   -H "X-End-User-Token: $BUYER" \
@@ -949,7 +961,7 @@ curl -s -X POST http://localhost:8080/api/plans/petstore/purchasePet \
 Save `orderId`, then:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/plans/petstore/checkOrderStatus \
+curl -s -X POST http://localhost:8080/api/tools/petstore/checkOrderStatus \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $CLIENT" \
   -H "X-End-User-Token: $BUYER" \
@@ -965,7 +977,7 @@ curl -s -X POST http://localhost:8090/api/v3/store/order \
   -H 'Accept: application/json' -H 'Content-Type: application/json' \
   -d '{"id":900001,"petId":1,"quantity":1,"status":"placed","complete":false}'
 
-curl -s -X POST http://localhost:8080/api/plans/petstore/checkOrderStatus \
+curl -s -X POST http://localhost:8080/api/tools/petstore/checkOrderStatus \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $CLIENT" \
   -H "X-End-User-Token: $BUYER" \
