@@ -24,8 +24,8 @@ Serves:
 - `GET /api/tools` (MCP `tools/list` envelope; Arazzo descriptions are REST-specific)
 - `GET /api/openapi` (catalog OAS; `$ref`s latest plan spec; includes `POST /plans/query`)
 - `POST /api/plans/query` (dummy matcher → latest petstore `pingHealth`)
-- `POST /api/plans/petstore/{workflowId}` (latest = 1.1.0)
-- `POST /api/plans/petstore/v1.0.0/{workflowId}`
+- `POST /api/tools/petstore/{workflowId}` (latest = 1.1.0)
+- `POST /api/tools/petstore/v1.0.0/{workflowId}`
 - `GET /api/openapi/petstore`
 - `GET /api/openapi/petstore/v1.1.0`
 
@@ -36,9 +36,9 @@ Stub `Executor` always returns HTTP 200. Dummy `QueryMatcher` always selects `pe
 ```bash
 curl -s http://localhost:8080/api/openapi
 curl -s http://localhost:8080/api/openapi/petstore
-curl -s -X POST http://localhost:8080/api/plans/petstore/pingHealth \
+curl -s -X POST http://localhost:8080/api/tools/petstore/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'
-curl -s -X POST http://localhost:8080/api/plans/petstore/v1.0.0/pingHealth \
+curl -s -X POST http://localhost:8080/api/tools/petstore/v1.0.0/pingHealth \
   -H 'Content-Type: application/json' -d '{"name":"demo"}'
 curl -s -X POST http://localhost:8080/api/plans/query \
   -H 'Content-Type: application/json' -d '{"query":"is the api up","data":{"name":"demo"}}'

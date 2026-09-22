@@ -5,6 +5,7 @@ package jwtx
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -18,9 +19,20 @@ const (
 	IssuerEngine   = "petstore-mcp"
 )
 
+// DefaultClientScopes is the client_credentials grant when the caller
+// omits scope. mcp-server GET /tools wrap only checks the JWT; workflow
+// x-security is enforced on execute.
+var DefaultClientScopes = []string{
+	"tools:list",
+	"pets:read",
+	"pets:write",
+	"orders:create",
+}
+
 // ClientClaims is the calling-application bearer token.
 type ClientClaims struct {
 	TokenUse string `json:"token_use"`
+	Scope    string `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -38,10 +50,11 @@ type DownstreamClaims struct {
 	jwt.RegisteredClaims
 }
 
-func SignClient(secret []byte, clientID string, ttl time.Duration) (string, error) {
+func SignClient(secret []byte, clientID string, ttl time.Duration, scopes []string) (string, error) {
 	now := time.Now()
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, ClientClaims{
 		TokenUse: TokenUseClient,
+		Scope:    JoinScope(scopes),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    IssuerAuth,
 			Subject:   clientID,
@@ -51,6 +64,14 @@ func SignClient(secret []byte, clientID string, ttl time.Duration) (string, erro
 		},
 	})
 	return t.SignedString(secret)
+}
+
+func JoinScope(scopes []string) string {
+	return strings.Join(scopes, " ")
+}
+
+func SplitScope(s string) []string {
+	return strings.Fields(s)
 }
 
 func SignUser(secret []byte, username string, userStatus int, ttl time.Duration) (string, error) {

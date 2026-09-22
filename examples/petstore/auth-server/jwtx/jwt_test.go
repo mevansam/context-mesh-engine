@@ -10,7 +10,7 @@ import (
 
 func TestSignParseClientAndUser(t *testing.T) {
 	secret := []byte("petstore-demo-hs256")
-	ctok, err := SignClient(secret, "petstore-mcp", time.Hour)
+	ctok, err := SignClient(secret, "petstore-mcp", time.Hour, DefaultClientScopes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,6 +20,9 @@ func TestSignParseClientAndUser(t *testing.T) {
 	}
 	if cc.Subject != "petstore-mcp" || cc.TokenUse != TokenUseClient {
 		t.Fatalf("%#v", cc)
+	}
+	if got := SplitScope(cc.Scope); len(got) != len(DefaultClientScopes) {
+		t.Fatalf("scope = %q", cc.Scope)
 	}
 	utok, err := SignUser(secret, "buyer", 2, time.Hour)
 	if err != nil {

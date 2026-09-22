@@ -60,11 +60,14 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	})
 	mux.HandleFunc("POST /oauth/token", s.handleToken)
+	mux.HandleFunc("OPTIONS /oauth/token", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: *addr, Handler: withCORS(mux), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("auth-server http://%s  petstore %s", *addr, s.petstore)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -97,17 +100,23 @@ func (s *authServer) handleToken(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid_client"})
 			return
 		}
-		tok, err := jwtx.SignClient(s.jwtSecret, id, tokenTTL)
+		scopes, err := resolveClientScopes(params["scope"])
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_scope", "error_description": err.Error()})
+			return
+		}
+		tok, err := jwtx.SignClient(s.jwtSecret, id, tokenTTL, scopes)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
 			return
 		}
-		log.Printf("issued client JWT grant=client_credentials client_id=%s iss=%s aud=%s ttl=%s",
-			id, jwtx.IssuerAuth, jwtx.AudienceMCP, tokenTTL)
+		log.Printf("issued client JWT grant=client_credentials client_id=%s scope=%s iss=%s aud=%s ttl=%s",
+			id, jwtx.JoinScope(scopes), jwtx.IssuerAuth, jwtx.AudienceMCP, tokenTTL)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"access_token": tok,
 			"token_type":   "Bearer",
 			"expires_in":   int(tokenTTL.Seconds()),
+			"scope":        jwtx.JoinScope(scopes),
 		})
 	case "password":
 		user := params["username"]
@@ -218,6 +227,43 @@ func parseTokenRequest(r *http.Request) (grant string, params map[string]string,
 		params[k] = r.PostForm.Get(k)
 	}
 	return params["grant_type"], params, nil
+}
+
+func resolveClientScopes(requested string) ([]string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return append([]string(nil), jwtx.DefaultClientScopes...), nil
+	}
+	allowed := map[string]struct{}{}
+	for _, s := range jwtx.DefaultClientScopes {
+		allowed[s] = struct{}{}
+	}
+	var out []string
+	seen := map[string]struct{}{}
+	for _, sc := range strings.Fields(requested) {
+		if _, ok := allowed[sc]; !ok {
+			return nil, fmt.Errorf("unknown scope %q", sc)
+		}
+		if _, dup := seen[sc]; dup {
+			continue
+		}
+		seen[sc] = struct{}{}
+		out = append(out, sc)
+	}
+	return out, nil
+}
+
+func withCORS(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 func resolvePetstoreBase(kind, urlOverride string) (string, error) {
